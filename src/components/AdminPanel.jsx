@@ -866,7 +866,9 @@ export default function AdminPanel() {
             );
           })()}
         </div>
-      </div>}
+      </div>
+
+      )}
       {/* Sub Tab: Staff Management */}
       {activeSubTab === 'staffManagement' && (
       <div id="section-staffManagement">
