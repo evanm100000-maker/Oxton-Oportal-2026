@@ -229,158 +229,207 @@ export default function Dashboard() {
     setActiveTab('infractions');
   };
 
-  const navItems = [
-    // Row 1: Personal & Daily Use
+  const navGroups = [
     {
-      id: 'announcements',
-      title: 'Announcements',
-      description: 'View the latest news and updates from the administration.',
+      id: 'operations',
+      title: 'Operations & Flight Schedule',
+      description: 'Manage airport flight allocations, log reports, and view upcoming schedules.',
+      icon: Plane,
+      color: '#3b82f6',
+      items: [
+        {
+          id: 'allocation',
+          title: 'Allocation Requests',
+          description: 'View airport flight allocations and server connections.',
+          icon: Plane,
+          color: '#2563eb',
+          component: AllocationRequests,
+          badgeCount: unreadFlightCount
+        },
+        {
+          id: 'logs',
+          title: 'Flight Logs',
+          description: 'Submit and inspect detailed flight operations reports.',
+          icon: ClipboardList,
+          color: '#3b82f6',
+          component: FlightLogs
+        },
+        {
+          id: 'calendar',
+          title: 'Calendar Overview',
+          description: 'View upcoming flights, events, and meetings for the year.',
+          icon: Calendar,
+          color: '#f59e0b',
+          component: CalendarPage
+        },
+        {
+          id: 'events',
+          title: 'Upcoming Events',
+          description: 'View scheduled events and meetings.',
+          icon: Calendar,
+          color: '#10b981',
+          component: Events
+        },
+        {
+          id: 'meetings',
+          title: 'Upcoming Meetings',
+          description: 'View scheduled meetings and receive reminders.',
+          icon: Calendar,
+          color: '#60a5fa',
+          component: Meetings
+        }
+      ]
+    },
+    {
+      id: 'communications',
+      title: 'Communications & Team',
+      description: 'Official notices, team communication, and staff recognition.',
       icon: Megaphone,
       color: '#8b5cf6',
-      component: Announcements,
-      badgeCount: unreadAnnouncementsCount
+      items: [
+        {
+          id: 'announcements',
+          title: 'Announcements',
+          description: 'View the latest news and updates from the administration.',
+          icon: Megaphone,
+          color: '#8b5cf6',
+          component: Announcements,
+          badgeCount: unreadAnnouncementsCount
+        },
+        {
+          id: 'staffChat',
+          title: 'Messages',
+          description: 'Communicate with staff and security in real-time.',
+          icon: MessageSquare,
+          color: '#10b981',
+          component: StaffChat,
+          badgeCount: unreadChatCount
+        },
+        {
+          id: 'allStaff',
+          title: 'All Staff',
+          description: 'View the complete staff roster and online presence.',
+          icon: User,
+          color: '#8b5cf6',
+          component: AllStaff
+        },
+        {
+          id: 'leaderboard',
+          title: 'Staff of the Week',
+          description: 'View the top performing staff based on approved flights.',
+          icon: Trophy,
+          color: '#f59e0b',
+          component: Leaderboard
+        }
+      ]
     },
     {
-      id: 'events',
-      title: 'Upcoming Events',
-      description: 'View scheduled events and meetings.',
-      icon: Calendar,
-      color: '#10b981',
-      component: Events
-    },
-    {
-      id: 'meetings',
-      title: 'Upcoming Meetings',
-      description: 'View scheduled meetings and receive reminders.',
-      icon: Calendar,
-      color: '#60a5fa',
-      component: Meetings
-    },
-    {
-      id: 'performance',
-      title: 'My Performance',
-      description: 'View your activity, logs, badges, and overall performance.',
+      id: 'personal',
+      title: 'Staff Duties & Workspace',
+      description: 'Your personal activity stats, assigned tasks, support tickets, and leave.',
       icon: Activity,
-      color: '#ec4899',
-      component: Performance
-    },
-    {
-      id: 'tasks',
-      title: 'Tasks & Assignments',
-      description: 'Manage and complete tasks assigned by administrators.',
-      icon: CheckSquare,
-      color: '#14b8a6',
-      component: Tasks,
-      badgeCount: pendingTasksCount
-    },
-    {
-      id: 'tickets',
-      title: 'Support Tickets',
-      description: 'Open a ticket for private support and communication with admins.',
-      icon: LifeBuoy,
-      color: '#f43f5e',
-      component: SupportTickets
-    },
-    
-    // Row 2
-    {
-      id: 'staffChat',
-      title: 'Messages',
-      description: 'Communicate with staff and security in real-time.',
-      icon: MessageSquare,
       color: '#10b981',
-      component: StaffChat,
-      badgeCount: unreadChatCount
+      items: [
+        {
+          id: 'performance',
+          title: 'My Performance',
+          description: 'View your activity, logs, badges, and overall performance.',
+          icon: Activity,
+          color: '#ec4899',
+          component: Performance
+        },
+        {
+          id: 'tasks',
+          title: 'Tasks & Assignments',
+          description: 'Manage and complete tasks assigned by administrators.',
+          icon: CheckSquare,
+          color: '#14b8a6',
+          component: Tasks,
+          badgeCount: pendingTasksCount
+        },
+        {
+          id: 'loa',
+          title: 'Leave of Absence Requests',
+          description: 'Request time off and monitor administrative replies.',
+          icon: Calendar,
+          color: '#1d4ed8',
+          component: LeaveOfAbsence
+        },
+        {
+          id: 'tickets',
+          title: 'Support Tickets',
+          description: 'Open a ticket for private support and communication with admins.',
+          icon: LifeBuoy,
+          color: '#f43f5e',
+          component: SupportTickets
+        },
+        {
+          id: 'infractions',
+          title: 'My Consequences',
+          description: 'Track disciplinary alerts and official performance marks.',
+          icon: Slash,
+          color: '#1e3a8a',
+          component: Infractions,
+          badgeCount: unreadInfractions.length
+        }
+      ]
     },
     {
-      id: 'leaderboard',
-      title: 'Staff of the Week',
-      description: 'View the top performing staff based on approved flights.',
-      icon: Trophy,
-      color: '#f59e0b',
-      component: Leaderboard
-    },
-    {
-      id: 'allStaff',
-      title: 'All Staff',
-      description: 'View the complete staff roster and online presence.',
-      icon: User,
-      color: '#8b5cf6',
-      component: AllStaff
-    },
-    {
-      id: 'reports',
-      title: 'Reports',
-      description: 'Report rule-breaking players. Review admin actions.',
-      icon: AlertTriangle,
-      color: '#2563eb',
-      component: Reports,
-      badgeCount: unreadReportsCount
-    },
-
-    // Row 3
-    {
-      id: 'calendar',
-      title: 'Calendar Overview',
-      description: 'View upcoming flights, events, and meetings for the year.',
-      icon: Calendar,
-      color: '#f59e0b',
-      component: CalendarPage
-    },
-    {
-      id: 'logs',
-      title: 'Flight Logs',
-      description: 'Submit and inspect detailed flight operations reports.',
-      icon: ClipboardList,
-      color: '#3b82f6',
-      component: FlightLogs
-    },
-    {
-      id: 'allocation',
-      title: 'Allocation Requests',
-      description: 'View airport flight allocations and server connections.',
-      icon: Plane,
-      color: '#2563eb',
-      component: AllocationRequests,
-      badgeCount: unreadFlightCount
-    },
-    {
-      id: 'loa',
-      title: 'Leave of Absence Requests',
-      description: 'Request time off and monitor administrative replies.',
-      icon: Calendar,
-      color: '#1d4ed8',
-      component: LeaveOfAbsence
-    },
-    {
-      id: 'documents',
-      title: 'Documents',
-      description: 'Read operations manuals, protocols, and manuals.',
+      id: 'resources',
+      title: 'Documentation & Reports',
+      description: 'Operations manuals, protocols, guidelines, and player moderation reports.',
       icon: FileText,
-      color: '#1e40af',
-      component: Documents,
-      badgeCount: unreadDocumentsCount
+      color: '#f59e0b',
+      items: [
+        {
+          id: 'documents',
+          title: 'Documents',
+          description: 'Read operations manuals, protocols, and manuals.',
+          icon: FileText,
+          color: '#1e40af',
+          component: Documents,
+          badgeCount: unreadDocumentsCount
+        },
+        {
+          id: 'reports',
+          title: 'Reports',
+          description: 'Report rule-breaking players. Review admin actions.',
+          icon: AlertTriangle,
+          color: '#2563eb',
+          component: Reports,
+          badgeCount: unreadReportsCount
+        }
+      ]
     },
-
-    // Row 4
     ...(currentUser.isAdmin ? [{
-      id: 'analytics',
-      title: 'Analytics',
-      description: 'View server-wide statistics, staff activity, and analytics.',
-      icon: BarChart2,
-      color: '#8b5cf6',
-      component: Analytics
-    }] : []),
-    {
-      id: 'infractions',
-      title: 'My Consequences',
-      description: 'Track disciplinary alerts and official performance marks.',
-      icon: Slash,
-      color: '#1e3a8a',
-      component: Infractions,
-      badgeCount: unreadInfractions.length
-    }
+      id: 'administration',
+      title: 'Administration & Oversight',
+      description: 'Executive control center, server-wide statistics, and staff oversight.',
+      icon: Settings,
+      color: '#06b6d4',
+      items: [
+        {
+          id: 'admin',
+          title: 'Admin Control Center',
+          description: 'Manage approvals, allocate staff schedules, review LOAs, post documents, and log infractions.',
+          icon: Settings,
+          color: '#06b6d4',
+          component: AdminPanel,
+          isAdminSpecial: true
+        },
+        {
+          id: 'analytics',
+          title: 'Analytics',
+          description: 'View server-wide statistics, staff activity, and analytics.',
+          icon: BarChart2,
+          color: '#8b5cf6',
+          component: Analytics
+        }
+      ]
+    }] : [])
   ];
+
+  const navItems = navGroups.flatMap(group => group.items);
 
   // Framer Motion Animation Settings
   const containerVariants = {
@@ -582,7 +631,7 @@ export default function Dashboard() {
                 </h1>
               </div>
               <p style={{ ...styles.greetingSub, marginTop: '8px' }}>
-                Welcome back. Use the cards below to view, log, and request staff actions.
+                Welcome back. Use the sections below to view, log, and request staff actions.
               </p>
               
               {(currentUser.goldMedals > 0 || currentUser.silverMedals > 0 || currentUser.bronzeMedals > 0) && (
@@ -595,73 +644,90 @@ export default function Dashboard() {
               )}
             </motion.div>
 
-            <motion.div 
-              key={`dashboard-card-grid-${activeTab}`}
-              variants={containerVariants}
-              initial="hidden"
-              animate="show"
-              style={styles.cardGrid}
-              className="dashboard-card-grid"
-            >
-              {navItems.map((item) => {
-                const Icon = item.icon;
+            <div style={styles.groupSectionsWrapper}>
+              {navGroups.map((group) => {
+                const GroupIcon = group.icon;
                 return (
-                  <motion.div
-                    key={item.id}
-                    variants={itemVariants}
-                    whileHover={{ 
-                      scale: 1.015,
-                      y: -3,
-                      boxShadow: '0 12px 30px rgba(37, 99, 235, 0.2)',
-                      borderColor: 'rgba(37, 99, 235, 0.4)'
-                    }}
-                    whileTap={{ scale: 0.99 }}
-                    onClick={() => item.id === 'infractions' ? reviewInfractions() : setActiveTab(item.id)}
-                    className="glass-panel interactive-card"
-                    style={styles.menuCard}
-                  >
-                    <div style={{ ...styles.cardIconWrapper, backgroundColor: `${item.color}15`, position: 'relative' }}>
-                      <Icon size={24} color={item.color} />
-                      {item.badgeCount > 0 && (
-                        <div style={styles.notificationBadge}>
-                          {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                  <section key={group.id} style={styles.groupSection}>
+                    <div style={styles.groupHeader}>
+                      <div style={styles.groupHeaderLeft}>
+                        <div style={{ ...styles.groupIconWrapper, backgroundColor: `${group.color}18`, color: group.color }}>
+                          <GroupIcon size={18} />
                         </div>
-                      )}
+                        <div style={styles.groupTitleCol}>
+                          <div style={styles.groupTitleRow}>
+                            <h2 style={styles.groupTitle}>{group.title}</h2>
+                            <span style={styles.groupCountBadge}>{group.items.length}</span>
+                          </div>
+                          {group.description && (
+                            <p style={styles.groupDescription}>{group.description}</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div style={styles.cardInfo}>
-                      <h2 style={styles.cardTitle}>{item.title}</h2>
-                      <p style={styles.cardDescription}>{item.description}</p>
-                    </div>
-                  </motion.div>
+
+                    <motion.div 
+                      key={`dashboard-card-grid-${group.id}`}
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="show"
+                      style={styles.cardGrid}
+                      className="dashboard-card-grid"
+                    >
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isAdminCard = item.isAdminSpecial;
+                        return (
+                          <motion.div
+                            key={item.id}
+                            variants={itemVariants}
+                            whileHover={{ 
+                              scale: 1.015,
+                              y: -3,
+                              boxShadow: isAdminCard 
+                                ? '0 12px 30px rgba(6, 182, 212, 0.25)' 
+                                : '0 12px 30px rgba(37, 99, 235, 0.2)',
+                              borderColor: isAdminCard 
+                                ? 'rgba(6, 182, 212, 0.45)' 
+                                : 'rgba(37, 99, 235, 0.4)'
+                            }}
+                            whileTap={{ scale: 0.99 }}
+                            onClick={() => item.id === 'infractions' ? reviewInfractions() : setActiveTab(item.id)}
+                            className="glass-panel interactive-card"
+                            style={{
+                              ...styles.menuCard,
+                              ...(isAdminCard ? { border: '1px dashed rgba(6, 182, 212, 0.35)' } : {})
+                            }}
+                          >
+                            <div style={{ 
+                              ...styles.cardIconWrapper, 
+                              backgroundColor: isAdminCard ? 'rgba(6, 182, 212, 0.15)' : `${item.color}15`, 
+                              position: 'relative' 
+                            }}>
+                              <Icon size={24} color={item.color} />
+                              {item.badgeCount > 0 && (
+                                <div style={styles.notificationBadge}>
+                                  {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                                </div>
+                              )}
+                            </div>
+                            <div style={styles.cardInfo}>
+                              <h3 style={{ 
+                                ...styles.cardTitle,
+                                ...(isAdminCard ? { color: '#22d3ee' } : {})
+                              }}>
+                                {item.title}
+                              </h3>
+                              <p style={styles.cardDescription}>{item.description}</p>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+                  </section>
                 );
               })}
-
-              {currentUser.isAdmin && (
-                <motion.div
-                  variants={itemVariants}
-                  whileHover={{ 
-                    scale: 1.015,
-                    y: -3,
-                    boxShadow: '0 12px 30px rgba(6, 182, 212, 0.2)',
-                    borderColor: 'rgba(6, 182, 212, 0.4)'
-                  }}
-                  whileTap={{ scale: 0.99 }}
-                  onClick={() => setActiveTab('admin')}
-                  className="glass-panel interactive-card"
-                  style={{ ...styles.menuCard, border: '1px dashed rgba(6, 182, 212, 0.3)' }}
-                >
-                  <div style={{ ...styles.cardIconWrapper, backgroundColor: 'rgba(6, 182, 212, 0.15)' }}>
-                    <Settings size={24} color="#06b6d4" />
-                  </div>
-                  <div style={styles.cardInfo}>
-                    <h2 style={{ ...styles.cardTitle, color: '#22d3ee' }}>Admin Control Center</h2>
-                    <p style={styles.cardDescription}>
-                      Manage approvals, allocate staff schedules, review LOAs, post documents, and log infractions.
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-            </motion.div>
+            </div>
           </motion.div>
           ) : (
           /* Sub-pages Container */
@@ -850,6 +916,69 @@ const styles = {
     fontSize: '1.05rem',
     color: '#9ca3af',
     marginTop: '4px',
+  },
+  groupSectionsWrapper: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '40px',
+  },
+  groupSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  groupHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: '10px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+  },
+  groupHeaderLeft: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  groupIconWrapper: {
+    width: '34px',
+    height: '34px',
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    border: '1px solid rgba(255, 255, 255, 0.05)',
+  },
+  groupTitleCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  groupTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  groupTitle: {
+    fontSize: '1.25rem',
+    fontWeight: '700',
+    color: 'var(--color-text-main)',
+    margin: 0,
+    letterSpacing: '-0.3px',
+  },
+  groupCountBadge: {
+    fontSize: '0.75rem',
+    fontWeight: '700',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    background: 'rgba(255, 255, 255, 0.07)',
+    color: '#94a3b8',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+  },
+  groupDescription: {
+    fontSize: '0.85rem',
+    color: '#9ca3af',
+    margin: 0,
   },
   cardGrid: {
     display: 'grid',
