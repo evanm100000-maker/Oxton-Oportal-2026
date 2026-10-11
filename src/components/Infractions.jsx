@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldAlert, History, Lock, Trash2, ShieldCheck } from 'lucide-react';
+import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock } from 'lucide-react';
 
 export default function Infractions() {
   const { infractions, deleteInfraction, appealInfraction, informalSanctions = [], deleteInformalSanction, currentUser } = useApp();

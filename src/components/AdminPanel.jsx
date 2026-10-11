@@ -3,7 +3,7 @@ import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
-  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff
+  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock
 } from 'lucide-react';
 
 export default function AdminPanel() {
