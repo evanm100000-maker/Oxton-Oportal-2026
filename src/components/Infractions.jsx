@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, Filter } from 'lucide-react';
+import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame } from 'lucide-react';
 
 export default function Infractions() {
   const { 
@@ -50,11 +50,19 @@ export default function Infractions() {
   const myLogs = safeInfractions.filter(inf => inf && inf.staffEmail === myEmail);
   const myInformalSanctions = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail === myEmail);
 
-  // New C1-C5 Tiers
-  const myWarnings = myLogs.filter(inf => inf.type?.startsWith('C1') || inf.type?.startsWith('C2') || inf.type?.toLowerCase().includes('warning'));
-  const myC3Sanctions = myLogs.filter(inf => inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal'));
-  const myC4Detentions = myLogs.filter(inf => inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention'));
-  const myC5Suspensions = myLogs.filter(inf => inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension'));
+  // Individual consequence counts
+  const c1Count = myLogs.filter(inf => inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))).length;
+  const c2Count = myLogs.filter(inf => inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))).length;
+  const genericWarningCount = myLogs.filter(inf => !inf.type?.includes('C1') && !inf.type?.includes('C2') && inf.type?.toLowerCase().includes('warning')).length;
+  const c1c2CombinedCount = c1Count + c2Count + genericWarningCount;
+
+  const c3Count = myLogs.filter(inf => inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')).length + myInformalSanctions.length;
+  const c4Count = myLogs.filter(inf => inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')).length;
+  const c5Count = myLogs.filter(inf => inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')).length;
+
+  // Weighted Total Consequences:
+  // C1 = 1 point, C2 = 2 points, C3 = 3 points, C4 = 4 points (e.g. 2 C4s = 8), C5 = 5 points
+  const totalWeightedPoints = (c1Count * 1) + (c2Count * 2) + (genericWarningCount * 1) + (c3Count * 3) + (c4Count * 4) + (c5Count * 5);
   
   // Upcoming sanctions: C4 detentions that are scheduled or active
   const myUpcomingSanctions = myLogs.filter(inf => {
@@ -104,6 +112,23 @@ export default function Infractions() {
     setShowLogModal(false);
     setLogSuccess('Consequence logged successfully!');
     setTimeout(() => setLogSuccess(''), 4000);
+  };
+
+  // Helper to calculate total consequence points for any staff member
+  const calculateStaffPoints = (email) => {
+    const staffLogs = safeInfractions.filter(inf => inf && inf.staffEmail === email);
+    const staffInformal = safeInformalSanctions.filter(s => s && s.staffEmail === email);
+    let pts = 0;
+    staffLogs.forEach(inf => {
+      if (inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))) pts += 1;
+      else if (inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))) pts += 2;
+      else if (inf.type?.toLowerCase().includes('warning')) pts += 1;
+      else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) pts += 3;
+      else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) pts += 4;
+      else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) pts += 5;
+    });
+    pts += (staffInformal.length * 3);
+    return pts;
   };
 
   // Filter for All Staff tab
@@ -186,16 +211,90 @@ export default function Infractions() {
       {/* Staff View: My Consequences */}
       {(!isAdminOrMod || activeTab === 'my') && (
         <div style={styles.listContainer}>
-          {/* Upcoming Sanctions Section - Matches provided reference design */}
-          <div style={styles.upcomingSanctionsCard}>
-            <div style={styles.upcomingHeader}>
-              <h3 style={styles.upcomingTitle}>Upcoming Sanctions</h3>
+          
+          {/* 1. TOP STATS: Individual Consequences Breakdown & Total Consequences Weighted Points */}
+          <div style={styles.statsGrid}>
+            {/* Total Consequences (Weighted Points: e.g. 2 C4s = 8) */}
+            <div className="glass-panel" style={styles.totalScoreCard}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <span style={styles.totalScoreLabel}>Total Consequences</span>
+                <Flame size={20} color="#f87171" />
+              </div>
+              <div style={styles.totalScoreVal}>{totalWeightedPoints}</div>
+              <div style={styles.totalScoreSub}>
+                Weighted Points (C1=1, C2=2, C3=3, C4=4, C5=5)
+              </div>
             </div>
-            <div style={styles.upcomingBody}>
+
+            {/* C1 - C2 Warnings */}
+            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+              <div style={styles.statHeaderRow}>
+                <span style={{ color: '#93c5fd', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C1 - C2 Warnings</span>
+                <span style={styles.weightBadgeBlue}>1 - 2 pts</span>
+              </div>
+              <div style={{ fontSize: '2.2rem', color: '#60a5fa', fontWeight: '800', margin: '8px 0 4px' }}>{c1c2CombinedCount}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                C1: {c1Count} &bull; C2: {c2Count}
+              </div>
+            </div>
+
+            {/* C3 Informal Sanctions */}
+            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(234, 179, 8, 0.3)' }}>
+              <div style={styles.statHeaderRow}>
+                <span style={{ color: '#fde047', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C3 Informal</span>
+                <span style={styles.weightBadgeYellow}>3 pts each</span>
+              </div>
+              <div style={{ fontSize: '2.2rem', color: '#eab308', fontWeight: '800', margin: '8px 0 4px' }}>{c3Count}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                Official informal sanctions
+              </div>
+            </div>
+
+            {/* C4 Detentions */}
+            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+              <div style={styles.statHeaderRow}>
+                <span style={{ color: '#fcd34d', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C4 Detentions</span>
+                <span style={styles.weightBadgeAmber}>4 pts each</span>
+              </div>
+              <div style={{ fontSize: '2.2rem', color: '#f59e0b', fontWeight: '800', margin: '8px 0 4px' }}>{c4Count}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                20m / 40m Detentions
+              </div>
+            </div>
+
+            {/* C5 Suspensions */}
+            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+              <div style={styles.statHeaderRow}>
+                <span style={{ color: '#fca5a5', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C5 Suspensions</span>
+                <span style={styles.weightBadgeRed}>5 pts each</span>
+              </div>
+              <div style={{ fontSize: '2.2rem', color: '#ef4444', fontWeight: '800', margin: '8px 0 4px' }}>{c5Count}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                2-Day Lockouts
+              </div>
+            </div>
+          </div>
+
+          {/* 2. UPCOMING SANCTIONS: Rendered UNDER the stats, matching the portal dark glass theme */}
+          <div className="glass-panel" style={styles.upcomingThemeCard}>
+            <div style={styles.upcomingHeaderDark}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Clock size={18} color="#fbbf24" />
+                <h3 style={styles.upcomingTitleDark}>Upcoming Sanctions</h3>
+              </div>
+              <span style={styles.upcomingCountBadge}>
+                {myUpcomingSanctions.length} Scheduled
+              </span>
+            </div>
+
+            <div style={styles.upcomingBodyDark}>
               {myUpcomingSanctions.length === 0 ? (
-                <div style={styles.noUpcomingText}>No upcoming sanctions scheduled.</div>
+                <div style={styles.noUpcomingDark}>
+                  <ShieldCheck size={28} color="#10b981" style={{ opacity: 0.6 }} />
+                  <span>No upcoming sanctions scheduled.</span>
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {myUpcomingSanctions.map(sanc => {
                     const isC4b = sanc.type?.includes('C4B') || sanc.type?.toLowerCase().includes('40m');
                     const badgeText = isC4b ? 'C4b' : 'C4a';
@@ -203,17 +302,17 @@ export default function Infractions() {
                     const timeText = sanc.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15');
 
                     return (
-                      <div key={sanc.id} style={styles.upcomingItem}>
-                        <div style={styles.upcomingDateText}>
+                      <div key={sanc.id} style={styles.upcomingItemDark}>
+                        <div style={styles.upcomingDateTextDark}>
                           {formatSanctionDate(sanc.detentionDate || sanc.timestamp)}
                         </div>
-                        <div style={styles.upcomingRow}>
-                          <span style={styles.c4Badge}>{badgeText}</span>
+                        <div style={styles.upcomingRowDark}>
+                          <span style={styles.c4BadgeDark}>{badgeText}</span>
                           {sanc.isEscalation && (
-                            <span style={styles.escalationBadge}>Escalation</span>
+                            <span style={styles.escalationBadgeDark}>Escalation</span>
                           )}
-                          <span style={styles.detentionTitleText}>{titleText}</span>
-                          <div style={styles.detentionTimeRow}>
+                          <span style={styles.detentionTitleTextDark}>{titleText}</span>
+                          <div style={styles.detentionTimeRowDark}>
                             <Clock size={15} color="#94a3b8" />
                             <span>{timeText}</span>
                           </div>
@@ -233,26 +332,7 @@ export default function Infractions() {
             </p>
           </div>
 
-          {/* Updated 4 Tiers: C1-C2 Warnings, C3 Informal, C4 Detentions, C5 Suspensions */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px', marginBottom: '10px' }}>
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(59, 130, 246, 0.25)' }}>
-              <h4 style={{ color: '#93c5fd', margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>C1 - C2 Warnings</h4>
-              <p style={{ fontSize: '2.4rem', color: '#60a5fa', fontWeight: 'bold', margin: '8px 0 0' }}>{myWarnings.length}</p>
-            </div>
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(234, 179, 8, 0.25)' }}>
-              <h4 style={{ color: '#fde047', margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>C3 Informal Sanctions</h4>
-              <p style={{ fontSize: '2.4rem', color: '#eab308', fontWeight: 'bold', margin: '8px 0 0' }}>{myC3Sanctions.length + myInformalSanctions.length}</p>
-            </div>
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(245, 158, 11, 0.25)' }}>
-              <h4 style={{ color: '#fcd34d', margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>C4 Detentions (20m / 40m)</h4>
-              <p style={{ fontSize: '2.4rem', color: '#f59e0b', fontWeight: 'bold', margin: '8px 0 0' }}>{myC4Detentions.length}</p>
-            </div>
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(239, 68, 68, 0.25)' }}>
-              <h4 style={{ color: '#fca5a5', margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>C5 Suspensions</h4>
-              <p style={{ fontSize: '2.4rem', color: '#ef4444', fontWeight: 'bold', margin: '8px 0 0' }}>{myC5Suspensions.length}</p>
-            </div>
-          </div>
-
+          {/* 3. LOG HISTORY */}
           {myLogs.length === 0 && myInformalSanctions.length === 0 ? (
             <div style={styles.emptyState}>
               <ShieldCheck size={48} color="rgba(16, 185, 129, 0.2)" />
@@ -281,7 +361,7 @@ export default function Infractions() {
                           {inf.type}
                         </span>
                         {inf.isEscalation && (
-                          <span style={styles.escalationBadge}>Escalated</span>
+                          <span style={styles.escalationBadgeDark}>Escalated</span>
                         )}
                       </div>
                       <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
@@ -425,6 +505,8 @@ export default function Infractions() {
                 const badgeBg = isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
                 const badgeBorder = isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
 
+                const staffPts = calculateStaffPoints(inf.staffEmail);
+
                 return (
                   <div key={inf.id} style={styles.infractionCard} className="glass-panel">
                     <div style={styles.cardHeader}>
@@ -441,8 +523,11 @@ export default function Infractions() {
                           {inf.type}
                         </span>
                         {inf.isEscalation && (
-                          <span style={styles.escalationBadge}>Escalated</span>
+                          <span style={styles.escalationBadgeDark}>Escalated</span>
                         )}
+                        <span style={styles.staffTotalPointsBadge} title="Staff Member Total Weighted Points">
+                          {staffPts} Total Pts
+                        </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
@@ -547,12 +632,12 @@ export default function Infractions() {
                   }} 
                   className="input-field"
                 >
-                  <option value="C1 Warning">C1 - Warning</option>
-                  <option value="C2 Warning">C2 - Warning</option>
-                  <option value="C3 Informal Sanction">C3 - Informal Sanction</option>
-                  <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention</option>
-                  <option value="C4B - 40m Detention">C4B - 40 minute Detention</option>
-                  <option value="C5 Suspension">C5 - Suspension (2 Days)</option>
+                  <option value="C1 Warning">C1 - Warning (1 pt)</option>
+                  <option value="C2 Warning">C2 - Warning (2 pts)</option>
+                  <option value="C3 Informal Sanction">C3 - Informal Sanction (3 pts)</option>
+                  <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention (4 pts)</option>
+                  <option value="C4B - 40m Detention">C4B - 40 minute Detention (4 pts)</option>
+                  <option value="C5 Suspension">C5 - Suspension (2 Days) (5 pts)</option>
                 </select>
               </div>
 
@@ -700,83 +785,191 @@ const styles = {
     flexDirection: 'column',
     gap: '20px',
   },
-  upcomingSanctionsCard: {
-    background: '#ffffff',
-    borderRadius: '10px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)',
-    border: '1px solid #e2e8f0',
+
+  // 1. STATS GRID & TOTAL CARD
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '14px',
+    marginBottom: '8px',
+  },
+  totalScoreCard: {
+    gridColumn: '1 / -1',
+    padding: '20px 24px',
+    borderRadius: '14px',
+    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%)',
+    border: '1px solid rgba(239, 68, 68, 0.35)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    boxShadow: '0 4px 20px rgba(239, 68, 68, 0.08)',
+  },
+  totalScoreLabel: {
+    fontSize: '0.92rem',
+    fontWeight: '800',
+    color: '#fca5a5',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+  },
+  totalScoreVal: {
+    fontSize: '2.8rem',
+    fontWeight: '900',
+    color: '#f87171',
+    lineHeight: '1.1',
+    margin: '4px 0',
+  },
+  totalScoreSub: {
+    fontSize: '0.8rem',
+    color: '#cbd5e1',
+    opacity: 0.85,
+  },
+  statCard: {
+    padding: '16px 18px',
+    borderRadius: '12px',
+    border: '1px solid',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+  },
+  statHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  weightBadgeBlue: {
+    fontSize: '0.7rem',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    background: 'rgba(59, 130, 246, 0.2)',
+    color: '#93c5fd',
+    fontWeight: '700',
+  },
+  weightBadgeYellow: {
+    fontSize: '0.7rem',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    background: 'rgba(234, 179, 8, 0.2)',
+    color: '#fde047',
+    fontWeight: '700',
+  },
+  weightBadgeAmber: {
+    fontSize: '0.7rem',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    background: 'rgba(245, 158, 11, 0.2)',
+    color: '#fcd34d',
+    fontWeight: '700',
+  },
+  weightBadgeRed: {
+    fontSize: '0.7rem',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    background: 'rgba(239, 68, 68, 0.2)',
+    color: '#fca5a5',
+    fontWeight: '700',
+  },
+
+  // 2. UPCOMING SANCTIONS: PORTAL THEME MATCH
+  upcomingThemeCard: {
+    borderRadius: '14px',
     overflow: 'hidden',
-    color: '#0f172a',
+    border: '1px solid var(--color-border, rgba(255, 255, 255, 0.08))',
+    background: 'var(--color-bg-card, rgba(15, 23, 42, 0.65))',
+    backdropFilter: 'blur(16px)',
   },
-  upcomingHeader: {
+  upcomingHeaderDark: {
     padding: '16px 20px',
-    borderBottom: '1px solid #f1f5f9',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  upcomingTitle: {
+  upcomingTitleDark: {
     margin: 0,
     fontSize: '1.05rem',
     fontWeight: '700',
-    color: '#1e293b',
+    color: 'var(--color-text-main, #f8fafc)',
   },
-  upcomingBody: {
-    padding: '20px',
+  upcomingCountBadge: {
+    fontSize: '0.78rem',
+    fontWeight: '700',
+    padding: '3px 10px',
+    borderRadius: '6px',
+    background: 'rgba(245, 158, 11, 0.15)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
   },
-  noUpcomingText: {
-    color: '#64748b',
-    fontSize: '0.9rem',
-    fontStyle: 'italic',
+  upcomingBodyDark: {
+    padding: '18px 20px',
   },
-  upcomingItem: {
+  noUpcomingDark: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    color: '#94a3b8',
+    fontSize: '0.92rem',
+    padding: '8px 0',
+  },
+  upcomingItemDark: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
+    gap: '8px',
+    padding: '14px 16px',
+    borderRadius: '10px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
   },
-  upcomingDateText: {
-    fontSize: '0.9rem',
+  upcomingDateTextDark: {
+    fontSize: '0.88rem',
     fontWeight: '700',
-    color: '#1e3a5f',
+    color: '#93c5fd',
   },
-  upcomingRow: {
+  upcomingRowDark: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
     flexWrap: 'wrap',
   },
-  c4Badge: {
-    background: '#f59e0b',
-    color: '#ffffff',
+  c4BadgeDark: {
+    background: 'rgba(245, 158, 11, 0.25)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245, 158, 11, 0.45)',
     fontWeight: '800',
     fontSize: '0.75rem',
     padding: '3px 8px',
-    borderRadius: '4px',
+    borderRadius: '6px',
     letterSpacing: '0.02em',
   },
-  escalationBadge: {
-    background: '#fee2e2',
-    color: '#b91c1c',
+  escalationBadgeDark: {
+    background: 'rgba(239, 68, 68, 0.25)',
+    color: '#f87171',
+    border: '1px solid rgba(239, 68, 68, 0.45)',
     fontWeight: '700',
     fontSize: '0.75rem',
     padding: '3px 8px',
-    borderRadius: '4px',
+    borderRadius: '6px',
   },
-  detentionTitleText: {
-    fontSize: '0.9rem',
+  detentionTitleTextDark: {
+    fontSize: '0.92rem',
     fontWeight: '600',
-    color: '#475569',
+    color: '#f1f5f9',
   },
-  detentionTimeRow: {
+  detentionTimeRowDark: {
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
     fontSize: '0.85rem',
-    color: '#64748b',
+    color: '#94a3b8',
     fontWeight: '500',
+    marginLeft: 'auto',
   },
+
+  // 3. LOG HISTORY & DETAILS
   sectionNotice: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    padding: '16px 20px',
+    padding: '14px 18px',
     borderRadius: '12px',
     background: 'rgba(16, 185, 129, 0.05)',
     border: '1px solid rgba(16, 185, 129, 0.2)',
@@ -785,12 +978,6 @@ const styles = {
     fontSize: '0.875rem',
     color: '#a7f3d0',
     margin: 0,
-  },
-  statCard: {
-    padding: '20px',
-    textAlign: 'center',
-    borderRadius: '12px',
-    border: '1px solid',
   },
   emptyState: {
     display: 'flex',
@@ -807,14 +994,14 @@ const styles = {
   list: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '16px',
   },
   infractionCard: {
-    padding: '24px',
-    borderRadius: '16px',
+    padding: '22px',
+    borderRadius: '14px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '14px',
   },
   cardHeader: {
     display: 'flex',
@@ -846,6 +1033,16 @@ const styles = {
     fontSize: '0.75rem',
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  staffTotalPointsBadge: {
+    background: 'rgba(239, 68, 68, 0.15)',
+    color: '#f87171',
+    border: '1px solid rgba(239, 68, 68, 0.3)',
+    fontSize: '0.72rem',
+    fontWeight: '800',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    marginLeft: '6px',
   },
   infDate: {
     fontSize: '0.8rem',
