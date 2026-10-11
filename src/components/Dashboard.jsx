@@ -14,7 +14,7 @@ import Performance from './Performance';
 import Tasks from './Tasks';
 import SupportTickets from './SupportTickets';
 import Analytics from './Analytics';
-import FlightLogs from './FlightLogs';
+import FlightRegister from './FlightRegister';
 import LeaveOfAbsence from './LeaveOfAbsence';
 import Documents from './Documents';
 import Reports from './Reports';
@@ -43,7 +43,8 @@ const tabToPath = {
   leaderboard: '/leaderboard',
   allStaff: '/all-staff',
   reports: '/reports',
-  logs: '/logs',
+  logs: '/flight-register',
+  register: '/flight-register',
   allocation: '/allocation-requests',
   loa: '/loa',
   documents: '/documents',
@@ -54,7 +55,35 @@ const tabToPath = {
 const pathToTab = Object.fromEntries(Object.entries(tabToPath).map(([k, v]) => [v, k]));
 
 export default function Dashboard() {
-  const { currentUser, logout, chatMessages, infractions, flights, pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat } = useApp();
+  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat } = useApp();
+
+  // Compute flight quota progress: 3 completed flights needed to be full (100%)
+  // Either verified 'Present' on flight attendanceRecord OR approved flight log
+  const userCompletedFlights = React.useMemo(() => {
+    if (!currentUser?.email) return 0;
+    const safeEmail = currentUser.email.replace(/\./g, ',');
+    
+    // Flights where admin marked user Present
+    const verifiedPresentFlightIds = new Set();
+    (flights || []).forEach(f => {
+      if (f.attendanceRecord && f.attendanceRecord[safeEmail] === 'Present') {
+        verifiedPresentFlightIds.add(f.id);
+      }
+    });
+
+    // Approved flight logs
+    (flightLogs || []).forEach(log => {
+      if (log.status === 'Approved' && log.submitterEmail === currentUser.email) {
+        verifiedPresentFlightIds.add(log.flightId || log.id);
+      }
+    });
+
+    return verifiedPresentFlightIds.size;
+  }, [flights, flightLogs, currentUser?.email]);
+
+  const quotaTarget = 3;
+  const quotaPercent = Math.min(100, Math.round((userCompletedFlights / quotaTarget) * 100));
+  const isQuotaFull = userCompletedFlights >= quotaTarget;
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
@@ -247,12 +276,12 @@ export default function Dashboard() {
           badgeCount: unreadFlightCount
         },
         {
-          id: 'logs',
-          title: 'Flight Logs',
-          description: 'Submit and inspect detailed flight operations reports.',
+          id: 'register',
+          title: 'Flight Register',
+          description: 'Track crew allocation and verify attendance present or absent.',
           icon: ClipboardList,
           color: '#3b82f6',
-          component: FlightLogs
+          component: FlightRegister
         },
         {
           id: 'calendar',
@@ -494,6 +523,31 @@ export default function Dashboard() {
         <div className="dashboard-nav-brand" style={styles.navBrand} onClick={() => setActiveTab('home')}>
           <img src="./logo.png" alt="Oxton Logo" style={styles.navLogo} />
           <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
+        </div>
+
+        {/* Flight Quota Progress Indicator */}
+        <div style={styles.quotaWidget} title={`${userCompletedFlights} of ${quotaTarget} completed flights`}>
+          <div style={styles.quotaHeader}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Plane size={14} color={isQuotaFull ? '#10b981' : '#3b82f6'} />
+              <span style={styles.quotaLabel}>Flight Quota</span>
+            </div>
+            <span style={{ ...styles.quotaValue, color: isQuotaFull ? '#34d399' : 'var(--color-text-main)' }}>
+              <strong>{userCompletedFlights}</strong> / {quotaTarget} {isQuotaFull ? '✓ Complete' : 'Flights'}
+            </span>
+          </div>
+          <div style={styles.quotaBarTrack}>
+            <div 
+              style={{
+                ...styles.quotaBarFill,
+                width: `${quotaPercent}%`,
+                background: isQuotaFull 
+                  ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' 
+                  : 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)',
+                boxShadow: isQuotaFull ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none'
+              }} 
+            />
+          </div>
         </div>
 
         <div className="dashboard-nav-controls" style={styles.navControls}>
@@ -776,6 +830,49 @@ const styles = {
     maxWidth: '1200px',
     borderRadius: '16px',
     border: '1px solid rgba(255, 255, 255, 0.08)',
+    gap: '20px',
+    flexWrap: 'wrap'
+  },
+  quotaWidget: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    minWidth: '220px',
+    maxWidth: '300px',
+    flex: 1,
+    padding: '8px 14px',
+    borderRadius: '10px',
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid var(--color-border)',
+  },
+  quotaHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '0.8rem',
+  },
+  quotaLabel: {
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    fontSize: '0.75rem',
+  },
+  quotaValue: {
+    fontSize: '0.82rem',
+  },
+  quotaBarTrack: {
+    width: '100%',
+    height: '6px',
+    borderRadius: '999px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+  },
+  quotaBarFill: {
+    height: '100%',
+    borderRadius: '999px',
+    transition: 'width 0.4s ease, background 0.4s ease',
   },
   navBrand: {
     display: 'flex',

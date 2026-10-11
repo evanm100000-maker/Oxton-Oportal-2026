@@ -68,7 +68,10 @@ export default function AdminPanel() {
     addTicketComment,
     emergencyAlertConfig,
     dispatchEmergencyAlert,
-    clearEmergencyAlert
+    clearEmergencyAlert,
+    passDetention,
+    failDetention,
+    rescheduleDetention
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState('approvals');
@@ -123,13 +126,22 @@ export default function AdminPanel() {
   const [suspendModalHours, setSuspendModalHours] = useState('');
   const [suspendModalReason, setSuspendModalReason] = useState('');
   
-  // Infractions state
+  // Infractions / Consequences state
   const [showInfractionModal, setShowInfractionModal] = useState(false);
   const [infStaffEmail, setInfStaffEmail] = useState('');
-  const [infType, setInfType] = useState('Warning');
+  const [infType, setInfType] = useState('C1 Warning');
   const [infMainMessage, setInfMainMessage] = useState('');
   const [infConfidentialMessage, setInfConfidentialMessage] = useState('');
+  const [infDetentionLocation, setInfDetentionLocation] = useState('Hall');
+  const [infDetentionDate, setInfDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [expandedInfractions, setExpandedInfractions] = useState({});
+
+  // Detention Register states
+  const [detentionDateFilter, setDetentionDateFilter] = useState(() => new Date().toISOString().split('T')[0]);
+  const [rescheduleModalItem, setRescheduleModalItem] = useState(null);
+  const [rescheduleNewDate, setRescheduleNewDate] = useState('');
+  const [rescheduleNewTime, setRescheduleNewTime] = useState('');
+  const [rescheduleNewLocation, setRescheduleNewLocation] = useState('Hall');
 
   // Password reset state
   const [newPasswords, setNewPasswords] = useState({});
@@ -249,25 +261,26 @@ export default function AdminPanel() {
         return;
       }
     } else {
-      const wasLogged = addInfraction({ staffEmail: infStaffEmail, type: infType, mainMessage: `[${infCategory}] ${infMainMessage}`, confidentialMessage: infConfidentialMessage });
+      const wasLogged = addInfraction({ 
+        staffEmail: infStaffEmail, 
+        type: infType, 
+        mainMessage: `[${infCategory}] ${infMainMessage}`, 
+        confidentialMessage: infConfidentialMessage,
+        detentionDate: infType.startsWith('C4') ? infDetentionDate : null,
+        detentionLocation: infType.startsWith('C4') ? (infDetentionLocation || 'Hall') : null
+      });
       if (!wasLogged) {
         alert('The consequence could not be logged. Please check the staff member and message.');
         return;
       }
     }
 
-    const targetedUser = users.find(u => u.email === infStaffEmail);
-
     setInfStaffEmail('');
-    setInfType('Warning');
+    setInfType('C1 Warning');
     setInfMainMessage('');
     setInfConfidentialMessage('');
     setShowInfractionModal(false);
     displaySuccess('Consequence successfully logged against staff member.');
-
-    if (targetedUser) {
-      setSuspendModalUser(targetedUser);
-    }
   };
 
   const handleSaveSystemStatus = (e) => {
@@ -419,6 +432,9 @@ export default function AdminPanel() {
         </button>
         <button type="button" onClick={() => setActiveSubTab('infractions')} style={getTabStyle(activeSubTab === 'infractions')}>
           <ShieldAlert size={16} /> Consequences
+        </button>
+        <button type="button" onClick={() => setActiveSubTab('detention_register')} style={getTabStyle(activeSubTab === 'detention_register')}>
+          <Clock size={16} /> Detention Register
         </button>
         <button type="button" onClick={() => setActiveSubTab('flights')} style={getTabStyle(activeSubTab === 'flights')}>
           <Plane size={16} /> Schedule
@@ -648,6 +664,209 @@ export default function AdminPanel() {
       </div>
 
       )}
+
+      {/* Sub Tab: Detention Register */}
+      {activeSubTab === 'detention_register' && (
+      <div id="section-detention_register">
+        <div style={styles.panelSection}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+            <div>
+              <h3 style={styles.panelTitle}>Detention Register</h3>
+              <p style={{ color: '#9ca3af', fontSize: '0.9rem', margin: '4px 0 0 0' }}>
+                Manage scheduled C4 detentions (C4A 20 min, C4B 40 min). Pass completes the sanction on log, Fail escalates to C4B or 2-day C5 suspension.
+              </p>
+            </div>
+
+            {/* Next 7 Days Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ fontSize: '0.85rem', fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase' }}>Select Date:</label>
+              <select
+                value={detentionDateFilter}
+                onChange={(e) => setDetentionDateFilter(e.target.value)}
+                className="input-field"
+                style={{ minWidth: '220px', padding: '10px 14px', borderRadius: '10px' }}
+              >
+                {Array.from({ length: 7 }).map((_, i) => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + i);
+                  const dateStr = d.toISOString().split('T')[0];
+                  const label = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+                  return (
+                    <option key={dateStr} value={dateStr}>
+                      {i === 0 ? `Today (${label})` : i === 1 ? `Tomorrow (${label})` : label}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+
+          {/* Detention List */}
+          {(() => {
+            const filteredDetentions = infractions.filter(inf => {
+              const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus;
+              if (!isDetention) return false;
+              return inf.detentionDate === detentionDateFilter;
+            });
+
+            if (filteredDetentions.length === 0) {
+              return (
+                <div style={styles.emptyGrid}>
+                  <Clock size={40} color="rgba(255,255,255,0.15)" />
+                  <p style={styles.emptyText}>No C4 detentions scheduled for {new Date(detentionDateFilter).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div style={styles.tableWrapper}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.trHead}>
+                      <th style={styles.th}>Staff Member</th>
+                      <th style={styles.th}>Sanction Level</th>
+                      <th style={styles.th}>Location & Time</th>
+                      <th style={styles.th}>Reason</th>
+                      <th style={styles.th}>Status</th>
+                      <th style={{ ...styles.th, textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDetentions.map(item => {
+                      const isPassed = item.detentionStatus === 'Passed';
+                      const isFailed = item.detentionStatus === 'Failed';
+                      const isScheduled = !isPassed && !isFailed;
+                      const isC4b = item.type?.includes('C4B') || item.type?.toLowerCase().includes('40m');
+
+                      return (
+                        <tr key={item.id} style={styles.trBody}>
+                          <td style={styles.td}>
+                            <strong>{item.staffName}</strong><br />
+                            <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{item.staffEmail}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{
+                                ...styles.infractionBadge,
+                                background: isC4b ? 'rgba(245, 158, 11, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                color: isC4b ? '#f59e0b' : '#60a5fa',
+                                borderColor: isC4b ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)'
+                              }}>
+                                {isC4b ? 'C4B (40m)' : 'C4A (20m)'}
+                              </span>
+                              {item.isEscalation && (
+                                <span style={{
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#ef4444',
+                                  fontSize: '0.72rem',
+                                  fontWeight: '700',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px'
+                                }}>
+                                  Escalated
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            <div><strong>{item.detentionLocation || 'Hall'}</strong></div>
+                            <span style={{ fontSize: '0.82rem', color: '#9ca3af' }}>
+                              {item.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15')}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            <div style={{ maxWidth: '300px', fontSize: '0.88rem' }}>{item.mainMessage}</div>
+                          </td>
+                          <td style={styles.td}>
+                            {isPassed && (
+                              <span style={{ color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Check size={14} /> Passed (Complete)
+                              </span>
+                            )}
+                            {isFailed && (
+                              <span style={{ color: '#ef4444', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <X size={14} /> Failed & Escalated
+                              </span>
+                            )}
+                            {isScheduled && (
+                              <span style={{ color: '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Clock size={14} /> Scheduled
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ ...styles.td, textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: '6px' }}>
+                              {isScheduled ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      passDetention(item.id);
+                                      displaySuccess(`Passed detention for ${item.staffName}. Marked as Complete.`);
+                                    }}
+                                    className="btn-success"
+                                    style={styles.loaActionBtn}
+                                    title="Mark Passed (Complete)"
+                                  >
+                                    <Check size={14} /> Pass
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`Fail detention for ${item.staffName}? This will escalate to ${isC4b ? '2-day C5 Suspension' : 'C4B (40m detention)'}.`)) {
+                                        failDetention(item.id);
+                                        displaySuccess(`Failed detention. Escalated sanction logged.`);
+                                      }
+                                    }}
+                                    className="btn-danger"
+                                    style={styles.loaActionBtn}
+                                    title="Mark Failed & Escalate"
+                                  >
+                                    <X size={14} /> Fail
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setRescheduleModalItem(item);
+                                      setRescheduleNewDate(item.detentionDate || detentionDateFilter);
+                                      setRescheduleNewTime(item.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15'));
+                                      setRescheduleNewLocation(item.detentionLocation || 'Hall');
+                                    }}
+                                    className="btn-secondary"
+                                    style={{ ...styles.loaActionBtn, color: 'var(--color-text-main)' }}
+                                    title="Reschedule Detention"
+                                  >
+                                    Reschedule
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRescheduleModalItem(item);
+                                    setRescheduleNewDate(item.detentionDate || detentionDateFilter);
+                                    setRescheduleNewTime(item.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15'));
+                                    setRescheduleNewLocation(item.detentionLocation || 'Hall');
+                                  }}
+                                  className="btn-secondary"
+                                  style={{ ...styles.loaActionBtn, color: 'var(--color-text-main)' }}
+                                  title="Reschedule Detention"
+                                >
+                                  Reschedule
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+        </div>
+      </div>}
       {/* Sub Tab: Staff Management */}
       {activeSubTab === 'staffManagement' && (
       <div id="section-staffManagement">
@@ -1995,21 +2214,44 @@ export default function AdminPanel() {
                 </select>
               </div>
               <div style={styles.inputWrapper}>
-                <label style={styles.label}>Action Level</label>
+                <label style={styles.label}>Action Level *</label>
                 <select value={infType} onChange={e => {
-                  if (e.target.value === 'Suspension') {
-                    setShowInfractionModal(false);
-                    setActiveSubTab('staffManagement');
-                    return;
-                  }
                   setInfType(e.target.value);
                 }} className="input-field">
-                  <option value="Informal Sanction">Informal sanction</option>
-                  <option value="Infraction">Infraction</option>
-                  <option value="Suspension">Suspension</option>
-                  <option value="Warning">Warning</option>
+                  <option value="C1 Warning">C1 - Warning</option>
+                  <option value="C2 Warning">C2 - Warning</option>
+                  <option value="C3 Informal Sanction">C3 - Informal Sanction</option>
+                  <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention</option>
+                  <option value="C4B - 40m Detention">C4B - 40 minute Detention</option>
+                  <option value="C5 Suspension">C5 - Suspension (2 Days)</option>
                 </select>
               </div>
+
+              {infType.startsWith('C4') && (
+                <>
+                  <div style={styles.inputWrapper}>
+                    <label style={styles.label}>Detention Location *</label>
+                    <input
+                      type="text"
+                      required
+                      value={infDetentionLocation}
+                      onChange={e => setInfDetentionLocation(e.target.value)}
+                      placeholder="e.g. Hall, Training Room A, Office"
+                      className="input-field"
+                    />
+                  </div>
+                  <div style={styles.inputWrapper}>
+                    <label style={styles.label}>Detention Scheduled Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={infDetentionDate}
+                      onChange={e => setInfDetentionDate(e.target.value)}
+                      className="input-field"
+                    />
+                  </div>
+                </>
+              )}
 
               <div style={styles.inputWrapper}>
                 <label style={styles.label}>Reason Category</label>
@@ -2018,6 +2260,7 @@ export default function AdminPanel() {
                   <option value="Verbal assault">Verbal assault</option>
                   <option value="Refusing a reasonable request">Refusing a reasonable request</option>
                   <option value="Absence">Absence</option>
+                  <option value="Other">Other</option>
                   <option value="Other">Other</option>
                 </select>
               </div>
@@ -2049,6 +2292,94 @@ export default function AdminPanel() {
               <button type="submit" className="btn-danger" style={styles.submitBtn}>
                 <ShieldAlert size={16} /> Publish Consequence
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule Detention Modal */}
+      {rescheduleModalItem && (
+        <div style={styles.overlay}>
+          <div className="glass-panel" style={{ ...styles.modal, width: '440px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0 }}>
+                Reschedule Detention
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setRescheduleModalItem(null)} 
+                style={{ background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '16px', fontSize: '0.9rem', color: '#9ca3af' }}>
+              Staff: <strong>{rescheduleModalItem.staffName}</strong> ({rescheduleModalItem.type})
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!rescheduleNewDate) return alert('Please enter a date.');
+                rescheduleDetention(rescheduleModalItem.id, rescheduleNewDate, rescheduleNewTime, rescheduleNewLocation);
+                setRescheduleModalItem(null);
+                displaySuccess('Detention rescheduled successfully.');
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+            >
+              <div style={styles.inputWrapper}>
+                <label style={styles.label}>New Detention Date *</label>
+                <input
+                  type="date"
+                  required
+                  value={rescheduleNewDate}
+                  onChange={e => setRescheduleNewDate(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div style={styles.inputWrapper}>
+                <label style={styles.label}>Detention Time Slot *</label>
+                <input
+                  type="text"
+                  required
+                  value={rescheduleNewTime}
+                  onChange={e => setRescheduleNewTime(e.target.value)}
+                  placeholder="e.g. 14:55 - 15:35"
+                  className="input-field"
+                />
+              </div>
+
+              <div style={styles.inputWrapper}>
+                <label style={styles.label}>Detention Location *</label>
+                <input
+                  type="text"
+                  required
+                  value={rescheduleNewLocation}
+                  onChange={e => setRescheduleNewLocation(e.target.value)}
+                  placeholder="e.g. Hall, Training Room"
+                  className="input-field"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setRescheduleModalItem(null)}
+                  className="btn-secondary"
+                  style={{ padding: '8px 16px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ padding: '8px 20px', borderRadius: '8px' }}
+                >
+                  Confirm Reschedule
+                </button>
+              </div>
             </form>
           </div>
         </div>

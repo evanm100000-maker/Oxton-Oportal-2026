@@ -16,10 +16,24 @@ export default function Infractions() {
 
   // Filter infractions based on role
   const myLogs = infractions.filter(inf => inf.staffEmail === currentUser.email);
-  const mySuspensions = myLogs.filter(inf => inf.type === 'Suspension');
-  const myRegularInfractions = myLogs.filter(inf => inf.type !== 'Suspension');
+  const mySuspensions = myLogs.filter(inf => inf.type === 'C5 Suspension' || inf.type === 'Suspension');
+  const myRegularInfractions = myLogs.filter(inf => !inf.type?.includes('Suspension'));
   
-  const myInformalSanctions = informalSanctions.filter(sanc => sanc.staffEmail === currentUser.email);
+  // Upcoming sanctions: C4 detentions that are scheduled or active
+  const myUpcomingSanctions = myLogs.filter(inf => {
+    const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus === 'Scheduled';
+    return isDetention && inf.detentionStatus !== 'Passed';
+  });
+
+  const formatSanctionDate = (dateStr) => {
+    if (!dateStr) return 'Upcoming';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -57,6 +71,44 @@ export default function Infractions() {
       {/* Staff View: My Infractions */}
       {(!currentUser.isAdmin && currentUser.siteRole !== 'Moderator' || activeTab === 'my') && (
         <div style={styles.listContainer}>
+          {/* Upcoming Sanctions Section - Matches provided reference design */}
+          <div style={styles.upcomingSanctionsCard}>
+            <div style={styles.upcomingHeader}>
+              <h3 style={styles.upcomingTitle}>Upcoming Sanctions</h3>
+            </div>
+            <div style={styles.upcomingBody}>
+              {myUpcomingSanctions.length === 0 ? (
+                <div style={styles.noUpcomingText}>No upcoming sanctions scheduled.</div>
+              ) : (
+                myUpcomingSanctions.map(sanc => {
+                  const isC4b = sanc.type?.includes('C4B') || sanc.type?.toLowerCase().includes('40m');
+                  const badgeText = isC4b ? 'C4b' : 'C4a';
+                  const titleText = `${isC4b ? 'C4B' : 'C4A'} (${sanc.detentionLocation || 'Hall'})`;
+                  const timeText = sanc.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15');
+
+                  return (
+                    <div key={sanc.id} style={styles.upcomingItem}>
+                      <div style={styles.upcomingDateText}>
+                        {formatSanctionDate(sanc.detentionDate || sanc.timestamp)}
+                      </div>
+                      <div style={styles.upcomingRow}>
+                        <span style={styles.c4Badge}>{badgeText}</span>
+                        {sanc.isEscalation && (
+                          <span style={styles.escalationBadge}>Escalation</span>
+                        )}
+                        <span style={styles.detentionTitleText}>{titleText}</span>
+                        <div style={styles.detentionTimeRow}>
+                          <Clock size={15} color="#94a3b8" />
+                          <span>{timeText}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
           <div style={styles.sectionNotice} className="glass-panel">
             <ShieldCheck size={18} color="#10b981" />
             <p style={styles.noticeText}>
@@ -306,6 +358,78 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '20px',
+  },
+  upcomingSanctionsCard: {
+    background: '#ffffff',
+    borderRadius: '10px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)',
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
+    color: '#0f172a'
+  },
+  upcomingHeader: {
+    padding: '16px 20px',
+    borderBottom: '1px solid #f1f5f9'
+  },
+  upcomingTitle: {
+    margin: 0,
+    fontSize: '1.05rem',
+    fontWeight: '700',
+    color: '#1e293b'
+  },
+  upcomingBody: {
+    padding: '20px'
+  },
+  noUpcomingText: {
+    color: '#64748b',
+    fontSize: '0.9rem',
+    fontStyle: 'italic'
+  },
+  upcomingItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  upcomingDateText: {
+    fontSize: '0.9rem',
+    fontWeight: '700',
+    color: '#1e3a5f'
+  },
+  upcomingRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap'
+  },
+  c4Badge: {
+    background: '#f59e0b',
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: '0.75rem',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    letterSpacing: '0.02em'
+  },
+  escalationBadge: {
+    background: '#fee2e2',
+    color: '#b91c1c',
+    fontWeight: '700',
+    fontSize: '0.75rem',
+    padding: '3px 8px',
+    borderRadius: '4px'
+  },
+  detentionTitleText: {
+    fontSize: '0.9rem',
+    fontWeight: '600',
+    color: '#475569'
+  },
+  detentionTimeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '0.85rem',
+    color: '#64748b',
+    fontWeight: '500'
   },
   sectionNotice: {
     display: 'flex',

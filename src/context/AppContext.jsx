@@ -1333,6 +1333,26 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
+  const markFlightAttendance = (flightId, email, status) => {
+    const safeEmail = escapeEmail(email);
+    setFlights(prev => prev.map(f => {
+      if (f.id !== flightId) return f;
+      const currentRecord = f.attendanceRecord || {};
+      const newRecord = { ...currentRecord, [safeEmail]: status };
+      return { ...f, attendanceRecord: newRecord };
+    }));
+
+    // If marked Present, award 7 points for completing flight if not already awarded
+    if (status === 'Present') {
+      const user = users.find(u => u.email === email);
+      if (user) {
+        setUsers(prev => prev.map(u => u.email === email ? { ...u, points: Number(u.points || 0) + 7 } : u));
+        logPointsAction(email, 7, `Flight Attendance Verified: Present`);
+      }
+    }
+    logAction('flight_attendance_marked', `Marked ${email} as ${status} on flight ${flightId}`, { flightId, email, status });
+  };
+
   const addInfraction = (infData) => {
     const staffEmail = infData.staffEmail?.trim();
     const mainMessage = infData.mainMessage?.trim();
@@ -1343,13 +1363,22 @@ export const AppProvider = ({ children }) => {
     if (!canTakeAction(currentUser, staffUser)) {
       return false; 
     }
+
+    const type = infData.type || 'C1 Warning';
+    const isDetention = type.startsWith('C4');
+
     const newInfraction = {
       id: makeId('inf'),
       staffEmail,
       staffName: staffUser ? `${staffUser.firstName} ${staffUser.lastName}` : staffEmail,
-      type: infData.type || 'Warning',
+      type,
       mainMessage,
       confidentialMessage: infData.confidentialMessage?.trim() || '',
+      detentionDate: infData.detentionDate || (isDetention ? new Date(Date.now() + 86400000).toISOString().split('T')[0] : null),
+      detentionTime: infData.detentionTime || (isDetention ? (type.includes('C4B') ? '14:55 - 15:35' : '14:55 - 15:15') : null),
+      detentionLocation: infData.detentionLocation || (isDetention ? 'Hall' : null),
+      detentionStatus: isDetention ? 'Scheduled' : null, // 'Scheduled' | 'Passed' | 'Failed'
+      isEscalation: !!infData.isEscalation,
       issuedByEmail: currentUser.email,
       issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
       timestamp: new Date().toISOString()
@@ -1357,15 +1386,94 @@ export const AppProvider = ({ children }) => {
     
     setInfractions(prev => [newInfraction, ...prev]);
     
-    if (infData.type !== 'Suspension') {
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - 10, lastInfractionDate: new Date().toISOString() } : u));
-      logPointsAction(staffEmail, -10, `Infraction: ${mainMessage}`);
+    if (type === 'C5 Suspension') {
+      // 2 days suspension = 48 hours
+      const suspendedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, lastInfractionDate: new Date().toISOString() } : u));
     } else {
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, lastInfractionDate: new Date().toISOString() } : u));
+      const deduction = type.startsWith('C4') ? 10 : (type.startsWith('C3') ? 5 : 2);
+      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - deduction, lastInfractionDate: new Date().toISOString() } : u));
+      logPointsAction(staffEmail, -deduction, `Sanction ${type}: ${mainMessage}`);
     }
     
-    logAction('infraction_added', `Issued ${infData.type || 'Warning'} to ${staffEmail}`, { staffEmail, mainMessage });
+    logAction('infraction_added', `Issued ${type} to ${staffEmail}`, { staffEmail, mainMessage, type });
     return true;
+  };
+
+  const passDetention = (infractionId) => {
+    setInfractions(prev => prev.map(inf => {
+      if (inf.id !== infractionId) return inf;
+      return { ...inf, detentionStatus: 'Passed', completedAt: new Date().toISOString() };
+    }));
+    logAction('detention_passed', `Detention marked passed for ${infractionId}`, { infractionId });
+  };
+
+  const failDetention = (infractionId) => {
+    const target = infractions.find(i => i.id === infractionId);
+    if (!target) return;
+
+    // Mark current as failed
+    setInfractions(prev => prev.map(inf => {
+      if (inf.id !== infractionId) return inf;
+      return { ...inf, detentionStatus: 'Failed', failedAt: new Date().toISOString() };
+    }));
+
+    // If it was C4A, escalate to C4B (40 min detention)
+    // If it was C4B, escalate to C5 2-day suspension
+    if (target.type.includes('C4A') || target.type === 'C4A - Infraction + 20m Detention') {
+      const nextDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      const escalatedInfraction = {
+        id: makeId('inf'),
+        staffEmail: target.staffEmail,
+        staffName: target.staffName,
+        type: 'C4B - 40m Detention',
+        mainMessage: `Escalated from failed C4A detention. Original reason: ${target.mainMessage}`,
+        confidentialMessage: `Escalated from detention #${target.id}`,
+        detentionDate: nextDate,
+        detentionTime: '14:55 - 15:35',
+        detentionLocation: target.detentionLocation || 'Hall',
+        detentionStatus: 'Scheduled',
+        isEscalation: true,
+        issuedByEmail: currentUser.email,
+        issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+        timestamp: new Date().toISOString()
+      };
+      setInfractions(prev => [escalatedInfraction, ...prev]);
+      logAction('detention_escalated', `Detention escalated to C4B for ${target.staffEmail}`, { targetId: infractionId });
+    } else {
+      // Escalate to C5 2-day suspension
+      const suspendedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      setUsers(prev => prev.map(u => u.email === target.staffEmail ? { ...u, suspendedUntil, lastInfractionDate: new Date().toISOString() } : u));
+      const escalatedSuspension = {
+        id: makeId('inf'),
+        staffEmail: target.staffEmail,
+        staffName: target.staffName,
+        type: 'C5 Suspension',
+        mainMessage: `2-Day Suspension: Escalated from failed C4B detention. Original reason: ${target.mainMessage}`,
+        confidentialMessage: `Expires ${new Date(suspendedUntil).toLocaleString()}`,
+        detentionStatus: null,
+        isEscalation: true,
+        issuedByEmail: currentUser.email,
+        issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
+        timestamp: new Date().toISOString()
+      };
+      setInfractions(prev => [escalatedSuspension, ...prev]);
+      logAction('detention_escalated', `Detention escalated to 2-day C5 Suspension for ${target.staffEmail}`, { targetId: infractionId });
+    }
+  };
+
+  const rescheduleDetention = (infractionId, newDate, newTime, newLocation) => {
+    setInfractions(prev => prev.map(inf => {
+      if (inf.id !== infractionId) return inf;
+      return {
+        ...inf,
+        detentionDate: newDate || inf.detentionDate,
+        detentionTime: newTime || inf.detentionTime,
+        detentionLocation: newLocation || inf.detentionLocation,
+        rescheduledAt: new Date().toISOString()
+      };
+    }));
+    logAction('detention_rescheduled', `Rescheduled detention for ${infractionId}`, { infractionId, newDate, newTime, newLocation });
   };
 
   const deleteInfraction = (infId) => {
@@ -1938,6 +2046,10 @@ useEffect(() => {
           setEmergencyAlertConfig(prev => ({ ...prev, isActive: false }));
           logAction('emergency_alert_cleared', 'Cleared emergency alert');
         },
+        markFlightAttendance,
+        passDetention,
+        failDetention,
+        rescheduleDetention,
         informalSanctions,
         addInformalSanction,
         deleteInformalSanction,
