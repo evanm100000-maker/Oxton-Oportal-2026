@@ -18,16 +18,26 @@ export default function StaffChat() {
   const messagesEndRef = useRef(null);
 
   const safeChatMessages = Array.isArray(chatMessages) ? chatMessages : [];
-  const filteredMessages = safeChatMessages.filter(m => m.channel === activeChannel);
 
-  // Scroll to the newest messages when opening a channel or when new messages are added
+  // Sort chronologically: oldest at top, newest at bottom (normal chat behavior)
+  const filteredMessages = React.useMemo(() => {
+    return safeChatMessages
+      .filter(m => m && m.channel === activeChannel)
+      .sort((a, b) => {
+        const timeA = new Date(a.timestamp || 0).getTime();
+        const timeB = new Date(b.timestamp || 0).getTime();
+        return timeA - timeB;
+      });
+  }, [safeChatMessages, activeChannel]);
+
+  // Scroll to the newest messages at the bottom when opening a channel or when new messages arrive
   useEffect(() => {
-    const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    const scrollToBottom = (behavior = 'auto') => {
+      messagesEndRef.current?.scrollIntoView({ behavior });
     };
-    scrollToBottom();
-    // Fallback to ensure it scrolls even if DOM takes a moment to update/render images
-    setTimeout(scrollToBottom, 100);
+    scrollToBottom('auto');
+    const timer = setTimeout(() => scrollToBottom('auto'), 120);
+    return () => clearTimeout(timer);
   }, [activeChannel, filteredMessages.length]);
 
   const handleSend = async (e) => {
