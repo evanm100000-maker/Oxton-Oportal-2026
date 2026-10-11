@@ -15,12 +15,18 @@ export default function Infractions() {
   };
 
   // Filter infractions based on role
-  const myLogs = infractions.filter(inf => inf.staffEmail === currentUser.email);
-  const mySuspensions = myLogs.filter(inf => inf.type === 'C5 Suspension' || inf.type === 'Suspension');
-  const myRegularInfractions = myLogs.filter(inf => !inf.type?.includes('Suspension'));
+  const safeInfractions = Array.isArray(infractions) ? infractions : [];
+  const safeInformalSanctions = Array.isArray(informalSanctions) ? informalSanctions : [];
+  const myEmail = currentUser?.email || '';
+
+  const myLogs = safeInfractions.filter(inf => inf && inf.staffEmail === myEmail);
+  const mySuspensions = myLogs.filter(inf => inf && (inf.type === 'C5 Suspension' || inf.type === 'Suspension'));
+  const myRegularInfractions = myLogs.filter(inf => inf && !inf.type?.includes('Suspension'));
+  const myInformalSanctions = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail === myEmail);
   
   // Upcoming sanctions: C4 detentions that are scheduled or active
   const myUpcomingSanctions = myLogs.filter(inf => {
+    if (!inf) return false;
     const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus === 'Scheduled';
     return isDetention && inf.detentionStatus !== 'Passed';
   });
@@ -29,15 +35,29 @@ export default function Infractions() {
     if (!dateStr) return 'Upcoming';
     try {
       const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
       return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     } catch {
-      return dateStr;
+      return String(dateStr);
     }
   };
 
+  const isAdminOrMod = Boolean(currentUser?.isAdmin || currentUser?.siteRole === 'Moderator');
+
+  if (!currentUser) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.emptyState}>
+          <ShieldAlert size={48} color="rgba(255,255,255,0.15)" />
+          <p style={styles.emptyText}>Please sign in to view your consequences.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.container}>
-      {(currentUser.isAdmin || currentUser.siteRole === 'Moderator') && (
+      {isAdminOrMod && (
         <div style={styles.tabHeader}>
           <button
             onClick={() => setActiveTab('my')}
@@ -63,13 +83,13 @@ export default function Infractions() {
             }}
           >
             <History size={16} />
-            All Staff Consequences ({infractions.length})
+            All Staff Consequences ({safeInfractions.length})
           </button>
         </div>
       )}
 
       {/* Staff View: My Infractions */}
-      {(!currentUser.isAdmin && currentUser.siteRole !== 'Moderator' || activeTab === 'my') && (
+      {(!isAdminOrMod || activeTab === 'my') && (
         <div style={styles.listContainer}>
           {/* Upcoming Sanctions Section - Matches provided reference design */}
           <div style={styles.upcomingSanctionsCard}>
@@ -149,7 +169,7 @@ export default function Infractions() {
                         border: '1px solid rgba(234, 179, 8, 0.3)'
                       }}>Informal Sanction</span>
                     </div>
-                    <span style={styles.infDate}>{new Date(sanc.timestamp).toLocaleDateString()}</span>
+                    <span style={styles.infDate}>{formatSanctionDate(sanc.timestamp || sanc.date)}</span>
                   </div>
                   <div style={styles.messageBox}>
                     <h5 style={styles.boxLabel}>Reason / Details:</h5>
@@ -163,12 +183,12 @@ export default function Infractions() {
                     <div style={styles.typeBadgeContainer}>
                       <span style={{
                         ...styles.infractionType, 
-                        background: inf.type === 'Suspension' ? 'rgba(251, 146, 60, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                        color: inf.type === 'Suspension' ? '#fb923c' : '#f87171',
-                        border: inf.type === 'Suspension' ? '1px solid rgba(251, 146, 60, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
+                        background: inf.type?.includes('Suspension') ? 'rgba(251, 146, 60, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: inf.type?.includes('Suspension') ? '#fb923c' : '#f87171',
+                        border: inf.type?.includes('Suspension') ? '1px solid rgba(251, 146, 60, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)'
                       }}>{inf.type}</span>
                     </div>
-                    <span style={styles.infDate}>{inf.date}</span>
+                    <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
                   </div>
                   <div style={styles.messageBox}>
                     <h5 style={styles.boxLabel}>Reason / Details:</h5>
@@ -203,7 +223,7 @@ export default function Infractions() {
                   )}
 
                   <div style={styles.cardFooter}>
-                    <span>Logged by Administrator: <strong>{inf.adminName}</strong></span>
+                    <span>Logged by Administrator: <strong>{inf.adminName || inf.issuedByName || 'Administrator'}</strong></span>
                   </div>
                 </div>
               ))}
@@ -213,16 +233,16 @@ export default function Infractions() {
       )}
 
       {/* Admin View: All Infractions */}
-      {(currentUser.isAdmin || currentUser.siteRole === 'Moderator') && activeTab === 'all' && (
+      {isAdminOrMod && activeTab === 'all' && (
         <div style={styles.listContainer}>
-          {infractions.length === 0 && informalSanctions.length === 0 ? (
+          {safeInfractions.length === 0 && safeInformalSanctions.length === 0 ? (
             <div style={styles.emptyState}>
               <ShieldAlert size={48} color="rgba(255,255,255,0.15)" />
               <p style={styles.emptyText}>No consequences logged in the system.</p>
             </div>
           ) : (
             <div style={styles.list}>
-              {informalSanctions.map(sanc => (
+              {safeInformalSanctions.map(sanc => (
                 <div key={sanc.id} style={styles.infractionCard} className="glass-panel">
                   <div style={styles.cardHeader}>
                     <div style={styles.typeBadgeContainer}>
@@ -238,7 +258,7 @@ export default function Infractions() {
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={styles.infDate}>{new Date(sanc.timestamp).toLocaleDateString()}</span>
+                      <span style={styles.infDate}>{formatSanctionDate(sanc.timestamp || sanc.date)}</span>
                       {(currentUser?.siteRole === 'Owner' || currentUser?.email?.toLowerCase() === 'evanm.100000@gmail.com') && (
                         <button
                           onClick={() => {
@@ -260,11 +280,11 @@ export default function Infractions() {
                     <p style={styles.messageText}>{sanc.reason}</p>
                   </div>
                   <div style={styles.cardFooter}>
-                    <span>Logged by Admin: <strong>{sanc.issuedByName}</strong></span>
+                    <span>Logged by Admin: <strong>{sanc.issuedByName || sanc.adminName || 'Admin'}</strong></span>
                   </div>
                 </div>
               ))}
-              {infractions.map(inf => (
+              {safeInfractions.map(inf => (
                 <div key={inf.id} style={styles.infractionCard} className="glass-panel">
                   <div style={styles.cardHeader}>
                     <div style={styles.typeBadgeContainer}>
@@ -281,7 +301,7 @@ export default function Infractions() {
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={styles.infDate}>{inf.date}</span>
+                      <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
                       {(currentUser?.siteRole === 'Owner' || currentUser?.email?.toLowerCase() === 'evanm.100000@gmail.com') && (
                         <button
                           onClick={() => handleDelete(inf.id)}
@@ -312,7 +332,7 @@ export default function Infractions() {
                   )}
 
                   <div style={styles.cardFooter}>
-                    <span>Logged by Admin: <strong>{inf.adminName}</strong></span>
+                    <span>Logged by Admin: <strong>{inf.adminName || inf.issuedByName || 'Administrator'}</strong></span>
                   </div>
                 </div>
               ))}

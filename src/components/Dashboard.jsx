@@ -233,25 +233,26 @@ export default function Dashboard() {
   const unreadDocumentsCount = Math.max(0, (Array.isArray(documents) ? documents.length : 0) - lastReadDocumentsCount);
   const unreadReportsCount = Math.max(0, (Array.isArray(reports) ? reports.length : 0) - lastReadReportsCount);
   const myInfractions = React.useMemo(
-    () => infractions.filter(inf => inf.staffEmail === currentUser.email),
-    [infractions, currentUser.email]
+    () => (Array.isArray(infractions) ? infractions : []).filter(inf => inf && inf.staffEmail === currentUser?.email),
+    [infractions, currentUser?.email]
   );
-  const unreadInfractions = myInfractions.filter(inf => !reviewedInfractionIds.includes(inf.id));
+  const unreadInfractions = myInfractions.filter(inf => inf && !reviewedInfractionIds.includes(inf.id));
 
   const myTasks = React.useMemo(
-    () => (tasks || []).filter(t => t.assignedToEmail === currentUser.email && t.status !== 'Completed'),
-    [tasks, currentUser.email]
+    () => (tasks || []).filter(t => t && t.assignedToEmail === currentUser?.email && t.status !== 'Completed'),
+    [tasks, currentUser?.email]
   );
   const pendingTasksCount = myTasks.length;
 
   const markInfractionsReviewed = React.useCallback(() => {
+    if (!currentUser?.email) return;
     const reviewedIds = Array.from(new Set([
       ...reviewedInfractionIds,
-      ...myInfractions.map(inf => inf.id)
+      ...myInfractions.map(inf => inf?.id).filter(Boolean)
     ]));
     setReviewedInfractionIds(reviewedIds);
     localStorage.setItem(`oxton_infraction_reviewed_${currentUser.email}`, JSON.stringify(reviewedIds));
-  }, [currentUser.email, myInfractions, reviewedInfractionIds]);
+  }, [currentUser?.email, myInfractions, reviewedInfractionIds]);
 
   const reviewInfractions = () => {
     markInfractionsReviewed();
