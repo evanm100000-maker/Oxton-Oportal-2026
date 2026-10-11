@@ -225,6 +225,20 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
           }
           if (Array.isArray(normalizedData)) {
             normalizedData = normalizedData.filter(item => item !== null && item !== undefined);
+            
+            // Deduplicate items by email (case-insensitive) or by id
+            const seenKeys = new Set();
+            normalizedData = normalizedData.filter(item => {
+              const uniqueKey = item.email 
+                ? item.email.toLowerCase().trim() 
+                : (item.id || item._firebaseKey || null);
+              if (uniqueKey) {
+                if (seenKeys.has(uniqueKey)) return false;
+                seenKeys.add(uniqueKey);
+              }
+              return true;
+            });
+
             normalizedData.reverse(); // Ensure newest items are at the top
           } else {
             normalizedData = [];
@@ -242,8 +256,21 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
   const updateData = (updater) => {
     setLocalData(prev => {
       const currentArray = prev || [];
-      const nextArray = typeof updater === 'function' ? updater(currentArray) : updater;
+      let nextArray = typeof updater === 'function' ? updater(currentArray) : updater;
       
+      if (Array.isArray(nextArray)) {
+        const seenKeys = new Set();
+        nextArray = nextArray.filter(item => {
+          if (!item) return false;
+          const uniqueKey = item.email ? item.email.toLowerCase().trim() : (item.id || null);
+          if (uniqueKey) {
+            if (seenKeys.has(uniqueKey)) return false;
+            seenKeys.add(uniqueKey);
+          }
+          return true;
+        });
+      }
+
       const db = getDatabase(firebaseApp);
       const updates = {};
       
@@ -251,8 +278,8 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
       nextArray.forEach(item => {
         let fbKey = item._firebaseKey;
         if (!fbKey) {
-          // New item! Use id, email, or a random string as the key
-          fbKey = item.id || (item.email ? item.email.replace(/\./g, ',') : Math.random().toString(36).substring(2, 10));
+          // New item! Use id, normalized email, or a random string as the key
+          fbKey = item.id || (item.email ? item.email.toLowerCase().trim().replace(/\./g, ',') : Math.random().toString(36).substring(2, 10));
           Object.defineProperty(item, '_firebaseKey', { value: fbKey, enumerable: false, writable: true });
         }
         
