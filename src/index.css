@@ -19,39 +19,28 @@
 }
 
 body.light-mode {
-  --color-bg-deep: #f1f5f9;
-  --color-bg-card: rgba(255, 255, 255, 0.85);
+  --color-bg-deep: #f8fafc;
+  --color-bg-card: rgba(255, 255, 255, 0.88);
   --color-bg-card-hover: #ffffff;
-  --color-border: rgba(203, 213, 225, 0.85);
+  --color-border: #e2e8f0;
   --color-border-glow: rgba(99, 102, 241, 0.25);
   --color-text-main: #0f172a;
   --color-text-muted: #64748b;
-  background-color: #f1f5f9;
+  background-color: #f8fafc;
   background-image: 
-    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
-  background-size: 44px 44px;
+    radial-gradient(ellipse 80% 50% at 15% -10%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 20%, rgba(14, 165, 233, 0.07), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 50% 105%, rgba(168, 85, 247, 0.06), transparent 60%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-}
-
-/* Ambient Animated Orbs & Grid Background */
-@keyframes floatOrb1 {
-  0% { transform: translate(0px, 0px) scale(1); }
-  33% { transform: translate(45px, -35px) scale(1.08); }
-  66% { transform: translate(-30px, 25px) scale(0.95); }
-  100% { transform: translate(0px, 0px) scale(1); }
-}
-
-@keyframes floatOrb2 {
-  0% { transform: translate(0px, 0px) scale(1); }
-  33% { transform: translate(-40px, 30px) scale(1.1); }
-  66% { transform: translate(35px, -25px) scale(0.93); }
-  100% { transform: translate(0px, 0px) scale(1); }
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -63,52 +52,15 @@ body {
   line-height: 1.5;
   letter-spacing: -0.01em;
   position: relative;
+  -webkit-tap-highlight-color: transparent;
   background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 44px 44px;
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 25%, rgba(6, 182, 212, 0.12), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 50% 110%, rgba(139, 92, 246, 0.14), transparent 60%),
+    radial-gradient(ellipse 50% 30% at 10% 85%, rgba(30, 58, 138, 0.22), transparent 55%);
   background-attachment: fixed;
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-body::before, body::after {
-  content: '';
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: -1;
-  pointer-events: none;
-  filter: blur(80px);
-  will-change: transform;
-}
-
-/* Dark mode ambient floating gradients */
-body::before {
-  background: 
-    radial-gradient(circle at 18% 22%, rgba(99, 102, 241, 0.35) 0%, transparent 46%),
-    radial-gradient(circle at 82% 78%, rgba(139, 92, 246, 0.28) 0%, transparent 45%);
-  animation: floatOrb1 18s ease-in-out infinite alternate;
-}
-
-body::after {
-  background: 
-    radial-gradient(circle at 75% 20%, rgba(6, 182, 212, 0.25) 0%, transparent 42%),
-    radial-gradient(circle at 20% 80%, rgba(30, 58, 138, 0.4) 0%, transparent 52%);
-  animation: floatOrb2 22s ease-in-out infinite alternate;
-}
-
-/* Light mode ambient floating gradients */
-body.light-mode::before {
-  background: 
-    radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 85% 72%, rgba(14, 165, 233, 0.10) 0%, transparent 48%);
-  animation: floatOrb1 20s ease-in-out infinite alternate;
-}
-
-body.light-mode::after {
-  background: 
-    radial-gradient(circle at 80% 22%, rgba(168, 85, 247, 0.10) 0%, transparent 46%),
-    radial-gradient(circle at 20% 82%, rgba(244, 63, 94, 0.06) 0%, transparent 50%);
-  animation: floatOrb2 25s ease-in-out infinite alternate;
+  background-repeat: no-repeat;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 /* Custom Scrollbar */
@@ -127,39 +79,49 @@ body.light-mode::after {
   background: rgba(139, 92, 246, 0.6);
 }
 
-/* Glassmorphism utilities */
+/* Glassmorphism utilities - Optimized for 120 FPS */
 .glass-panel {
   background: var(--color-bg-card);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--color-border);
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
-  border-left: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.4);
   border-radius: 16px;
 }
 
 .glass-panel-glow {
   background: var(--color-bg-card);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 12px 40px -10px rgba(139, 92, 246, 0.2), 0 0 20px 0 rgba(59, 130, 246, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  box-shadow: 0 10px 30px -8px rgba(139, 92, 246, 0.25);
   border-radius: 16px;
 }
 
-/* Clean Hover Animations */
+/* Buttery Smooth Hardware-Accelerated Interactive Cards */
 .interactive-card {
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  will-change: transform, box-shadow;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background 0.2s ease;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-.interactive-card:hover {
-  transform: translateY(-4px) scale(1.02);
-  border-color: rgba(139, 92, 246, 0.5);
-  box-shadow: 0 20px 40px -10px rgba(139, 92, 246, 0.35);
-  background: var(--color-bg-card-hover);
+@media (hover: hover) and (pointer: fine) {
+  .interactive-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(139, 92, 246, 0.5);
+    box-shadow: 0 14px 32px -6px rgba(37, 99, 235, 0.25);
+    background: var(--color-bg-card-hover);
+  }
+  .interactive-card.admin-special-card:hover {
+    border-color: rgba(6, 182, 212, 0.65) !important;
+    box-shadow: 0 14px 32px -6px rgba(6, 182, 212, 0.28) !important;
+  }
+}
+
+.interactive-card:active {
+  transform: scale(0.985);
+  transition-duration: 0.08s;
 }
 
 /* Buttons */
@@ -436,31 +398,105 @@ button {
 }
 
 /* Mobile Responsiveness Overrides */
-@media screen and (max-width: 800px) {
+/* Mobile & Tablet Responsiveness Overrides */
+@media screen and (max-width: 768px) {
+  html, body {
+    overflow-x: hidden !important;
+    width: 100% !important;
+  }
+
+  /* Tap targets and touch feel */
+  button, select, input, .interactive-card {
+    touch-action: manipulation;
+  }
+
   .warning-banner-container {
     bottom: auto !important;
     top: 0 !important;
-    padding-top: 16px !important;
+    padding-top: 12px !important;
+    width: calc(100% - 24px) !important;
+    right: 12px !important;
   }
 
   .dashboard-navbar {
     flex-direction: column !important;
-    gap: 16px !important;
-    padding: 16px !important;
+    gap: 12px !important;
+    padding: 12px 14px !important;
     border-radius: 0 0 16px 16px !important;
-    margin: 0 auto 16px auto !important;
+    margin: 0 auto 14px auto !important;
     width: 100% !important;
   }
-  
+
+  .dashboard-nav-brand {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .dashboard-nav-controls {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .dashboard-clock-widget {
+    position: static !important;
+    transform: none !important;
+    margin: 4px auto 0 auto !important;
+    padding: 6px 12px !important;
+    font-size: 0.8rem !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
   .dashboard-main-content {
-    padding: 12px !important;
+    padding: 0 12px 36px 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .dashboard-card-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .interactive-card {
+    padding: 14px 16px !important;
+    gap: 14px !important;
+    border-radius: 14px !important;
+  }
+
+  .interactive-card h2,
+  .interactive-card h3 {
+    font-size: 1.05rem !important;
+  }
+
+  .interactive-card p {
+    font-size: 0.82rem !important;
+    line-height: 1.35 !important;
+  }
+
+  h1[style*="fontSize: 2.5rem"],
+  div[style*="fontSize: 2.5rem"] {
+    font-size: 1.65rem !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Spacing between sections */
+  div[style*="gap: 40px"] {
+    gap: 24px !important;
   }
 
   .admin-layout,
   div[style*="display: flex"][style*="gap: 20px"],
   div[style*="display: flex"][style*="gap: 24px"] {
     flex-direction: column !important;
-    gap: 16px !important;
+    gap: 14px !important;
   }
 
   .admin-sidebar {
@@ -470,77 +506,54 @@ button {
     max-height: none !important;
     flex-direction: row !important;
     overflow-x: auto !important;
-    padding-bottom: 12px !important;
+    padding: 8px !important;
     white-space: nowrap !important;
     -webkit-overflow-scrolling: touch !important;
-    gap: 8px !important;
+    gap: 6px !important;
     scrollbar-width: none;
+    border-radius: 12px !important;
   }
-  
+
   .admin-sidebar::-webkit-scrollbar {
     display: none;
   }
 
   .admin-sidebar button {
     flex-shrink: 0 !important;
-    padding: 10px 16px !important;
-    border-radius: 20px !important;
-    background: rgba(255, 255, 255, 0.05) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  }
-  
-  .admin-sidebar button[style*="background: rgba(59, 130, 246, 0.15)"] {
-    background: rgba(59, 130, 246, 0.15) !important;
-    color: #60a5fa !important;
-    border-color: rgba(59, 130, 246, 0.5) !important;
+    padding: 8px 14px !important;
+    border-radius: 12px !important;
+    font-size: 0.82rem !important;
   }
 
-  /* Force grids to single column on mobile */
-  .dashboard-card-grid,
-  div[style*="display: grid"] {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* Fix admin layout for mobile */
-  .admin-layout {
-    flex-direction: column !important;
-  }
-
-  .admin-sidebar {
-    width: 100% !important;
-    position: static !important;
-    max-height: none !important;
-    overflow-y: visible !important;
-  }
-
-  /* Prevent rigid minimum widths from blowing out the screen */
   div[style*="minWidth"] {
     min-width: 0 !important;
     width: 100% !important;
   }
 
-  /* Make sure all tables fit without breaking layout by allowing horizontal scroll */
   table {
     white-space: nowrap !important;
     min-width: 100%;
+    font-size: 0.85rem !important;
   }
   
-  /* Improve touch scrolling for table wrappers */
   div[style*="overflow-x: auto"],
   div[style*="overflowX: auto"] {
     -webkit-overflow-scrolling: touch !important;
     max-width: 100% !important;
   }
 
-  /* Modals and overlay panels */
+  /* Modals on mobile */
   .glass-panel[style*="width: 400px"],
   .glass-panel[style*="width: 500px"],
   .glass-panel[style*="width: 600px"],
   .glass-panel[style*="maxWidth: 800px"],
   div[style*="maxWidth: 650px"],
-  div[style*="maxWidth: 600px"] {
-    width: 90vw !important;
-    max-width: 90vw !important;
+  div[style*="maxWidth: 600px"],
+  div[style*="maxWidth: 480px"] {
+    width: 94vw !important;
+    max-width: 94vw !important;
+    max-height: 88vh !important;
+    overflow-y: auto !important;
     padding: 16px !important;
     margin: 0 auto !important;
     box-sizing: border-box !important;
@@ -565,9 +578,18 @@ button {
     white-space: nowrap !important;
   }
   
-  /* Inputs inside action rows stack */
   .actionRow, div[style*="gap: 8px"] {
     flex-wrap: wrap !important;
+  }
+}
+
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+  .dashboard-card-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 16px !important;
+  }
+  .interactive-card {
+    padding: 18px 20px !important;
   }
 }
 

@@ -276,6 +276,8 @@ const styles = {
   modal: {
     width: '100%',
     maxWidth: '480px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
     padding: '24px',
     display: 'flex',
     flexDirection: 'column',
@@ -306,6 +308,7 @@ const styles = {
   row: {
     display: 'flex',
     gap: '16px',
+    flexWrap: 'wrap',
   },
   inputGroup: {
     display: 'flex',

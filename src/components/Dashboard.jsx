@@ -496,7 +496,7 @@ export default function Dashboard() {
           <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
         </div>
 
-        <div style={styles.navControls}>
+        <div className="dashboard-nav-controls" style={styles.navControls}>
           {currentUser.isAdmin && (
             <button
               onClick={() => setActiveTab(activeTab === 'admin' ? 'home' : 'admin')}
@@ -504,7 +504,7 @@ export default function Dashboard() {
               style={{
                 ...styles.adminNavBtn,
                 background: activeTab === 'admin' ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                borderColor: activeTab === 'admin' ? '#06b6d4' : 'rgba(255, 255, 255, 0.08)',
+                borderColor: activeTab === 'admin' ? '#06b6d4' : 'var(--color-border)',
               }}
             >
               <Settings size={16} />
@@ -539,7 +539,7 @@ export default function Dashboard() {
         </div>
 
         {showClockBattery && (
-          <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '-0.2px', border: '1px solid var(--color-border)', background: 'var(--color-bg-card)', padding: '8px 16px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(20px)', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
+          <div className="dashboard-clock-widget" style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '-0.2px', border: '1px solid var(--color-border)', background: 'var(--color-bg-card)', padding: '8px 16px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(20px)', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Clock size={18} />
               <span>
@@ -681,22 +681,11 @@ export default function Dashboard() {
                           <motion.div
                             key={item.id}
                             variants={itemVariants}
-                            whileHover={{ 
-                              scale: 1.015,
-                              y: -3,
-                              boxShadow: isAdminCard 
-                                ? '0 12px 30px rgba(6, 182, 212, 0.25)' 
-                                : '0 12px 30px rgba(37, 99, 235, 0.2)',
-                              borderColor: isAdminCard 
-                                ? 'rgba(6, 182, 212, 0.45)' 
-                                : 'rgba(37, 99, 235, 0.4)'
-                            }}
-                            whileTap={{ scale: 0.99 }}
                             onClick={() => item.id === 'infractions' ? reviewInfractions() : setActiveTab(item.id)}
-                            className="glass-panel interactive-card"
+                            className={`glass-panel interactive-card ${isAdminCard ? 'admin-special-card' : ''}`}
                             style={{
                               ...styles.menuCard,
-                              ...(isAdminCard ? { border: '1px dashed rgba(6, 182, 212, 0.35)' } : {})
+                              ...(isAdminCard ? { border: '1px dashed rgba(6, 182, 212, 0.4)' } : {})
                             }}
                           >
                             <div style={{ 
@@ -901,7 +890,6 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '32px',
-    perspective: '1000px', // Enhances 3D card rotation during slam
   },
   greetingHeader: {
     marginTop: '24px',
@@ -984,7 +972,6 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
     gap: '24px',
-    transformStyle: 'preserve-3d',
   },
   menuCard: {
     padding: '24px',
