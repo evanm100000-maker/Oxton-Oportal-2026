@@ -539,7 +539,7 @@ export default function Dashboard() {
         </div>
 
         {showClockBattery && (
-          <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '-0.2px', border: '1px solid rgba(255, 255, 255, 0.08)', background: 'rgba(255, 255, 255, 0.05)', padding: '8px 16px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(20px)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+          <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '-0.2px', border: '1px solid var(--color-border)', background: 'var(--color-bg-card)', padding: '8px 16px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(20px)', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Clock size={18} />
               <span>
@@ -547,14 +547,14 @@ export default function Dashboard() {
                   ? formatCustomLongDate(currentTime)
                   : currentTime.toLocaleDateString()}
               </span>
-              <div style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)' }} />
+              <div style={{ width: '1px', height: '20px', background: 'var(--color-border)' }} />
               <span>
                 {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24HourClock })}
               </span>
             </div>
             {hasBattery && batteryLevel !== null && (
               <>
-                <div style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.2)' }} />
+                <div style={{ width: '1px', height: '20px', background: 'var(--color-border)' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {(() => {
                     if (isCharging) return <BatteryCharging size={18} color="#10b981" />;
@@ -635,8 +635,8 @@ export default function Dashboard() {
               </p>
               
               {(currentUser.goldMedals > 0 || currentUser.silverMedals > 0 || currentUser.bronzeMedals > 0) && (
-                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', background: 'rgba(255,255,255,0.05)', padding: '10px 16px', borderRadius: '12px', width: 'fit-content', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <div style={{ color: '#fff', fontSize: '0.9rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', marginRight: '8px' }}>Star of the Week Medals:</div>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', background: 'var(--color-bg-card)', padding: '10px 16px', borderRadius: '12px', width: 'fit-content', border: '1px solid var(--color-border)' }}>
+                  <div style={{ color: 'var(--color-text-main)', fontSize: '0.9rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', marginRight: '8px' }}>Star of the Week Medals:</div>
                   {currentUser.goldMedals > 0 && <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}><Trophy size={16}/> {currentUser.goldMedals}</span>}
                   {currentUser.silverMedals > 0 && <span style={{ color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}><Medal size={16}/> {currentUser.silverMedals}</span>}
                   {currentUser.bronzeMedals > 0 && <span style={{ color: '#b45309', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}><Award size={16}/> {currentUser.bronzeMedals}</span>}
@@ -914,7 +914,7 @@ const styles = {
   },
   greetingSub: {
     fontSize: '1.05rem',
-    color: '#9ca3af',
+    color: 'var(--color-text-muted)',
     marginTop: '4px',
   },
   groupSectionsWrapper: {
@@ -932,7 +932,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: '10px',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    borderBottom: '1px solid var(--color-border)',
   },
   groupHeaderLeft: {
     display: 'flex',
@@ -947,7 +947,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    border: '1px solid rgba(255, 255, 255, 0.05)',
+    border: '1px solid var(--color-border)',
   },
   groupTitleCol: {
     display: 'flex',
@@ -971,13 +971,13 @@ const styles = {
     fontWeight: '700',
     padding: '2px 8px',
     borderRadius: '12px',
-    background: 'rgba(255, 255, 255, 0.07)',
-    color: '#94a3b8',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
+    background: 'var(--color-border)',
+    color: 'var(--color-text-muted)',
+    border: '1px solid var(--color-border)',
   },
   groupDescription: {
     fontSize: '0.85rem',
-    color: '#9ca3af',
+    color: 'var(--color-text-muted)',
     margin: 0,
   },
   cardGrid: {
@@ -1015,7 +1015,7 @@ const styles = {
   },
   cardDescription: {
     fontSize: '0.85rem',
-    color: '#9ca3af',
+    color: 'var(--color-text-muted)',
     lineHeight: '1.4',
   },
   backBar: {

@@ -19,18 +19,39 @@
 }
 
 body.light-mode {
-  --color-bg-deep: #f8fafc;
-  --color-bg-card: rgba(255, 255, 255, 0.6);
-  --color-bg-card-hover: rgba(255, 255, 255, 0.9);
-  --color-border: rgba(0, 0, 0, 0.08);
+  --color-bg-deep: #f1f5f9;
+  --color-bg-card: rgba(255, 255, 255, 0.85);
+  --color-bg-card-hover: #ffffff;
+  --color-border: rgba(203, 213, 225, 0.85);
+  --color-border-glow: rgba(99, 102, 241, 0.25);
   --color-text-main: #0f172a;
   --color-text-muted: #64748b;
+  background-color: #f1f5f9;
+  background-image: 
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Ambient Animated Orbs & Grid Background */
+@keyframes floatOrb1 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(45px, -35px) scale(1.08); }
+  66% { transform: translate(-30px, 25px) scale(0.95); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes floatOrb2 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(-40px, 30px) scale(1.1); }
+  66% { transform: translate(35px, -25px) scale(0.93); }
+  100% { transform: translate(0px, 0px) scale(1); }
 }
 
 body {
@@ -42,31 +63,52 @@ body {
   line-height: 1.5;
   letter-spacing: -0.01em;
   position: relative;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-attachment: fixed;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Ambient Animated Orbs Background */
 body::before, body::after {
   content: '';
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
   z-index: -1;
   pointer-events: none;
+  filter: blur(80px);
+  will-change: transform;
 }
 
+/* Dark mode ambient floating gradients */
 body::before {
-  background: radial-gradient(circle at 20% 30%, rgba(79, 70, 229, 0.3) 0%, transparent 50%); /* Indigo */
+  background: 
+    radial-gradient(circle at 18% 22%, rgba(99, 102, 241, 0.35) 0%, transparent 46%),
+    radial-gradient(circle at 82% 78%, rgba(139, 92, 246, 0.28) 0%, transparent 45%);
+  animation: floatOrb1 18s ease-in-out infinite alternate;
 }
 
 body::after {
-  background: radial-gradient(circle at 80% 70%, rgba(30, 58, 138, 0.3) 0%, transparent 50%); /* Dark Blue */
+  background: 
+    radial-gradient(circle at 75% 20%, rgba(6, 182, 212, 0.25) 0%, transparent 42%),
+    radial-gradient(circle at 20% 80%, rgba(30, 58, 138, 0.4) 0%, transparent 52%);
+  animation: floatOrb2 22s ease-in-out infinite alternate;
 }
 
+/* Light mode ambient floating gradients */
 body.light-mode::before {
-  background: radial-gradient(circle at 20% 30%, rgba(59, 130, 246, 0.08) 0%, transparent 40%);
+  background: 
+    radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 85% 72%, rgba(14, 165, 233, 0.10) 0%, transparent 48%);
+  animation: floatOrb1 20s ease-in-out infinite alternate;
 }
 
 body.light-mode::after {
-  background: radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+  background: 
+    radial-gradient(circle at 80% 22%, rgba(168, 85, 247, 0.10) 0%, transparent 46%),
+    radial-gradient(circle at 20% 82%, rgba(244, 63, 94, 0.06) 0%, transparent 50%);
+  animation: floatOrb2 25s ease-in-out infinite alternate;
 }
 
 /* Custom Scrollbar */
@@ -527,4 +569,217 @@ button {
   .actionRow, div[style*="gap: 8px"] {
     flex-wrap: wrap !important;
   }
+}
+
+/* =========================================================
+   LIGHT MODE DESIGN REFINEMENTS
+   ========================================================= */
+
+body.light-mode .glass-panel {
+  background: rgba(255, 255, 255, 0.86) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.98) !important;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.03) !important;
+}
+
+body.light-mode .glass-panel-glow {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(139, 92, 246, 0.35) !important;
+  box-shadow: 0 10px 30px -5px rgba(139, 92, 246, 0.14), 0 0 20px 0 rgba(59, 130, 246, 0.08) !important;
+}
+
+body.light-mode .interactive-card:hover {
+  background: #ffffff !important;
+  border-color: rgba(99, 102, 241, 0.45) !important;
+  box-shadow: 0 14px 34px -6px rgba(99, 102, 241, 0.16), 0 2px 6px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* Secondary Buttons */
+body.light-mode .btn-secondary {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+body.light-mode .btn-secondary:hover {
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07) !important;
+}
+
+/* Inputs & Form Controls */
+body.light-mode .input-field,
+body.light-mode input[type="text"],
+body.light-mode input[type="password"],
+body.light-mode input[type="email"],
+body.light-mode input[type="date"],
+body.light-mode input[type="time"],
+body.light-mode input[type="number"],
+body.light-mode textarea,
+body.light-mode select {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+body.light-mode .input-field:focus,
+body.light-mode input:focus,
+body.light-mode textarea:focus,
+body.light-mode select:focus {
+  background: #ffffff !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16) !important;
+}
+
+body.light-mode .input-field::placeholder,
+body.light-mode input::placeholder,
+body.light-mode textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Status Badges */
+body.light-mode .badge-pending {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #b45309 !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+body.light-mode .badge-approved {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #047857 !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+}
+
+body.light-mode .badge-denied {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #b91c1c !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+
+body.light-mode .badge-admin {
+  background: rgba(6, 182, 212, 0.15) !important;
+  color: #0e7490 !important;
+  border-color: rgba(6, 182, 212, 0.35) !important;
+}
+
+/* Navbar & Brand */
+body.light-mode .dashboard-navbar {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  box-shadow: 0 4px 25px rgba(15, 23, 42, 0.05) !important;
+}
+
+body.light-mode .dashboard-nav-brand span {
+  color: #0f172a !important;
+}
+
+body.light-mode .main-title {
+  background: linear-gradient(135deg, #0f172a 0%, #4338ca 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  filter: none !important;
+}
+
+/* Admin Sidebar */
+body.light-mode .admin-sidebar {
+  background: rgba(255, 255, 255, 0.88) !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.04) !important;
+}
+
+body.light-mode .admin-sidebar button {
+  background: rgba(241, 245, 249, 0.8) !important;
+  color: #334155 !important;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+}
+
+body.light-mode .admin-sidebar button:hover {
+  background: rgba(226, 232, 240, 0.9) !important;
+  color: #0f172a !important;
+}
+
+body.light-mode .admin-sidebar button[style*="background: rgba(59, 130, 246, 0.15)"] {
+  background: rgba(59, 130, 246, 0.14) !important;
+  color: #1d4ed8 !important;
+  border-color: rgba(59, 130, 246, 0.45) !important;
+}
+
+/* Tables */
+body.light-mode table {
+  color: #1e293b !important;
+}
+
+body.light-mode th {
+  background: rgba(241, 245, 249, 0.95) !important;
+  color: #475569 !important;
+  border-bottom: 2px solid #cbd5e1 !important;
+}
+
+body.light-mode td {
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+body.light-mode tr:hover td {
+  background: rgba(248, 250, 252, 0.9) !important;
+}
+
+/* Scrollbars */
+body.light-mode ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+body.light-mode ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+body.light-mode ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Warning & Status Banners */
+body.light-mode .warning-box {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1) !important;
+}
+
+body.light-mode .warning-body {
+  color: #334155 !important;
+}
+
+/* Automatic contrast overrides for dark-mode inline styles */
+body.light-mode *:not(button):not(.badge):not(.btn-primary):not(.btn-danger):not(.btn-success)[style*="color: #fff"],
+body.light-mode *:not(button):not(.badge):not(.btn-primary):not(.btn-danger):not(.btn-success)[style*="color: rgb(255, 255, 255)"],
+body.light-mode *:not(button):not(.badge):not(.btn-primary):not(.btn-danger):not(.btn-success)[style*="color: white"] {
+  color: #0f172a !important;
+}
+
+body.light-mode [style*="color: #9ca3af"],
+body.light-mode [style*="color: #94a3b8"] {
+  color: #64748b !important;
+}
+
+body.light-mode [style*="color: #e5e7eb"],
+body.light-mode [style*="color: #f8fafc"] {
+  color: #1e293b !important;
+}
+
+body.light-mode [style*="background: rgba(255, 255, 255, 0.05)"],
+body.light-mode [style*="background: rgba(255, 255, 255, 0.08)"],
+body.light-mode [style*="background: rgba(255, 255, 255, 0.03)"],
+body.light-mode [style*="background: rgba(255, 255, 255, 0.07)"] {
+  background: rgba(241, 245, 249, 0.85) !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+}
+
+body.light-mode [style*="border: 1px solid rgba(255, 255, 255"],
+body.light-mode [style*="borderBottom: 1px solid rgba(255, 255, 255"],
+body.light-mode [style*="border-bottom: 1px solid rgba(255, 255, 255"] {
+  border-color: rgba(203, 213, 225, 0.8) !important;
 }
