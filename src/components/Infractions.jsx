@@ -173,6 +173,57 @@ export default function Infractions() {
         </div>
       )}
 
+      {/* Universal Staff Policy Banner: Visible to ALL staff and admins regardless of consequences */}
+      <div className="glass-panel" style={{
+        background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(15, 23, 42, 0.7))',
+        border: '1px solid rgba(239, 68, 68, 0.4)',
+        borderRadius: '14px',
+        padding: '16px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+        flexWrap: 'wrap',
+        boxShadow: '0 8px 24px rgba(239, 68, 68, 0.12)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+            <AlertTriangle size={22} color="#ef4444" />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.7rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Official Policy</span>
+              <strong style={{ color: '#ef4444', fontSize: '1.02rem', letterSpacing: '0.2px' }}>
+                25 consequences will result in a termination from the staff team.
+              </strong>
+            </div>
+            <div style={{ color: '#9ca3af', fontSize: '0.84rem', marginTop: '4px' }}>
+              All staff members must maintain fewer than 25 consequence points to remain in active standing.
+              {totalWeightedPoints > 0 ? (
+                <> Your record: <strong style={{ color: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#3b82f6' }}>{totalWeightedPoints} / 25 points</strong>.</>
+              ) : (
+                <> Your current record is clean (<strong>0 / 25 points</strong>).</>
+              )}
+            </div>
+          </div>
+        </div>
+        <div style={{ minWidth: '170px', flex: '1 1 200px', maxWidth: '320px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>
+            <span>Termination Threshold</span>
+            <span style={{ fontWeight: '700', color: totalWeightedPoints >= 25 ? '#ef4444' : '#f87171' }}>{totalWeightedPoints} / 25 ({Math.round((totalWeightedPoints / 25) * 100)}%)</span>
+          </div>
+          <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
+            <div style={{
+              width: `${Math.min(100, Math.max(2, (totalWeightedPoints / 25) * 100))}%`,
+              height: '100%',
+              background: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#10b981',
+              borderRadius: '999px',
+              transition: 'width 0.4s ease'
+            }} />
+          </div>
+        </div>
+      </div>
+
       {isAdminOrMod && (
         <div style={styles.tabHeader}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -278,48 +329,6 @@ export default function Infractions() {
               <div style={{ fontSize: '2.2rem', color: '#ef4444', fontWeight: '800', margin: '8px 0 4px' }}>{c5Count}</div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                 2-Day Lockouts
-              </div>
-            </div>
-          </div>
-
-          {/* Termination Threshold Warning Banner */}
-          <div className="glass-panel" style={{
-            background: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.35)',
-            borderRadius: '12px',
-            padding: '14px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '16px',
-            flexWrap: 'wrap'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '38px', height: '38px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <AlertTriangle size={20} color="#ef4444" />
-              </div>
-              <div>
-                <div style={{ color: '#ef4444', fontWeight: '800', fontSize: '0.98rem', letterSpacing: '0.2px' }}>
-                  25 consequences will result in a termination from the staff team.
-                </div>
-                <div style={{ color: '#9ca3af', fontSize: '0.82rem', marginTop: '2px' }}>
-                  Current disciplinary record: <strong style={{ color: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#3b82f6' }}>{totalWeightedPoints} / 25 consequences</strong>
-                </div>
-              </div>
-            </div>
-            <div style={{ minWidth: '160px', flex: '1 1 200px', maxWidth: '300px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>
-                <span>Threshold Meter</span>
-                <span style={{ fontWeight: '700', color: totalWeightedPoints >= 25 ? '#ef4444' : '#f87171' }}>{Math.round((totalWeightedPoints / 25) * 100)}%</span>
-              </div>
-              <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
-                <div style={{
-                  width: `${Math.min(100, (totalWeightedPoints / 25) * 100)}%`,
-                  height: '100%',
-                  background: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#3b82f6',
-                  borderRadius: '999px',
-                  transition: 'width 0.4s ease'
-                }} />
               </div>
             </div>
           </div>
