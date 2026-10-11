@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3 } from 'lucide-react';
+import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
 
 export default function Infractions() {
   const { 
@@ -38,6 +39,10 @@ export default function Infractions() {
   const [logDetentionDate, setLogDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [logDetentionTime, setLogDetentionTime] = useState('14:55 - 15:15');
   const [logSuccess, setLogSuccess] = useState('');
+
+  // New Consequence count summary UI modal for admin
+  const [showLoggedSummaryModal, setShowLoggedSummaryModal] = useState(false);
+  const [loggedSummaryData, setLoggedSummaryData] = useState(null);
 
   const isAdminOrMod = Boolean(currentUser?.isAdmin || currentUser?.siteRole === 'Moderator');
 
@@ -95,20 +100,43 @@ export default function Infractions() {
     }
 
     const isDetention = logType.startsWith('C4');
-    const wasAdded = addInfraction({
-      staffEmail: logStaffEmail,
+    const targetEmail = logStaffEmail;
+    const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
+    const consequenceData = {
       type: logType,
       mainMessage: `[${logCategory}] ${logMainMessage}`,
       confidentialMessage: logConfidential,
+      detentionLocation: isDetention ? (logDetentionLocation || 'Hall') : null,
       detentionDate: isDetention ? logDetentionDate : null,
-      detentionTime: isDetention ? logDetentionTime : null,
-      detentionLocation: isDetention ? (logDetentionLocation || 'Hall') : null
+      detentionTime: isDetention ? logDetentionTime : null
+    };
+
+    // Calculate new stats including this consequence before clearing form
+    const newStats = computeStaffConsequenceStats(targetEmail, safeInfractions, safeInformalSanctions, logType);
+
+    const wasAdded = addInfraction({
+      staffEmail: targetEmail,
+      type: logType,
+      mainMessage: consequenceData.mainMessage,
+      confidentialMessage: logConfidential,
+      detentionDate: consequenceData.detentionDate,
+      detentionTime: consequenceData.detentionTime,
+      detentionLocation: consequenceData.detentionLocation
     });
 
     if (wasAdded === false) {
       alert('Could not log consequence. Please verify staff permissions.');
       return;
     }
+
+    // Set summary modal data and open it to show the admin the updated consequence count
+    setLoggedSummaryData({
+      targetUser,
+      targetEmail,
+      loggedConsequence: consequenceData,
+      stats: newStats
+    });
+    setShowLoggedSummaryModal(true);
 
     setLogStaffEmail('');
     setLogType('C1 Warning');
@@ -1053,6 +1081,17 @@ export default function Infractions() {
           </div>
         </div>
       )}
+
+      {/* Modal: Consequence Logged Summary UI */}
+      <ConsequenceLoggedModal
+        isOpen={showLoggedSummaryModal}
+        onClose={() => setShowLoggedSummaryModal(false)}
+        targetUser={loggedSummaryData?.targetUser}
+        targetEmail={loggedSummaryData?.targetEmail}
+        loggedConsequence={loggedSummaryData?.loggedConsequence}
+        stats={loggedSummaryData?.stats}
+        onViewAll={() => setActiveTab('all')}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import FlightRegister from './FlightRegister';
+import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
@@ -138,6 +139,10 @@ export default function AdminPanel() {
   const [infDetentionDate, setInfDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [expandedInfractions, setExpandedInfractions] = useState({});
 
+  // Consequence count summary UI modal for admin
+  const [showLoggedSummaryModal, setShowLoggedSummaryModal] = useState(false);
+  const [loggedSummaryData, setLoggedSummaryData] = useState(null);
+
   // Detention Register states
   const [detentionDateFilter, setDetentionDateFilter] = useState(() => new Date().toISOString().split('T')[0]);
   const [rescheduleModalItem, setRescheduleModalItem] = useState(null);
@@ -253,9 +258,24 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!infStaffEmail || !infMainMessage.trim()) return;
 
+    const targetEmail = infStaffEmail;
+    const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
+    const isDetention = infType.startsWith('C4');
+    const consequenceData = {
+      type: infType,
+      mainMessage: `[${infCategory}] ${infMainMessage}`,
+      confidentialMessage: infConfidentialMessage,
+      detentionLocation: isDetention ? (infDetentionLocation || 'Hall') : null,
+      detentionDate: isDetention ? infDetentionDate : null,
+      detentionTime: isDetention ? infDetentionTime : null
+    };
+
+    // Calculate new stats including this consequence before clearing form
+    const newStats = computeStaffConsequenceStats(targetEmail, infractions, informalSanctions, infType);
+
     if (infType === 'Informal Sanction') {
       const wasLogged = addInformalSanction({
-        staffEmail: infStaffEmail,
+        staffEmail: targetEmail,
         reason: infMainMessage
       });
       if (!wasLogged) {
@@ -264,19 +284,28 @@ export default function AdminPanel() {
       }
     } else {
       const wasLogged = addInfraction({ 
-        staffEmail: infStaffEmail, 
+        staffEmail: targetEmail, 
         type: infType, 
-        mainMessage: `[${infCategory}] ${infMainMessage}`, 
+        mainMessage: consequenceData.mainMessage, 
         confidentialMessage: infConfidentialMessage,
-        detentionDate: infType.startsWith('C4') ? infDetentionDate : null,
-        detentionTime: infType.startsWith('C4') ? infDetentionTime : null,
-        detentionLocation: infType.startsWith('C4') ? (infDetentionLocation || 'Hall') : null
+        detentionDate: consequenceData.detentionDate,
+        detentionTime: consequenceData.detentionTime,
+        detentionLocation: consequenceData.detentionLocation
       });
       if (!wasLogged) {
         alert('The consequence could not be logged. Please check the staff member and message.');
         return;
       }
     }
+
+    // Set summary modal data and open it to show the admin the updated consequence count
+    setLoggedSummaryData({
+      targetUser,
+      targetEmail,
+      loggedConsequence: consequenceData,
+      stats: newStats
+    });
+    setShowLoggedSummaryModal(true);
 
     setInfStaffEmail('');
     setInfType('C1 Warning');
@@ -2260,6 +2289,17 @@ export default function AdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Modal: Consequence Logged Summary UI for Admin */}
+      <ConsequenceLoggedModal
+        isOpen={showLoggedSummaryModal}
+        onClose={() => setShowLoggedSummaryModal(false)}
+        targetUser={loggedSummaryData?.targetUser}
+        targetEmail={loggedSummaryData?.targetEmail}
+        loggedConsequence={loggedSummaryData?.loggedConsequence}
+        stats={loggedSummaryData?.stats}
+        onViewAll={() => setActiveSubTab('infractions')}
+      />
 
       {/* Reschedule Detention Modal */}
       {rescheduleModalItem && (
