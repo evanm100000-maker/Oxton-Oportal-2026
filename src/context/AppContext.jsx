@@ -93,6 +93,7 @@ const initialEmergencyAlertConfig = {
   id: null,
   header: 'Emergency Alert',
   message: '',
+  soundType: 'standard', // 'standard' (less severe) | 'severe' (loud emergency siren)
   timestamp: null,
   senderName: ''
 };
@@ -1920,17 +1921,18 @@ useEffect(() => {
           logAction('bypass_announcement_cleared', `Cleared bypass announcement`);
         },
         emergencyAlertConfig,
-        dispatchEmergencyAlert: (header, message) => {
+        dispatchEmergencyAlert: (header, message, soundType = 'standard') => {
           const newAlert = {
             isActive: true,
             id: makeId('ealert'),
             header: header || 'Emergency Alert',
             message: message || '',
+            soundType: soundType || (header?.toLowerCase().includes('severe') ? 'severe' : 'standard'),
             timestamp: Date.now(),
             senderName: currentUser ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : 'Admin'
           };
           setEmergencyAlertConfig(newAlert);
-          logAction('emergency_alert_dispatched', `Dispatched ${header}: ${message}`, { header, message });
+          logAction('emergency_alert_dispatched', `Dispatched ${header} with ${soundType} sound: ${message}`, { header, message, soundType });
         },
         clearEmergencyAlert: () => {
           setEmergencyAlertConfig(prev => ({ ...prev, isActive: false }));

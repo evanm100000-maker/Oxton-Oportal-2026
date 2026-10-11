@@ -55,6 +55,8 @@ export default function EmergencyAlertOverlay() {
     };
   }, [alertActive, isSilenced]);
 
+  const isSevere = (emergencyAlertConfig?.soundType === 'severe') || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
+
   const startAlarm = () => {
     try {
       if (!audioContextRef.current) {
@@ -68,35 +70,79 @@ export default function EmergencyAlertOverlay() {
         ctx.resume();
       }
 
-      // Alternate frequencies between 880Hz and 650Hz
-      let highTone = true;
-      const playTone = () => {
-        try {
-          if (!audioContextRef.current || isSilenced) return;
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(highTone ? 880 : 620, ctx.currentTime);
-          
-          // Loud volume ramp
-          gain.gain.setValueAtTime(0.35, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.38);
+      // Check whether sound mode is severe or standard (less severe)
+      const isSevereAlarm = emergencyAlertConfig?.soundType === 'severe' || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
 
-          osc.connect(gain);
-          gain.connect(ctx.destination);
+      if (isSevereAlarm) {
+        // LOUD EMERGENCY SIREN: High-intensity dual oscillating sweep (950Hz to 1350Hz)
+        let step = 0;
+        const playSevereSiren = () => {
+          try {
+            if (!audioContextRef.current || isSilenced) return;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
 
-          osc.start();
-          osc.stop(ctx.currentTime + 0.4);
-          highTone = !highTone;
-        } catch (e) {
-          console.warn('Audio tone error', e);
-        }
-      };
+            osc.type = 'sawtooth';
+            const startTime = ctx.currentTime;
+            const duration = 0.35;
 
-      playTone();
-      clearInterval(oscillatorIntervalRef.current);
-      oscillatorIntervalRef.current = setInterval(playTone, 420);
+            // Frequency sweep for urgency
+            const startFreq = step % 2 === 0 ? 1150 : 850;
+            const endFreq = step % 2 === 0 ? 1380 : 980;
+            osc.frequency.setValueAtTime(startFreq, startTime);
+            osc.frequency.exponentialRampToValueAtTime(endFreq, startTime + duration);
+
+            // Loud volume
+            gain.gain.setValueAtTime(0.65, startTime);
+            gain.gain.linearRampToValueAtTime(0.4, startTime + duration * 0.8);
+            gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(startTime);
+            osc.stop(startTime + duration);
+            step++;
+          } catch (e) {
+            console.warn('Audio tone error', e);
+          }
+        };
+
+        playSevereSiren();
+        clearInterval(oscillatorIntervalRef.current);
+        oscillatorIntervalRef.current = setInterval(playSevereSiren, 320);
+      } else {
+        // STANDARD (LESS SEVERE): Softer, lower frequency dual beep pulse
+        let highTone = true;
+        const playStandardTone = () => {
+          try {
+            if (!audioContextRef.current || isSilenced) return;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'sine';
+            const startTime = ctx.currentTime;
+            osc.frequency.setValueAtTime(highTone ? 660 : 520, startTime);
+
+            // Softer volume ramp
+            gain.gain.setValueAtTime(0.22, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.005, startTime + 0.38);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.start(startTime);
+            osc.stop(startTime + 0.4);
+            highTone = !highTone;
+          } catch (e) {
+            console.warn('Audio tone error', e);
+          }
+        };
+
+        playStandardTone();
+        clearInterval(oscillatorIntervalRef.current);
+        oscillatorIntervalRef.current = setInterval(playStandardTone, 500);
+      }
     } catch (e) {
       console.warn('Web Audio API not permitted without interaction', e);
     }
@@ -130,8 +176,6 @@ export default function EmergencyAlertOverlay() {
   };
 
   if (!alertActive) return null;
-
-  const isSevere = (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
 
   return (
     <AnimatePresence>

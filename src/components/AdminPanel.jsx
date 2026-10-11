@@ -147,6 +147,7 @@ export default function AdminPanel() {
   // Emergency Alert States
   const [alertHeader, setAlertHeader] = useState('Emergency Alert');
   const [alertMessage, setAlertMessage] = useState('');
+  const [alertSound, setAlertSound] = useState('standard'); // 'standard' (less severe) | 'severe' (loud siren)
 
   // Support Tickets States in Admin Panel
   const [ticketFilter, setTicketFilter] = useState('all'); // 'all' | 'unclaimed' | 'mine' | 'escalated' | 'closed'
@@ -329,8 +330,8 @@ export default function AdminPanel() {
   const handleDispatchEmergencyAlert = (e) => {
     e.preventDefault();
     if (!alertMessage.trim()) return;
-    dispatchEmergencyAlert(alertHeader, alertMessage.trim());
-    displaySuccess(`Emergency alert (${alertHeader}) dispatched system-wide!`);
+    dispatchEmergencyAlert(alertHeader, alertMessage.trim(), alertSound);
+    displaySuccess(`Emergency alert (${alertHeader}) dispatched system-wide with ${alertSound === 'severe' ? 'LOUD' : 'Standard'} alarm!`);
     setAlertMessage('');
   };
 
@@ -434,8 +435,38 @@ export default function AdminPanel() {
         <button type="button" onClick={() => setActiveSubTab('status')} style={getTabStyle(activeSubTab === 'status')}>
           <Settings size={16} /> System Status
         </button>
-        <button type="button" onClick={() => setActiveSubTab('emergencyAlert')} style={{...getTabStyle(activeSubTab === 'emergencyAlert'), color: emergencyAlertConfig?.isActive ? '#ef4444' : undefined, fontWeight: '700'}}>
-          <AlertOctagon size={16} color={emergencyAlertConfig?.isActive ? '#ef4444' : undefined} /> Emergency Alert {emergencyAlertConfig?.isActive ? '• ACTIVE' : ''}
+        <button 
+          type="button" 
+          onClick={() => setActiveSubTab('emergencyAlert')} 
+          style={{
+            ...getTabStyle(activeSubTab === 'emergencyAlert'), 
+            color: activeSubTab === 'emergencyAlert' 
+              ? (emergencyAlertConfig?.isActive ? '#ef4444' : '#60a5fa') 
+              : (emergencyAlertConfig?.isActive ? '#f87171' : '#f87171'),
+            borderColor: emergencyAlertConfig?.isActive 
+              ? 'rgba(239, 68, 68, 0.6)' 
+              : (activeSubTab === 'emergencyAlert' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(239, 68, 68, 0.25)'),
+            background: activeSubTab === 'emergencyAlert'
+              ? (emergencyAlertConfig?.isActive ? 'rgba(239, 68, 68, 0.25)' : 'rgba(59, 130, 246, 0.2)')
+              : (emergencyAlertConfig?.isActive ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.05)'),
+            fontWeight: '700'
+          }}
+        >
+          <AlertOctagon size={16} color={emergencyAlertConfig?.isActive ? '#ef4444' : '#f87171'} /> 
+          <span>Emergency Alert</span>
+          {emergencyAlertConfig?.isActive && (
+            <span style={{ 
+              fontSize: '0.65rem', 
+              background: '#ef4444', 
+              color: '#ffffff', 
+              padding: '2px 6px', 
+              borderRadius: '4px',
+              fontWeight: '800',
+              marginLeft: '4px'
+            }}>
+              LIVE
+            </span>
+          )}
         </button>
 
         <button type="button" onClick={() => setActiveSubTab('pointLogs')} style={getTabStyle(activeSubTab === 'pointLogs')}>
@@ -1345,13 +1376,76 @@ export default function AdminPanel() {
               <label style={styles.label}>Alert Header Selection *</label>
               <select 
                 value={alertHeader} 
-                onChange={e => setAlertHeader(e.target.value)} 
+                onChange={e => {
+                  const val = e.target.value;
+                  setAlertHeader(val);
+                  if (val === 'Severe Emergency Alert') {
+                    setAlertSound('severe');
+                  } else {
+                    setAlertSound('standard');
+                  }
+                }} 
                 className="input-field"
                 style={{ fontWeight: '600' }}
               >
                 <option value="Emergency Alert">Emergency Alert</option>
                 <option value="Severe Emergency Alert">Severe Emergency Alert</option>
               </select>
+            </div>
+
+            <div style={styles.inputWrapper}>
+              <label style={styles.label}>Alarm Sound Intensity *</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  border: '1px solid ' + (alertSound === 'standard' ? 'rgba(59, 130, 246, 0.6)' : 'rgba(255, 255, 255, 0.1)'),
+                  background: alertSound === 'standard' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(0, 0, 0, 0.2)',
+                  cursor: 'pointer',
+                  color: alertSound === 'standard' ? '#60a5fa' : 'var(--color-text-main)'
+                }}>
+                  <input
+                    type="radio"
+                    name="alertSound"
+                    value="standard"
+                    checked={alertSound === 'standard'}
+                    onChange={() => setAlertSound('standard')}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '0.9rem' }}>Less Severe Sound</strong>
+                    <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>Softer dual-tone pulse warning</span>
+                  </div>
+                </label>
+
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  border: '1px solid ' + (alertSound === 'severe' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(255, 255, 255, 0.1)'),
+                  background: alertSound === 'severe' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(0, 0, 0, 0.2)',
+                  cursor: 'pointer',
+                  color: alertSound === 'severe' ? '#f87171' : 'var(--color-text-main)'
+                }}>
+                  <input
+                    type="radio"
+                    name="alertSound"
+                    value="severe"
+                    checked={alertSound === 'severe'}
+                    onChange={() => setAlertSound('severe')}
+                    style={{ width: '16px', height: '16px' }}
+                  />
+                  <div>
+                    <strong style={{ display: 'block', fontSize: '0.9rem' }}>Severe Loud Alarm Sound</strong>
+                    <span style={{ fontSize: '0.78rem', color: '#fca5a5' }}>High-pitched piercing emergency siren</span>
+                  </div>
+                </label>
+              </div>
             </div>
 
             <div style={styles.inputWrapper}>

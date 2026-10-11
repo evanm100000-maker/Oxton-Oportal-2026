@@ -731,6 +731,28 @@ body.light-mode .admin-sidebar button[style*="background: rgba(59, 130, 246, 0.1
   border-color: rgba(59, 130, 246, 0.45) !important;
 }
 
+/* Emergency Alert tab styling in dark mode and light mode */
+.admin-sidebar button[style*="emergencyAlert"],
+.admin-sidebar button:has(svg.lucide-alert-octagon) {
+  color: #fca5a5 !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+}
+
+.admin-sidebar button[style*="emergencyAlert"]:hover,
+.admin-sidebar button:has(svg.lucide-alert-octagon):hover {
+  color: #ffffff !important;
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.7) !important;
+}
+
+body.light-mode .admin-sidebar button:has(svg.lucide-alert-octagon) {
+  color: #b91c1c !important;
+  background: rgba(254, 226, 226, 0.8) !important;
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+
+
 /* Tables */
 body.light-mode table {
   color: #1e293b !important;
