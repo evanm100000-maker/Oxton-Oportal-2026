@@ -21,13 +21,30 @@ export default function EmergencyAlertOverlay() {
 
   const alertActive = emergencyAlertConfig?.isActive && emergencyAlertConfig?.id && emergencyAlertConfig.id !== dismissedId;
 
-  // Reset countdown & silence state whenever a new alert arrives
+  // Persist silence state per alert ID across page refreshes
   useEffect(() => {
-    if (alertActive) {
-      setCountdown(10);
-      setIsSilenced(false);
+    if (alertActive && emergencyAlertConfig?.id) {
+      const silencedId = sessionStorage.getItem('silencedEmergencyAlertId');
+      setIsSilenced(silencedId === emergencyAlertConfig.id);
+
+      // Persist countdown lockout across page refresh
+      const lockoutKey = `alertLockoutUntil_${emergencyAlertConfig.id}`;
+      const savedLockoutUntil = sessionStorage.getItem(lockoutKey);
+      const now = Date.now();
+
+      if (savedLockoutUntil) {
+        const remainingSeconds = Math.max(0, Math.ceil((parseInt(savedLockoutUntil, 10) - now) / 1000));
+        setCountdown(remainingSeconds);
+      } else {
+        const lockoutUntil = now + 10000;
+        sessionStorage.setItem(lockoutKey, lockoutUntil.toString());
+        setCountdown(10);
+      }
     }
   }, [emergencyAlertConfig?.id, alertActive]);
+
+  // Track if browser has blocked audio autoplay on reload until first user interaction
+  const [isAudioBlocked, setIsAudioBlocked] = useState(false);
 
   // 10 second countdown timer
   useEffect(() => {
@@ -58,21 +75,31 @@ export default function EmergencyAlertOverlay() {
   // Ensure AudioContext is unlocked upon any user interaction or alert mount
   useEffect(() => {
     const unlockAudio = () => {
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume().catch(() => {});
+      if (audioContextRef.current) {
+        if (audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().then(() => {
+            setIsAudioBlocked(false);
+          }).catch(() => {});
+        } else {
+          setIsAudioBlocked(false);
+        }
+      } else if (alertActive && !isSilenced) {
+        startAlarm();
       }
     };
 
-    window.addEventListener('click', unlockAudio);
-    window.addEventListener('keydown', unlockAudio);
-    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('click', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
 
     return () => {
       window.removeEventListener('click', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
       window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('pointerdown', unlockAudio);
     };
-  }, []);
+  }, [alertActive, isSilenced]);
 
   const isSevere = (emergencyAlertConfig?.soundType === 'severe') || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
 
@@ -86,7 +113,14 @@ export default function EmergencyAlertOverlay() {
 
       const ctx = audioContextRef.current;
       if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+        ctx.resume().then(() => {
+          setIsAudioBlocked(false);
+        }).catch(() => {
+          // Browser autoplay policy blocked audio
+          setIsAudioBlocked(true);
+        });
+      } else {
+        setIsAudioBlocked(false);
       }
 
       // Check whether sound mode is severe or standard (less severe)
@@ -99,7 +133,7 @@ export default function EmergencyAlertOverlay() {
           try {
             if (!audioContextRef.current || isSilenced) return;
             if (ctx.state === 'suspended') {
-              ctx.resume().catch(() => {});
+              ctx.resume().then(() => setIsAudioBlocked(false)).catch(() => setIsAudioBlocked(true));
             }
 
             const osc = ctx.createOscillator();
@@ -141,7 +175,7 @@ export default function EmergencyAlertOverlay() {
           try {
             if (!audioContextRef.current || isSilenced) return;
             if (ctx.state === 'suspended') {
-              ctx.resume().catch(() => {});
+              ctx.resume().then(() => setIsAudioBlocked(false)).catch(() => setIsAudioBlocked(true));
             }
 
             const osc = ctx.createOscillator();
@@ -172,6 +206,7 @@ export default function EmergencyAlertOverlay() {
       }
     } catch (e) {
       console.warn('Web Audio API not permitted without interaction', e);
+      setIsAudioBlocked(true);
     }
   };
 
@@ -190,7 +225,15 @@ export default function EmergencyAlertOverlay() {
   };
 
   const handleSilence = () => {
-    setIsSilenced(prev => !prev);
+    setIsSilenced(prev => {
+      const next = !prev;
+      if (next && emergencyAlertConfig?.id) {
+        sessionStorage.setItem('silencedEmergencyAlertId', emergencyAlertConfig.id);
+      } else {
+        sessionStorage.removeItem('silencedEmergencyAlertId');
+      }
+      return next;
+    });
   };
 
   const handleDismiss = () => {
@@ -199,6 +242,19 @@ export default function EmergencyAlertOverlay() {
     if (emergencyAlertConfig?.id) {
       setDismissedId(emergencyAlertConfig.id);
       sessionStorage.setItem('dismissedEmergencyAlertId', emergencyAlertConfig.id);
+      sessionStorage.removeItem(`alertLockoutUntil_${emergencyAlertConfig.id}`);
+      sessionStorage.removeItem('silencedEmergencyAlertId');
+    }
+  };
+
+  const triggerAudioResume = () => {
+    if (audioContextRef.current) {
+      audioContextRef.current.resume().then(() => {
+        setIsAudioBlocked(false);
+      }).catch(() => {});
+    }
+    if (!isSilenced) {
+      startAlarm();
     }
   };
 
@@ -211,7 +267,20 @@ export default function EmergencyAlertOverlay() {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         style={styles.backdrop}
+        onClick={triggerAudioResume}
       >
+        {isAudioBlocked && !isSilenced && (
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            style={styles.unmuteBanner}
+            onClick={triggerAudioResume}
+          >
+            <Volume2 size={20} className="animate-bounce" />
+            <span>Browser paused audio after reload &mdash; <strong>Click anywhere to resume alarm siren</strong></span>
+          </motion.div>
+        )}
+
         <motion.div
           initial={{ scale: 0.9, y: 30 }}
           animate={{ scale: 1, y: 0 }}
@@ -223,6 +292,10 @@ export default function EmergencyAlertOverlay() {
             boxShadow: isSevere 
               ? '0 0 50px rgba(220, 38, 38, 0.4), inset 0 0 20px rgba(220, 38, 38, 0.2)' 
               : '0 0 50px rgba(234, 88, 12, 0.4), inset 0 0 20px rgba(234, 88, 12, 0.2)'
+          }}
+          onClick={(e) => {
+            // Also resume audio when clicking anywhere inside card
+            triggerAudioResume();
           }}
         >
           {/* Header Banner */}
@@ -318,10 +391,30 @@ const styles = {
     backdropFilter: 'blur(16px)',
     WebkitBackdropFilter: 'blur(16px)',
     display: 'flex',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     padding: '20px',
     boxSizing: 'border-box'
+  },
+  unmuteBanner: {
+    position: 'fixed',
+    top: '24px',
+    zIndex: 100000,
+    background: '#dc2626',
+    color: '#ffffff',
+    padding: '12px 24px',
+    borderRadius: '9999px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    boxShadow: '0 10px 25px -5px rgba(220, 38, 38, 0.5), 0 0 15px rgba(220, 38, 38, 0.5)',
+    fontSize: '0.95rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    letterSpacing: '0.01em',
+    border: '1px solid rgba(255, 255, 255, 0.3)',
+    userSelect: 'none'
   },
   card: {
     width: '100%',
