@@ -3,7 +3,7 @@ import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
-  LifeBuoy, Bell, AlertOctagon, Send, Lock
+  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff
 } from 'lucide-react';
 
 export default function AdminPanel() {
@@ -150,6 +150,7 @@ export default function AdminPanel() {
   const [alertSound, setAlertSound] = useState('standard'); // 'standard' (less severe) | 'severe' (loud siren)
   const [alertPassword, setAlertPassword] = useState('');
   const [alertPasswordError, setAlertPasswordError] = useState('');
+  const [showAlertPassword, setShowAlertPassword] = useState(false);
 
   // Support Tickets States in Admin Panel
   const [ticketFilter, setTicketFilter] = useState('all'); // 'all' | 'unclaimed' | 'mine' | 'escalated' | 'closed'
@@ -333,7 +334,8 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!alertMessage.trim()) return;
 
-    if (alertPassword.trim() !== '2025') {
+    const enteredPassword = alertPassword.trim();
+    if (enteredPassword !== '2025' && enteredPassword !== 'LumaAirways2025') {
       setAlertPasswordError('Incorrect authorization password. Alert cannot be dispatched.');
       return;
     }
@@ -1521,21 +1523,46 @@ export default function AdminPanel() {
                 Dispatching an emergency alert takes over all user devices with loud sirens. Enter the administrative dispatch security password to confirm this action.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                <input
-                  required
-                  type="password"
-                  value={alertPassword}
-                  onChange={e => {
-                    setAlertPassword(e.target.value);
-                    if (alertPasswordError) setAlertPasswordError('');
-                  }}
-                  placeholder="Enter dispatch security password..."
-                  className="input-field"
-                  style={{
-                    borderColor: alertPasswordError ? '#ef4444' : undefined,
-                    maxWidth: '360px'
-                  }}
-                />
+                <div style={{ position: 'relative', maxWidth: '360px', width: '100%' }}>
+                  <input
+                    required
+                    type={showAlertPassword ? "text" : "password"}
+                    value={alertPassword}
+                    onChange={e => {
+                      setAlertPassword(e.target.value);
+                      if (alertPasswordError) setAlertPasswordError('');
+                    }}
+                    placeholder="Enter dispatch security password..."
+                    className="input-field"
+                    style={{
+                      borderColor: alertPasswordError ? '#ef4444' : undefined,
+                      width: '100%',
+                      paddingRight: '40px',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAlertPassword(prev => !prev)}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0
+                    }}
+                    title={showAlertPassword ? "Hide password" : "Show password"}
+                  >
+                    {showAlertPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
                 {alertPasswordError && (
                   <span style={{ color: '#ef4444', fontSize: '0.82rem', fontWeight: '600' }}>
                     {alertPasswordError}
