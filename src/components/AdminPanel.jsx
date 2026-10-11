@@ -3,7 +3,7 @@ import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
-  LifeBuoy, Bell, AlertOctagon, Send
+  LifeBuoy, Bell, AlertOctagon, Send, Lock
 } from 'lucide-react';
 
 export default function AdminPanel() {
@@ -148,6 +148,8 @@ export default function AdminPanel() {
   const [alertHeader, setAlertHeader] = useState('Emergency Alert');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertSound, setAlertSound] = useState('standard'); // 'standard' (less severe) | 'severe' (loud siren)
+  const [alertPassword, setAlertPassword] = useState('');
+  const [alertPasswordError, setAlertPasswordError] = useState('');
 
   // Support Tickets States in Admin Panel
   const [ticketFilter, setTicketFilter] = useState('all'); // 'all' | 'unclaimed' | 'mine' | 'escalated' | 'closed'
@@ -330,9 +332,17 @@ export default function AdminPanel() {
   const handleDispatchEmergencyAlert = (e) => {
     e.preventDefault();
     if (!alertMessage.trim()) return;
-    dispatchEmergencyAlert(alertHeader, alertMessage.trim(), alertSound);
+
+    if (alertPassword.trim() !== 'LumaAirways2025') {
+      setAlertPasswordError('Incorrect authorization password. Alert cannot be dispatched.');
+      return;
+    }
+
+    setAlertPasswordError('');
+    dispatchEmergencyAlert(alertHeader.trim() || 'Emergency Alert', alertMessage.trim(), alertSound);
     displaySuccess(`Emergency alert (${alertHeader}) dispatched system-wide with ${alertSound === 'severe' ? 'LOUD' : 'Standard'} alarm!`);
     setAlertMessage('');
+    setAlertPassword('');
   };
 
   const handleClearEmergencyAlert = () => {
@@ -1373,24 +1383,56 @@ export default function AdminPanel() {
 
           <form onSubmit={handleDispatchEmergencyAlert} style={styles.form}>
             <div style={styles.inputWrapper}>
-              <label style={styles.label}>Alert Header Selection *</label>
-              <select 
-                value={alertHeader} 
-                onChange={e => {
-                  const val = e.target.value;
-                  setAlertHeader(val);
-                  if (val === 'Severe Emergency Alert') {
-                    setAlertSound('severe');
-                  } else {
-                    setAlertSound('standard');
-                  }
-                }} 
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={styles.label}>Alert Header (Editable) *</label>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAlertHeader('Emergency Alert');
+                      setAlertSound('standard');
+                    }}
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.15)',
+                      color: '#60a5fa',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Preset: Emergency Alert
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAlertHeader('Severe Emergency Alert');
+                      setAlertSound('severe');
+                    }}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      color: '#f87171',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Preset: Severe Emergency Alert
+                  </button>
+                </div>
+              </div>
+              <input
+                required
+                type="text"
+                value={alertHeader}
+                onChange={e => setAlertHeader(e.target.value)}
+                placeholder="e.g. Emergency Alert, Severe Weather Warning, Security Lockdown..."
                 className="input-field"
-                style={{ fontWeight: '600' }}
-              >
-                <option value="Emergency Alert">Emergency Alert</option>
-                <option value="Severe Emergency Alert">Severe Emergency Alert</option>
-              </select>
+                style={{ fontWeight: '700', fontSize: '1rem' }}
+              />
             </div>
 
             <div style={styles.inputWrapper}>
@@ -1461,6 +1503,47 @@ export default function AdminPanel() {
               />
             </div>
 
+            {/* Password Authorization Box */}
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '12px',
+              padding: '18px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171', fontWeight: '700', fontSize: '0.95rem' }}>
+                <Lock size={18} />
+                <span>Security Authorization Required to Dispatch</span>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>
+                Dispatching an emergency alert takes over all user devices with loud sirens. Enter the administrative dispatch security password to confirm this action.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                <input
+                  required
+                  type="password"
+                  value={alertPassword}
+                  onChange={e => {
+                    setAlertPassword(e.target.value);
+                    if (alertPasswordError) setAlertPasswordError('');
+                  }}
+                  placeholder="Enter dispatch security password..."
+                  className="input-field"
+                  style={{
+                    borderColor: alertPasswordError ? '#ef4444' : undefined,
+                    maxWidth: '360px'
+                  }}
+                />
+                {alertPasswordError && (
+                  <span style={{ color: '#ef4444', fontSize: '0.82rem', fontWeight: '600' }}>
+                    {alertPasswordError}
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div style={{
               background: 'rgba(245, 158, 11, 0.08)',
               border: '1px solid rgba(245, 158, 11, 0.25)',
@@ -1473,7 +1556,7 @@ export default function AdminPanel() {
               gap: '10px'
             }}>
               <Bell size={18} />
-              <span><strong>Note:</strong> Dispatching this alert will lock all users' screens with a loud alarm. Dismissal is disabled for the first 10 seconds.</span>
+              <span><strong>Notice:</strong> All users will be locked out for 10 seconds with the selected alarm sound.</span>
             </div>
 
             <button 
@@ -1484,10 +1567,13 @@ export default function AdminPanel() {
                 padding: '12px 24px', 
                 fontSize: '0.95rem', 
                 fontWeight: '700',
-                background: alertHeader === 'Severe Emergency Alert' ? '#dc2626' : '#ea580c'
+                background: alertSound === 'severe' || (alertHeader || '').toLowerCase().includes('severe') ? '#dc2626' : '#ea580c',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}
             >
-              <AlertOctagon size={18} /> Dispatch {alertHeader}
+              <Lock size={16} /> Dispatch {alertHeader || 'Emergency Alert'}
             </button>
           </form>
         </div>
