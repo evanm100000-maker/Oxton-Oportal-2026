@@ -333,7 +333,7 @@ export default function AdminPanel() {
     e.preventDefault();
     if (!alertMessage.trim()) return;
 
-    if (alertPassword.trim() !== 'LumaAirways2025') {
+    if (alertPassword.trim() !== '2025') {
       setAlertPasswordError('Incorrect authorization password. Alert cannot be dispatched.');
       return;
     }
