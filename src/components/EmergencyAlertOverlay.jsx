@@ -55,6 +55,25 @@ export default function EmergencyAlertOverlay() {
     };
   }, [alertActive, isSilenced]);
 
+  // Ensure AudioContext is unlocked upon any user interaction or alert mount
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
   const isSevere = (emergencyAlertConfig?.soundType === 'severe') || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
 
   const startAlarm = () => {
@@ -67,18 +86,22 @@ export default function EmergencyAlertOverlay() {
 
       const ctx = audioContextRef.current;
       if (ctx.state === 'suspended') {
-        ctx.resume();
+        ctx.resume().catch(() => {});
       }
 
       // Check whether sound mode is severe or standard (less severe)
       const isSevereAlarm = emergencyAlertConfig?.soundType === 'severe' || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
 
       if (isSevereAlarm) {
-        // LOUD EMERGENCY SIREN: High-intensity dual oscillating sweep (950Hz to 1350Hz)
+        // SEVERE: Ultra-loud high-frequency sweeping emergency siren
         let step = 0;
         const playSevereSiren = () => {
           try {
             if (!audioContextRef.current || isSilenced) return;
+            if (ctx.state === 'suspended') {
+              ctx.resume().catch(() => {});
+            }
+
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
 
@@ -92,9 +115,9 @@ export default function EmergencyAlertOverlay() {
             osc.frequency.setValueAtTime(startFreq, startTime);
             osc.frequency.exponentialRampToValueAtTime(endFreq, startTime + duration);
 
-            // Loud volume
-            gain.gain.setValueAtTime(0.65, startTime);
-            gain.gain.linearRampToValueAtTime(0.4, startTime + duration * 0.8);
+            // Maximum loud volume
+            gain.gain.setValueAtTime(0.7, startTime);
+            gain.gain.linearRampToValueAtTime(0.5, startTime + duration * 0.8);
             gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
 
             osc.connect(gain);
@@ -112,21 +135,25 @@ export default function EmergencyAlertOverlay() {
         clearInterval(oscillatorIntervalRef.current);
         oscillatorIntervalRef.current = setInterval(playSevereSiren, 320);
       } else {
-        // STANDARD (LESS SEVERE): Softer, lower frequency dual beep pulse
+        // LESS SEVERE: Exact original sawtooth dual-frequency sound (880Hz & 620Hz)
         let highTone = true;
-        const playStandardTone = () => {
+        const playOriginalStandardTone = () => {
           try {
             if (!audioContextRef.current || isSilenced) return;
+            if (ctx.state === 'suspended') {
+              ctx.resume().catch(() => {});
+            }
+
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
 
-            osc.type = 'sine';
+            osc.type = 'sawtooth';
             const startTime = ctx.currentTime;
-            osc.frequency.setValueAtTime(highTone ? 660 : 520, startTime);
+            osc.frequency.setValueAtTime(highTone ? 880 : 620, startTime);
 
-            // Softer volume ramp
-            gain.gain.setValueAtTime(0.22, startTime);
-            gain.gain.exponentialRampToValueAtTime(0.005, startTime + 0.38);
+            // Original volume ramp
+            gain.gain.setValueAtTime(0.35, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.38);
 
             osc.connect(gain);
             gain.connect(ctx.destination);
@@ -139,9 +166,9 @@ export default function EmergencyAlertOverlay() {
           }
         };
 
-        playStandardTone();
+        playOriginalStandardTone();
         clearInterval(oscillatorIntervalRef.current);
-        oscillatorIntervalRef.current = setInterval(playStandardTone, 500);
+        oscillatorIntervalRef.current = setInterval(playOriginalStandardTone, 420);
       }
     } catch (e) {
       console.warn('Web Audio API not permitted without interaction', e);
