@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import { 
   UserCheck, Users, Plane, Calendar, 
-  Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare
+  Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
+  LifeBuoy, Bell, AlertOctagon, Send
 } from 'lucide-react';
 
 export default function AdminPanel() {
@@ -55,10 +56,19 @@ export default function AdminPanel() {
     informalSanctions = [],
     deleteInformalSanction,
     logMissedFlight,
-    pointLogs,
+    pointLogs = [],
     unavailableDates,
     addUnavailableDate,
-    removeUnavailableDate
+    removeUnavailableDate,
+    tickets = [],
+    claimTicket,
+    escalateTicket,
+    closeTicket,
+    updateTicketStatus,
+    addTicketComment,
+    emergencyAlertConfig,
+    dispatchEmergencyAlert,
+    clearEmergencyAlert
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState('approvals');
@@ -134,10 +144,14 @@ export default function AdminPanel() {
   const [maintActive, setMaintActive] = useState(maintenanceConfig?.isActive || false);
   const [maintMessage, setMaintMessage] = useState(maintenanceConfig?.message || '');
 
-  // Applications Form
-  const [newQuestionText, setNewQuestionText] = useState('');
-  const [newQuestionType, setNewQuestionType] = useState('text');
-  const [newQuestionOptions, setNewQuestionOptions] = useState('');
+  // Emergency Alert States
+  const [alertHeader, setAlertHeader] = useState('Emergency Alert');
+  const [alertMessage, setAlertMessage] = useState('');
+
+  // Support Tickets States in Admin Panel
+  const [ticketFilter, setTicketFilter] = useState('all'); // 'all' | 'unclaimed' | 'mine' | 'escalated' | 'closed'
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [adminTicketReply, setAdminTicketReply] = useState('');
 
   // Audit modal state
   const [selectedAuditLog, setSelectedAuditLog] = useState(null);
@@ -311,6 +325,29 @@ export default function AdminPanel() {
     displaySuccess('Meeting scheduled!');
   };
 
+  // Emergency Alert Dispatch Handler
+  const handleDispatchEmergencyAlert = (e) => {
+    e.preventDefault();
+    if (!alertMessage.trim()) return;
+    dispatchEmergencyAlert(alertHeader, alertMessage.trim());
+    displaySuccess(`Emergency alert (${alertHeader}) dispatched system-wide!`);
+    setAlertMessage('');
+  };
+
+  const handleClearEmergencyAlert = () => {
+    clearEmergencyAlert();
+    displaySuccess('Active emergency alert cleared globally.');
+  };
+
+  // Support Tickets Reply Handler
+  const handleAdminTicketReply = (e, ticketId) => {
+    e.preventDefault();
+    if (!adminTicketReply.trim()) return;
+    addTicketComment(ticketId, adminTicketReply.trim());
+    setAdminTicketReply('');
+    displaySuccess('Reply added to ticket.');
+  };
+
   // Derived lists
   const pendingUsers = users.filter(u => !u.approved && u.role !== 'passenger');
   const approvedUsers = users.filter(u => u.approved && u.role !== 'passenger');
@@ -318,6 +355,21 @@ export default function AdminPanel() {
   const activeLoas = loaRequests.filter(req => req.status === 'Approved' || req.status === 'End Requested');
   const pendingFlightLogs = flightLogs.filter(log => log.status === 'Pending');
   const pendingPasswords = passwordResets.filter(r => r.status === 'Pending');
+
+  // Support Tickets list & counters
+  const openTickets = tickets.filter(t => t.status === 'Open');
+  const unclaimedTickets = tickets.filter(t => t.status === 'Open' && !t.claimedByEmail);
+  const myClaimedTickets = tickets.filter(t => t.claimedByEmail === currentUser.email && t.status !== 'Closed');
+  const escalatedTickets = tickets.filter(t => t.status === 'Escalated');
+  const closedTickets = tickets.filter(t => t.status === 'Closed');
+
+  const filteredTickets = tickets.filter(t => {
+    if (ticketFilter === 'unclaimed') return t.status === 'Open' && !t.claimedByEmail;
+    if (ticketFilter === 'mine') return t.claimedByEmail === currentUser.email && t.status !== 'Closed';
+    if (ticketFilter === 'escalated') return t.status === 'Escalated';
+    if (ticketFilter === 'closed') return t.status === 'Closed';
+    return true; // 'all'
+  });
 
   const groupedInfractions = Object.values([...infractions, ...informalSanctions].reduce((acc, inf) => {
     if (!acc[inf.staffEmail]) acc[inf.staffEmail] = { 
@@ -373,11 +425,17 @@ export default function AdminPanel() {
         <button type="button" onClick={() => setActiveSubTab('meetings')} style={getTabStyle(activeSubTab === 'meetings')}>
           <Calendar size={16} /> Meetings
         </button>
+        <button type="button" onClick={() => setActiveSubTab('tickets')} style={getTabStyle(activeSubTab === 'tickets')}>
+          <LifeBuoy size={16} /> Support Tickets ({unclaimedTickets.length > 0 ? `${unclaimedTickets.length} new` : tickets.length})
+        </button>
         <button type="button" onClick={() => setActiveSubTab('passwords')} style={getTabStyle(activeSubTab === 'passwords')}>
           <Key size={16} /> Passwords ({pendingPasswords.length})
         </button>
         <button type="button" onClick={() => setActiveSubTab('status')} style={getTabStyle(activeSubTab === 'status')}>
           <Settings size={16} /> System Status
+        </button>
+        <button type="button" onClick={() => setActiveSubTab('emergencyAlert')} style={{...getTabStyle(activeSubTab === 'emergencyAlert'), color: emergencyAlertConfig?.isActive ? '#ef4444' : undefined, fontWeight: '700'}}>
+          <AlertOctagon size={16} color={emergencyAlertConfig?.isActive ? '#ef4444' : undefined} /> Emergency Alert {emergencyAlertConfig?.isActive ? '• ACTIVE' : ''}
         </button>
 
         <button type="button" onClick={() => setActiveSubTab('pointLogs')} style={getTabStyle(activeSubTab === 'pointLogs')}>
@@ -1238,6 +1296,392 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      )}
+
+      {/* Sub Tab: Emergency Alert */}
+      {activeSubTab === 'emergencyAlert' && (
+      <div id="section-emergency-alert">
+        <div style={styles.panelSection}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={styles.panelTitle}><AlertOctagon size={20} color="#ef4444" /> Emergency Alert System</h3>
+              <p style={styles.panelSubtitle}>Dispatch high-priority fullscreen takeover alerts to all active users with audible siren.</p>
+            </div>
+            {emergencyAlertConfig?.isActive && (
+              <button 
+                type="button" 
+                onClick={handleClearEmergencyAlert} 
+                className="btn-danger" 
+                style={{ padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                <X size={16} /> Cancel Active Alert
+              </button>
+            )}
+          </div>
+
+          {emergencyAlertConfig?.isActive && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: '12px',
+              padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f87171', fontWeight: 'bold' }}>
+                <ShieldAlert size={20} />
+                <span>ALERT BROADCAST IN PROGRESS: {emergencyAlertConfig.header}</span>
+              </div>
+              <p style={{ margin: 0, color: '#fca5a5', fontSize: '0.95rem' }}>{emergencyAlertConfig.message}</p>
+              <span style={{ fontSize: '0.8rem', color: '#f87171' }}>
+                Dispatched by {emergencyAlertConfig.senderName} at {new Date(emergencyAlertConfig.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+          )}
+
+          <form onSubmit={handleDispatchEmergencyAlert} style={styles.form}>
+            <div style={styles.inputWrapper}>
+              <label style={styles.label}>Alert Header Selection *</label>
+              <select 
+                value={alertHeader} 
+                onChange={e => setAlertHeader(e.target.value)} 
+                className="input-field"
+                style={{ fontWeight: '600' }}
+              >
+                <option value="Emergency Alert">Emergency Alert</option>
+                <option value="Severe Emergency Alert">Severe Emergency Alert</option>
+              </select>
+            </div>
+
+            <div style={styles.inputWrapper}>
+              <label style={styles.label}>Alert Message & Instructions *</label>
+              <textarea
+                required
+                value={alertMessage}
+                onChange={e => setAlertMessage(e.target.value)}
+                placeholder="Enter urgent information, incident details, and required actions..."
+                className="input-field"
+                rows="5"
+                style={styles.textarea}
+              />
+            </div>
+
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              fontSize: '0.85rem',
+              color: '#fcd34d',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <Bell size={18} />
+              <span><strong>Note:</strong> Dispatching this alert will lock all users' screens with a loud alarm. Dismissal is disabled for the first 10 seconds.</span>
+            </div>
+
+            <button 
+              type="submit" 
+              className="btn-danger" 
+              style={{
+                ...styles.submitBtn, 
+                padding: '12px 24px', 
+                fontSize: '0.95rem', 
+                fontWeight: '700',
+                background: alertHeader === 'Severe Emergency Alert' ? '#dc2626' : '#ea580c'
+              }}
+            >
+              <AlertOctagon size={18} /> Dispatch {alertHeader}
+            </button>
+          </form>
+        </div>
+      </div>
+      )}
+
+      {/* Sub Tab: Support Tickets */}
+      {activeSubTab === 'tickets' && (
+      <div id="section-admin-tickets">
+        <div style={styles.panelSection}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={styles.panelTitle}><LifeBuoy size={20} color="var(--color-primary)" /> Support Tickets Management</h3>
+              <p style={styles.panelSubtitle}>Claim, reply to, escalate, or close support tickets submitted by staff and passengers.</p>
+            </div>
+
+            {/* Filter Pills */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[
+                { id: 'all', label: `All (${tickets.length})` },
+                { id: 'unclaimed', label: `Unclaimed (${unclaimedTickets.length})` },
+                { id: 'mine', label: `Claimed by Me (${myClaimedTickets.length})` },
+                { id: 'escalated', label: `Escalated (${escalatedTickets.length})` },
+                { id: 'closed', label: `Closed (${closedTickets.length})` },
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setTicketFilter(f.id)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.82rem',
+                    fontWeight: ticketFilter === f.id ? '700' : '500',
+                    border: '1px solid ' + (ticketFilter === f.id ? 'rgba(59, 130, 246, 0.6)' : 'rgba(255, 255, 255, 0.1)'),
+                    background: ticketFilter === f.id ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0, 0, 0, 0.2)',
+                    color: ticketFilter === f.id ? '#60a5fa' : '#94a3b8',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredTickets.length === 0 ? (
+            <div style={styles.emptyGrid}>
+              <LifeBuoy size={42} color="rgba(255,255,255,0.15)" />
+              <p style={styles.emptyText}>No support tickets found under this filter.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {filteredTickets.map(ticket => {
+                const isSelected = selectedTicketId === ticket.id;
+                const isClaimedByMe = ticket.claimedByEmail === currentUser.email;
+
+                return (
+                  <div 
+                    key={ticket.id} 
+                    className="glass-panel" 
+                    style={{
+                      padding: '20px',
+                      borderRadius: '12px',
+                      border: '1px solid ' + (isSelected ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.08)'),
+                      background: isSelected ? 'rgba(30, 41, 59, 0.7)' : 'rgba(15, 23, 42, 0.5)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px'
+                    }}
+                  >
+                    {/* Top Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--color-text-main)', fontWeight: '700' }}>
+                            {ticket.title}
+                          </h4>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: '700',
+                            background: ticket.status === 'Open' ? 'rgba(59, 130, 246, 0.15)' : ticket.status === 'Escalated' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: ticket.status === 'Open' ? '#60a5fa' : ticket.status === 'Escalated' ? '#f59e0b' : '#34d399',
+                            border: '1px solid ' + (ticket.status === 'Open' ? 'rgba(59, 130, 246, 0.3)' : ticket.status === 'Escalated' ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)')
+                          }}>
+                            {ticket.status}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#94a3b8' }}>
+                          <span>Opened by <strong>{ticket.authorName}</strong> ({ticket.authorType || 'Staff'})</span>
+                          <span>•</span>
+                          <span>{new Date(ticket.timestamp).toLocaleString()}</span>
+                          <span>•</span>
+                          <span>{ticket.comments?.length || 0} replies</span>
+                        </div>
+                      </div>
+
+                      {/* Claim Status & Actions */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {ticket.claimedByName ? (
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            background: isClaimedByMe ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)',
+                            color: isClaimedByMe ? '#34d399' : '#818cf8',
+                            border: '1px solid ' + (isClaimedByMe ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.3)'),
+                            fontWeight: '600'
+                          }}>
+                            {isClaimedByMe ? 'Claimed by You' : `Assisting: ${ticket.claimedByName}`}
+                          </span>
+                        ) : (
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            color: '#f87171',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            fontWeight: '600'
+                          }}>
+                            Unclaimed
+                          </span>
+                        )}
+
+                        {/* Admin Action Buttons */}
+                        {(!ticket.claimedByEmail || ticket.claimedByEmail !== currentUser.email) && ticket.status !== 'Closed' && (
+                          <button
+                            type="button"
+                            onClick={() => { claimTicket(ticket.id); displaySuccess(`Ticket claimed! Automated response sent.`); }}
+                            className="btn-primary"
+                            style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', cursor: 'pointer' }}
+                          >
+                            Claim Ticket
+                          </button>
+                        )}
+                        {ticket.status !== 'Escalated' && (
+                          <button
+                            type="button"
+                            onClick={() => { escalateTicket(ticket.id); displaySuccess('Ticket escalated.'); }}
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '0.8rem',
+                              borderRadius: '6px',
+                              background: 'rgba(245, 158, 11, 0.15)',
+                              color: '#f59e0b',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Escalate
+                          </button>
+                        )}
+                        {ticket.status !== 'Closed' ? (
+                          <button
+                            type="button"
+                            onClick={() => { closeTicket(ticket.id); displaySuccess('Ticket closed.'); }}
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '0.8rem',
+                              borderRadius: '6px',
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#34d399',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Close
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => { updateTicketStatus(ticket.id, 'Open'); displaySuccess('Ticket re-opened.'); }}
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '0.8rem',
+                              borderRadius: '6px',
+                              background: 'rgba(59, 130, 246, 0.15)',
+                              color: '#60a5fa',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Re-open
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTicketId(isSelected ? null : ticket.id)}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '0.8rem',
+                            borderRadius: '6px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            color: 'var(--color-text-main)',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {isSelected ? 'Collapse' : 'View Thread'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Ticket Description */}
+                    <div style={{
+                      background: 'rgba(0, 0, 0, 0.2)',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.04)',
+                      fontSize: '0.92rem',
+                      color: 'var(--color-text-main)',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {ticket.description}
+                    </div>
+
+                    {/* Thread Details when expanded */}
+                    {isSelected && (
+                      <div style={{
+                        marginTop: '8px',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                        paddingTop: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}>
+                        <h5 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--color-primary)' }}>Conversation Thread</h5>
+
+                        {(!ticket.comments || ticket.comments.length === 0) ? (
+                          <p style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', margin: '4px 0' }}>No replies in this thread yet.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {ticket.comments.map(c => {
+                              const isSys = c.isSystem || c.authorEmail === 'system';
+                              return (
+                                <div
+                                  key={c.id}
+                                  style={{
+                                    background: isSys ? 'rgba(99, 102, 241, 0.1)' : c.isAdmin ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid ' + (isSys ? 'rgba(99, 102, 241, 0.25)' : c.isAdmin ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)'),
+                                    borderRadius: '8px',
+                                    padding: '10px 14px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                                    <strong style={{ color: isSys ? '#a5b4fc' : c.isAdmin ? '#f87171' : '#60a5fa' }}>
+                                      {c.authorName} {isSys ? '(Automated)' : c.isAdmin ? '(Admin)' : ''}
+                                    </strong>
+                                    <span style={{ color: '#94a3b8' }}>{new Date(c.timestamp).toLocaleString()}</span>
+                                  </div>
+                                  <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>{c.text}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Admin Reply Form */}
+                        {ticket.status !== 'Closed' && (
+                          <form onSubmit={(e) => handleAdminTicketReply(e, ticket.id)} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                            <input
+                              type="text"
+                              value={adminTicketReply}
+                              onChange={e => setAdminTicketReply(e.target.value)}
+                              placeholder="Write admin response..."
+                              className="input-field"
+                              style={{ flex: 1 }}
+                            />
+                            <button type="submit" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}>
+                              <Send size={15} /> Reply
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
       )}
 
       

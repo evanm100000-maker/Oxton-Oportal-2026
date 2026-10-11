@@ -4,7 +4,7 @@ import { ref, onValue, set, runTransaction, push, get, remove, getDatabase, quer
 import { getNextMondayMidnightUK } from '../utils/timeUtils.js';
 const AppContext = createContext();
 
-const SUPER_ADMIN_EMAIL = 'Evanm.100000@gmail.com';
+const SUPER_ADMIN_EMAIL = 'evanm.100000@gmail.com';
 const INITIAL_SUPER_ADMIN = {
   email: SUPER_ADMIN_EMAIL,
   password: 'Pauljack2003.',
@@ -85,6 +85,15 @@ const initialBypassConfig = {
   id: null,
   title: '',
   message: '',
+  senderName: ''
+};
+
+const initialEmergencyAlertConfig = {
+  isActive: false,
+  id: null,
+  header: 'Emergency Alert',
+  message: '',
+  timestamp: null,
   senderName: ''
 };
 
@@ -342,6 +351,7 @@ export const AppProvider = ({ children }) => {
   const [chatMessages, setChatMessages] = useFirebaseArray('chatMessages', EMPTY_ARRAY, isLoggedIn, 200);
   const [announcements, setAnnouncements] = useFirebaseArray('announcements', initialAnnouncements, true, 50);
   const [bypassConfig, setBypassConfig] = useFirebaseObject('bypassConfig', initialBypassConfig);
+  const [emergencyAlertConfig, setEmergencyAlertConfig] = useFirebaseObject('emergencyAlert', initialEmergencyAlertConfig);
 
   const [informalSanctions, setInformalSanctions] = useFirebaseArray('informalSanctions', EMPTY_ARRAY, isLoggedIn, 50);
   const [pointLogs, setPointLogs] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isLoggedIn, 500);
@@ -1580,15 +1590,22 @@ useEffect(() => {
   };
 
   const createTicket = (ticketData) => {
+    const authorName = currentUser 
+      ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim()
+      : (ticketData.authorName || 'Guest');
+    const authorRole = currentUser?.role === 'passenger' ? 'Passenger' : (currentUser?.isAdmin ? 'Admin' : 'Staff');
     const newTicket = {
       id: makeId('ticket'),
       authorEmail: currentUser ? currentUser.email : null,
-      authorName: currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : (ticketData.authorName || 'Anonymous'),
-      authorType: ticketData.authorType || 'Staff',
+      authorName: authorName,
+      authorType: ticketData.authorType || authorRole,
       title: ticketData.title,
       description: ticketData.description,
       status: 'Open',
       timestamp: new Date().toISOString(),
+      claimedByEmail: null,
+      claimedByName: null,
+      claimedAt: null,
       comments: []
     };
     setTickets(prev => [newTicket, ...prev]);
@@ -1599,16 +1616,59 @@ useEffect(() => {
     setTickets(prev => prev.map(t => 
       t.id === ticketId ? { ...t, status } : t
     ));
+    logAction('ticket_status_updated', `Ticket ${ticketId} status changed to ${status}`, { ticketId, status });
+  };
+
+  const claimTicket = (ticketId) => {
+    if (!currentUser) return;
+    const adminName = `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() || currentUser.firstName;
+    const systemComment = {
+      id: makeId('tcomm'),
+      authorEmail: 'system',
+      authorName: 'System',
+      text: `${currentUser.firstName} will be assisting you today.`,
+      timestamp: new Date().toISOString(),
+      isAdmin: true,
+      isSystem: true
+    };
+
+    setTickets(prev => prev.map(t => {
+      if (t.id !== ticketId) return t;
+      return {
+        ...t,
+        status: t.status === 'Closed' ? 'Open' : (t.status || 'Open'),
+        claimedByEmail: currentUser.email,
+        claimedByName: adminName,
+        claimedAt: new Date().toISOString(),
+        comments: [...(t.comments || []), systemComment]
+      };
+    }));
+
+    logAction('ticket_claimed', `Admin ${adminName} claimed ticket ${ticketId}`, { ticketId, adminEmail: currentUser.email });
+  };
+
+  const escalateTicket = (ticketId) => {
+    setTickets(prev => prev.map(t => 
+      t.id === ticketId ? { ...t, status: 'Escalated' } : t
+    ));
+    logAction('ticket_escalated', `Ticket ${ticketId} was escalated`, { ticketId });
+  };
+
+  const closeTicket = (ticketId) => {
+    setTickets(prev => prev.map(t => 
+      t.id === ticketId ? { ...t, status: 'Closed' } : t
+    ));
+    logAction('ticket_closed', `Ticket ${ticketId} was closed`, { ticketId });
   };
 
   const addTicketComment = (ticketId, text) => {
     const newComment = {
       id: makeId('tcomm'),
       authorEmail: currentUser.email,
-      authorName: `${currentUser.firstName} ${currentUser.lastName}`,
+      authorName: `${currentUser.firstName} ${currentUser.lastName || ''}`.trim(),
       text,
       timestamp: new Date().toISOString(),
-      isAdmin: currentUser.isAdmin
+      isAdmin: !!currentUser.isAdmin
     };
     setTickets(prev => prev.map(t => 
       t.id === ticketId ? { ...t, comments: [...(t.comments || []), newComment] } : t
@@ -1709,11 +1769,23 @@ useEffect(() => {
     return () => clearInterval(interval);
   }, [currentUser, meetings]);
 
+  const deduplicatedUsers = useMemo(() => {
+    if (!users || !Array.isArray(users)) return [];
+    const seen = new Set();
+    return users.filter(u => {
+      if (!u || !u.email) return false;
+      const lower = u.email.toLowerCase().trim();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    });
+  }, [users]);
+
   return (
     <AppContext.Provider
       value={{
-        users,
-        activeUsers: users.filter(isActiveStaff),
+        users: deduplicatedUsers,
+        activeUsers: deduplicatedUsers.filter(isActiveStaff),
         currentUser,
         flights,
         flightLogs,
@@ -1789,6 +1861,9 @@ useEffect(() => {
         deleteTask,
         createTicket,
         updateTicketStatus,
+        claimTicket,
+        escalateTicket,
+        closeTicket,
         addTicketComment,
         addStaffNote,
         deleteStaffNote,
@@ -1816,6 +1891,23 @@ useEffect(() => {
         clearBypassAnnouncement: () => {
           setBypassConfig(prev => ({ ...prev, isActive: false }));
           logAction('bypass_announcement_cleared', `Cleared bypass announcement`);
+        },
+        emergencyAlertConfig,
+        dispatchEmergencyAlert: (header, message) => {
+          const newAlert = {
+            isActive: true,
+            id: makeId('ealert'),
+            header: header || 'Emergency Alert',
+            message: message || '',
+            timestamp: Date.now(),
+            senderName: currentUser ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : 'Admin'
+          };
+          setEmergencyAlertConfig(newAlert);
+          logAction('emergency_alert_dispatched', `Dispatched ${header}: ${message}`, { header, message });
+        },
+        clearEmergencyAlert: () => {
+          setEmergencyAlertConfig(prev => ({ ...prev, isActive: false }));
+          logAction('emergency_alert_cleared', 'Cleared emergency alert');
         },
         informalSanctions,
         addInformalSanction,

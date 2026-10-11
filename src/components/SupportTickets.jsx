@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { LifeBuoy, Plus, MessageSquare, ShieldAlert, CheckCircle, Send } from 'lucide-react';
 
 export default function SupportTickets() {
-  const { currentUser, tickets, createTicket, updateTicketStatus, addTicketComment } = useApp();
+  const { currentUser, tickets, createTicket, updateTicketStatus, claimTicket, escalateTicket, closeTicket, addTicketComment } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -19,13 +19,17 @@ export default function SupportTickets() {
     setTimeout(scrollToBottom, 100);
   }, [expandedTicket, tickets]);
 
-  const myTickets = tickets.filter(t => t.authorEmail === currentUser.email);
-  const ticketsToDisplay = (currentUser.isAdmin || currentUser.siteRole === 'Moderator') ? tickets : myTickets;
+  const myTickets = tickets.filter(t => t.authorEmail === currentUser?.email);
+  const ticketsToDisplay = (currentUser?.isAdmin || currentUser?.siteRole === 'Moderator') ? tickets : myTickets;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!title || !description) return;
-    createTicket({ title, description });
+    if (!title.trim() || !description.trim()) return;
+    createTicket({ 
+      title: title.trim(), 
+      description: description.trim(),
+      authorType: currentUser?.role === 'passenger' ? 'Passenger' : (currentUser?.isAdmin ? 'Admin' : 'Staff')
+    });
     setTitle('');
     setDescription('');
     setShowForm(false);
@@ -52,23 +56,19 @@ export default function SupportTickets() {
       <div style={styles.header}>
         <div style={styles.headerText}>
           <h3 style={styles.title}>Support Tickets</h3>
-          <p style={styles.subtitle}>{(currentUser.isAdmin || currentUser.siteRole === 'Moderator') ? 'Manage staff support requests and inquiries.' : 'Open a ticket for private support from admins.'}</p>
+          <p style={styles.subtitle}>{(currentUser?.isAdmin || currentUser?.siteRole === 'Moderator') ? 'Manage user and staff support requests and inquiries.' : 'Open a ticket for private support from admins.'}</p>
         </div>
-        {(!currentUser.isAdmin && currentUser.siteRole !== 'Moderator') && (
-          <button style={styles.newButton} onClick={() => setShowForm(!showForm)}>
-            <Plus size={18} /> {showForm ? 'Cancel' : 'New Ticket'}
-          </button>
-        )}
+        <button style={styles.newButton} onClick={() => setShowForm(!showForm)}>
+          <Plus size={18} /> {showForm ? 'Cancel' : 'New Ticket'}
+        </button>
       </div>
 
-      {(!currentUser.isAdmin && currentUser.siteRole !== 'Moderator') && (
-        <div style={{...styles.sectionNotice, background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', color: '#93c5fd', fontSize: '0.9rem', marginBottom: '16px'}}>
-          <ShieldAlert size={18} />
-          <span><strong>Privacy Notice:</strong> Tickets you create here are strictly confidential. Only you and Administrators can view your tickets. No other staff member can see this.</span>
-        </div>
-      )}
+      <div style={{...styles.sectionNotice, background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', padding: '12px 16px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', color: '#93c5fd', fontSize: '0.9rem', marginBottom: '16px'}}>
+        <ShieldAlert size={18} />
+        <span><strong>Confidential:</strong> Tickets you create here are strictly confidential. Only you and Administrators can view your tickets.</span>
+      </div>
 
-      {showForm && (!currentUser.isAdmin && currentUser.siteRole !== 'Moderator') && (
+      {showForm && (
         <form onSubmit={handleSubmit} className="glass-panel" style={styles.form}>
           <h4 style={styles.formTitle}>Create Support Ticket</h4>
           <div style={styles.formGroup}>
@@ -99,9 +99,24 @@ export default function SupportTickets() {
                 <div style={styles.ticketHeader} onClick={() => setExpandedTicket(isExpanded ? null : ticket.id)}>
                   <div style={styles.ticketTitleRow}>
                     <h4 style={styles.ticketTitle}>{ticket.title}</h4>
-                    <span style={{...styles.statusBadge, borderColor: statusColor, color: statusColor}}>
-                      {ticket.status}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {ticket.claimedByName && (
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          background: 'rgba(99, 102, 241, 0.15)',
+                          color: '#818cf8',
+                          border: '1px solid rgba(99, 102, 241, 0.3)',
+                          fontWeight: '600'
+                        }}>
+                          Assisting: {ticket.claimedByName}
+                        </span>
+                      )}
+                      <span style={{...styles.statusBadge, borderColor: statusColor, color: statusColor}}>
+                        {ticket.status}
+                      </span>
+                    </div>
                   </div>
                   <div style={styles.ticketMeta}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -136,17 +151,31 @@ export default function SupportTickets() {
                         <p style={styles.noComments}>No replies yet.</p>
                       ) : (
                         <div style={styles.commentsList}>
-                          {(ticket.comments || []).map(comment => (
-                            <div key={comment.id} style={{...styles.comment, ...(comment.isAdmin ? styles.adminComment : {})}}>
-                              <div style={styles.commentHeader}>
-                                <strong style={{color: comment.isAdmin ? '#f87171' : '#60a5fa'}}>
-                                  {comment.authorName} {comment.isAdmin && '(Admin)'}
-                                </strong>
-                                <span>{new Date(comment.timestamp).toLocaleString()}</span>
+                          {(ticket.comments || []).map(comment => {
+                            const isSystemComment = comment.isSystem || comment.authorEmail === 'system';
+                            return (
+                              <div 
+                                key={comment.id} 
+                                style={{
+                                  ...styles.comment, 
+                                  ...(isSystemComment ? {
+                                    background: 'rgba(99, 102, 241, 0.12)',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)'
+                                  } : comment.isAdmin ? styles.adminComment : {})
+                                }}
+                              >
+                                <div style={styles.commentHeader}>
+                                  <strong style={{
+                                    color: isSystemComment ? '#a5b4fc' : comment.isAdmin ? '#f87171' : '#60a5fa'
+                                  }}>
+                                    {comment.authorName} {isSystemComment ? '(Automated)' : comment.isAdmin && '(Admin)'}
+                                  </strong>
+                                  <span>{new Date(comment.timestamp).toLocaleString()}</span>
+                                </div>
+                                <p style={styles.commentText}>{comment.text}</p>
                               </div>
-                              <p style={styles.commentText}>{comment.text}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                           <div ref={commentsEndRef} />
                         </div>
                       )}
@@ -165,18 +194,21 @@ export default function SupportTickets() {
                       )}
                     </div>
 
-                    {(currentUser.isAdmin || currentUser.siteRole === 'Moderator') && (
+                    {(currentUser?.isAdmin || currentUser?.siteRole === 'Moderator') && (
                       <div style={styles.adminActions}>
                         <strong style={styles.actionLabel}>Admin Actions:</strong>
                         <div style={styles.actionButtons}>
-                          {ticket.status !== 'Open' && (
-                            <button onClick={() => updateTicketStatus(ticket.id, 'Open')} style={{...styles.actionBtn, color: '#3b82f6', borderColor: '#3b82f6'}}>Mark Open</button>
+                          {(!ticket.claimedByEmail || ticket.claimedByEmail !== currentUser.email) && ticket.status !== 'Closed' && (
+                            <button onClick={() => claimTicket(ticket.id)} style={{...styles.actionBtn, color: '#818cf8', borderColor: '#818cf8'}}>Claim Ticket</button>
                           )}
                           {ticket.status !== 'Escalated' && (
-                            <button onClick={() => updateTicketStatus(ticket.id, 'Escalated')} style={{...styles.actionBtn, color: '#f59e0b', borderColor: '#f59e0b'}}>Escalate</button>
+                            <button onClick={() => escalateTicket(ticket.id)} style={{...styles.actionBtn, color: '#f59e0b', borderColor: '#f59e0b'}}>Escalate</button>
                           )}
                           {ticket.status !== 'Closed' && (
-                            <button onClick={() => updateTicketStatus(ticket.id, 'Closed')} style={{...styles.actionBtn, color: '#10b981', borderColor: '#10b981'}}>Close Ticket</button>
+                            <button onClick={() => closeTicket(ticket.id)} style={{...styles.actionBtn, color: '#10b981', borderColor: '#10b981'}}>Close Ticket</button>
+                          )}
+                          {ticket.status === 'Closed' && (
+                            <button onClick={() => updateTicketStatus(ticket.id, 'Open')} style={{...styles.actionBtn, color: '#3b82f6', borderColor: '#3b82f6'}}>Re-open</button>
                           )}
                         </div>
                       </div>

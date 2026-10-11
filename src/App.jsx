@@ -9,6 +9,7 @@ import SuspendedScreen from './components/SuspendedScreen';
 import NotificationOverlay from './components/NotificationOverlay';
 import LoaBanner from './components/LoaBanner';
 import BypassOverlay from './components/BypassOverlay';
+import EmergencyAlertOverlay from './components/EmergencyAlertOverlay';
 import LandingPage from './components/LandingPage';
 import { useState } from 'react';
 import UpdateNotifier from './components/UpdateNotifier';
@@ -62,6 +63,7 @@ function MainApp() {
         <LandingPage onSelectPortal={(type) => setPortalType(type)} />
         <NotificationOverlay />
         <BypassOverlay />
+        <EmergencyAlertOverlay />
       </>
     );
   }
@@ -76,6 +78,7 @@ function MainApp() {
       {currentUser ? <Dashboard /> : <LoginScreen onBack={() => setPortalType(null)} />}
       <NotificationOverlay />
       <BypassOverlay />
+      <EmergencyAlertOverlay />
     </>
   );
 }
