@@ -4,8 +4,40 @@ import { Send, ShieldAlert, Users, MessageSquare, Globe, Reply, Trash2, Flag, Sm
 import { storage } from "../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
+// Helper to robustly parse timestamps into reader's local Date object
+export const parseMessageDate = (timestamp) => {
+  if (!timestamp) return new Date();
+  if (typeof timestamp === 'number') return new Date(timestamp);
+  if (typeof timestamp === 'string') {
+    let str = timestamp.trim();
+    if (/^\d+$/.test(str)) return new Date(Number(str));
+    // If ISO datetime format without timezone offset or Z, append Z so it parses as UTC
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?$/.test(str)) {
+      str = str.replace(' ', 'T') + 'Z';
+    }
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  const fallback = new Date(timestamp);
+  return isNaN(fallback.getTime()) ? new Date() : fallback;
+};
+
+// Formats message timestamp into the local time of the user reading it
+export const formatMessageLocalTime = (timestamp, use24h = false) => {
+  const date = parseMessageDate(timestamp);
+  try {
+    return date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: !use24h
+    });
+  } catch (e) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+};
+
 export default function StaffChat() {
-  const { currentUser, chatMessages, addChatMessage, deleteChatMessage, addMessageReaction, submitReport, setCustomRole, users } = useApp();
+  const { currentUser, chatMessages, addChatMessage, deleteChatMessage, addMessageReaction, submitReport, setCustomRole, users, use24HourClock } = useApp();
   const [activeChannel, setActiveChannel] = useState('Staff Chat');
   const [inputText, setInputText] = useState('');
   const [rolePromptTarget, setRolePromptTarget] = useState(null);
@@ -24,8 +56,8 @@ export default function StaffChat() {
     return safeChatMessages
       .filter(m => m && m.channel === activeChannel)
       .sort((a, b) => {
-        const timeA = new Date(a.timestamp || 0).getTime();
-        const timeB = new Date(b.timestamp || 0).getTime();
+        const timeA = parseMessageDate(a.timestamp).getTime();
+        const timeB = parseMessageDate(b.timestamp).getTime();
         return timeA - timeB;
       });
   }, [safeChatMessages, activeChannel]);
@@ -171,7 +203,7 @@ export default function StaffChat() {
             <div style={styles.emptyState}>No messages yet. Start the conversation!</div>
           ) : (
             filteredMessages.map((msg, index) => {
-              const msgDate = new Date(msg.timestamp || Date.now());
+              const msgDate = parseMessageDate(msg.timestamp);
               const isToday = new Date().toDateString() === msgDate.toDateString();
               const dateString = isToday ? 'Today' : msgDate.toLocaleDateString();
               
@@ -179,7 +211,7 @@ export default function StaffChat() {
               if (index === 0) {
                 showDateDivider = true;
               } else {
-                const prevMsgDate = new Date(filteredMessages[index - 1].timestamp || Date.now());
+                const prevMsgDate = parseMessageDate(filteredMessages[index - 1].timestamp);
                 if (msgDate.toDateString() !== prevMsgDate.toDateString()) {
                   showDateDivider = true;
                 }
@@ -234,8 +266,11 @@ export default function StaffChat() {
                       {senderName}
                     </span>
                     {msg.senderRole && <span style={styles.senderRole}>({msg.senderRole})</span>}
-                    <span style={styles.timestamp}>
-                      {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+                    <span 
+                      style={styles.timestamp}
+                      title={`Local time: ${msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: !use24HourClock })} (${msgDate.toLocaleDateString()})`}
+                    >
+                      {formatMessageLocalTime(msg.timestamp, use24HourClock)}
                     </span>
                   </div>
                   
