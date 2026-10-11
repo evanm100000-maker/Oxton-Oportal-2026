@@ -1476,6 +1476,18 @@ export const AppProvider = ({ children }) => {
     logAction('detention_rescheduled', `Rescheduled detention for ${infractionId}`, { infractionId, newDate, newTime, newLocation });
   };
 
+  const updateInfraction = (infId, updates) => {
+    setInfractions(prev => prev.map(inf => {
+      if (inf.id !== infId) return inf;
+      return {
+        ...inf,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+    }));
+    logAction('infraction_updated', `Updated consequence ${infId}`, { infId, updates });
+  };
+
   const deleteInfraction = (infId) => {
     if (getRankWeight(currentUser) < 80) return; 
 
@@ -2050,6 +2062,7 @@ useEffect(() => {
         passDetention,
         failDetention,
         rescheduleDetention,
+        updateInfraction,
         informalSanctions,
         addInformalSanction,
         deleteInformalSanction,

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame } from 'lucide-react';
+import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3 } from 'lucide-react';
 
 export default function Infractions() {
   const { 
@@ -8,6 +8,7 @@ export default function Infractions() {
     deleteInfraction, 
     appealInfraction, 
     addInfraction, 
+    updateInfraction,
     informalSanctions = [], 
     deleteInformalSanction, 
     users = [],
@@ -21,6 +22,10 @@ export default function Infractions() {
   // All staff filter & search
   const [searchStaff, setSearchStaff] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
+
+  // Inline location editing state for C4 sanctions
+  const [editingLocationInfId, setEditingLocationInfId] = useState(null);
+  const [editLocationValue, setEditLocationValue] = useState('');
 
   // Log Consequence modal
   const [showLogModal, setShowLogModal] = useState(false);
@@ -109,6 +114,8 @@ export default function Infractions() {
     setLogType('C1 Warning');
     setLogMainMessage('');
     setLogConfidential('');
+    setLogDetentionLocation('Hall');
+    setLogDetentionTime('14:55 - 15:15');
     setShowLogModal(false);
     setLogSuccess('Consequence logged successfully!');
     setTimeout(() => setLogSuccess(''), 4000);
@@ -275,6 +282,48 @@ export default function Infractions() {
             </div>
           </div>
 
+          {/* Termination Threshold Warning Banner */}
+          <div className="glass-panel" style={{
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            borderRadius: '12px',
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            flexWrap: 'wrap'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={20} color="#ef4444" />
+              </div>
+              <div>
+                <div style={{ color: '#ef4444', fontWeight: '800', fontSize: '0.98rem', letterSpacing: '0.2px' }}>
+                  25 consequences will result in a termination from the staff team.
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: '0.82rem', marginTop: '2px' }}>
+                  Current disciplinary record: <strong style={{ color: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#3b82f6' }}>{totalWeightedPoints} / 25 consequences</strong>
+                </div>
+              </div>
+            </div>
+            <div style={{ minWidth: '160px', flex: '1 1 200px', maxWidth: '300px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>
+                <span>Threshold Meter</span>
+                <span style={{ fontWeight: '700', color: totalWeightedPoints >= 25 ? '#ef4444' : '#f87171' }}>{Math.round((totalWeightedPoints / 25) * 100)}%</span>
+              </div>
+              <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.min(100, (totalWeightedPoints / 25) * 100)}%`,
+                  height: '100%',
+                  background: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#3b82f6',
+                  borderRadius: '999px',
+                  transition: 'width 0.4s ease'
+                }} />
+              </div>
+            </div>
+          </div>
+
           {/* 2. UPCOMING SANCTIONS: Rendered UNDER the stats, matching the portal dark glass theme */}
           <div className="glass-panel" style={styles.upcomingThemeCard}>
             <div style={styles.upcomingHeaderDark}>
@@ -298,7 +347,8 @@ export default function Infractions() {
                   {myUpcomingSanctions.map(sanc => {
                     const isC4b = sanc.type?.includes('C4B') || sanc.type?.toLowerCase().includes('40m');
                     const badgeText = isC4b ? 'C4b' : 'C4a';
-                    const titleText = `${isC4b ? 'C4B' : 'C4A'} (${sanc.detentionLocation || 'Hall'})`;
+                    const locationName = sanc.detentionLocation || 'Hall';
+                    const titleText = `${isC4b ? 'C4B' : 'C4A'} (${locationName})`;
                     const timeText = sanc.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15');
 
                     return (
@@ -312,11 +362,103 @@ export default function Infractions() {
                             <span style={styles.escalationBadgeDark}>Escalation</span>
                           )}
                           <span style={styles.detentionTitleTextDark}>{titleText}</span>
+                          
+                          {isAdminOrMod && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingLocationInfId(editingLocationInfId === sanc.id ? null : sanc.id);
+                                setEditLocationValue(locationName);
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#f59e0b',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.75rem',
+                                borderRadius: '4px'
+                              }}
+                              title="Edit location for this detention"
+                            >
+                              <Edit3 size={13} />
+                              <span style={{ textDecoration: 'underline' }}>Edit Location</span>
+                            </button>
+                          )}
+
                           <div style={styles.detentionTimeRowDark}>
                             <Clock size={15} color="#94a3b8" />
                             <span>{timeText}</span>
                           </div>
                         </div>
+
+                        {/* Inline Location Editor for Admins */}
+                        {editingLocationInfId === sanc.id && (
+                          <div style={{
+                            marginTop: '10px',
+                            padding: '10px 14px',
+                            background: 'rgba(0,0,0,0.4)',
+                            border: '1px solid rgba(245, 158, 11, 0.4)',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            flexWrap: 'wrap'
+                          }}>
+                            <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 'bold' }}>Update Location:</span>
+                            <input
+                              type="text"
+                              value={editLocationValue}
+                              onChange={e => setEditLocationValue(e.target.value)}
+                              className="input-field"
+                              style={{ padding: '4px 8px', fontSize: '0.82rem', width: '160px' }}
+                              placeholder="e.g. Hall, Training Room"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!editLocationValue.trim()) return;
+                                updateInfraction(sanc.id, { detentionLocation: editLocationValue.trim() });
+                                setEditingLocationInfId(null);
+                              }}
+                              className="btn-primary"
+                              style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '6px' }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingLocationInfId(null)}
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.78rem', borderRadius: '6px' }}
+                            >
+                              Cancel
+                            </button>
+                            <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px' }}>
+                              {['Hall', 'Training Room A', 'Staff Briefing Room', 'Executive Office', 'Flight Deck'].map(preset => (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => setEditLocationValue(preset)}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    padding: '2px 6px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '4px',
+                                    color: '#9ca3af',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -368,14 +510,85 @@ export default function Infractions() {
                     </div>
 
                     {isC4 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                        <Clock size={16} color="#f59e0b" />
-                        <span style={{ fontSize: '0.85rem', color: '#fcd34d' }}>
-                          <strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate || 'Scheduled'} &bull; {inf.detentionTime || '14:55'}
-                        </span>
-                        <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 'bold', color: inf.detentionStatus === 'Passed' ? '#10b981' : inf.detentionStatus === 'Failed' ? '#ef4444' : '#f59e0b' }}>
-                          Status: {inf.detentionStatus || 'Scheduled'}
-                        </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                          <Clock size={16} color="#f59e0b" />
+                          <span style={{ fontSize: '0.85rem', color: '#fcd34d' }}>
+                            <strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate || 'Scheduled'} &bull; {inf.detentionTime || '14:55'}
+                          </span>
+                          {isAdminOrMod && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingLocationInfId(editingLocationInfId === inf.id ? null : inf.id);
+                                setEditLocationValue(inf.detentionLocation || 'Hall');
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#f59e0b',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.75rem',
+                                borderRadius: '4px'
+                              }}
+                              title="Edit Detention Location"
+                            >
+                              <Edit3 size={13} />
+                              <span style={{ textDecoration: 'underline' }}>Edit Location</span>
+                            </button>
+                          )}
+                          <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 'bold', color: inf.detentionStatus === 'Passed' ? '#10b981' : inf.detentionStatus === 'Failed' ? '#ef4444' : '#f59e0b' }}>
+                            Status: {inf.detentionStatus || 'Scheduled'}
+                          </span>
+                        </div>
+
+                        {editingLocationInfId === inf.id && (
+                          <div style={{
+                            marginTop: '4px',
+                            padding: '8px 12px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            flexWrap: 'wrap'
+                          }}>
+                            <span style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 'bold' }}>Update Location:</span>
+                            <input
+                              type="text"
+                              value={editLocationValue}
+                              onChange={e => setEditLocationValue(e.target.value)}
+                              className="input-field"
+                              style={{ padding: '4px 8px', fontSize: '0.82rem', width: '150px' }}
+                              placeholder="e.g. Hall, Training Room"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!editLocationValue.trim()) return;
+                                updateInfraction(inf.id, { detentionLocation: editLocationValue.trim() });
+                                setEditingLocationInfId(null);
+                              }}
+                              className="btn-primary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingLocationInfId(null)}
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -545,14 +758,85 @@ export default function Infractions() {
                     </div>
 
                     {isC4 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                        <Clock size={16} color="#f59e0b" />
-                        <span style={{ fontSize: '0.85rem', color: '#fcd34d' }}>
-                          <strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate || 'Scheduled'} &bull; {inf.detentionTime || '14:55'}
-                        </span>
-                        <span style={{ marginLeft: 'auto', fontSize: '0.8rem', fontWeight: 'bold', color: inf.detentionStatus === 'Passed' ? '#10b981' : inf.detentionStatus === 'Failed' ? '#ef4444' : '#f59e0b' }}>
-                          Status: {inf.detentionStatus || 'Scheduled'}
-                        </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                          <Clock size={16} color="#f59e0b" />
+                          <span style={{ fontSize: '0.85rem', color: '#fcd34d' }}>
+                            <strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate || 'Scheduled'} &bull; {inf.detentionTime || '14:55'}
+                          </span>
+                          {isAdminOrMod && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingLocationInfId(editingLocationInfId === inf.id ? null : inf.id);
+                                setEditLocationValue(inf.detentionLocation || 'Hall');
+                              }}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#f59e0b',
+                                cursor: 'pointer',
+                                padding: '2px 6px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.75rem',
+                                borderRadius: '4px'
+                              }}
+                              title="Edit Detention Location"
+                            >
+                              <Edit3 size={13} />
+                              <span style={{ textDecoration: 'underline' }}>Edit Location</span>
+                            </button>
+                          )}
+                          <span style={{ marginLeft: 'auto', fontSize: '0.8rem', fontWeight: 'bold', color: inf.detentionStatus === 'Passed' ? '#10b981' : inf.detentionStatus === 'Failed' ? '#ef4444' : '#f59e0b' }}>
+                            Status: {inf.detentionStatus || 'Scheduled'}
+                          </span>
+                        </div>
+
+                        {editingLocationInfId === inf.id && (
+                          <div style={{
+                            marginTop: '4px',
+                            padding: '8px 12px',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            flexWrap: 'wrap'
+                          }}>
+                            <span style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 'bold' }}>Update Location:</span>
+                            <input
+                              type="text"
+                              value={editLocationValue}
+                              onChange={e => setEditLocationValue(e.target.value)}
+                              className="input-field"
+                              style={{ padding: '4px 8px', fontSize: '0.82rem', width: '150px' }}
+                              placeholder="e.g. Hall, Training Room"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!editLocationValue.trim()) return;
+                                updateInfraction(inf.id, { detentionLocation: editLocationValue.trim() });
+                                setEditingLocationInfId(null);
+                              }}
+                              className="btn-primary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingLocationInfId(null)}
+                              className="btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -647,9 +931,36 @@ export default function Infractions() {
                     <Clock size={16} />
                     <span>Detention Schedule Parameters</span>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={styles.inputWrapper}>
-                      <label style={styles.label}>Detention Location *</label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={styles.label}>Location on C4 (Replaces "Hall") *</label>
+                        <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: '600' }}>Editable</span>
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0 0 6px 0' }}>
+                        Controls the location shown on the C4 sanction (e.g. C4A (Location) / C4B (Location))
+                      </p>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                        {['Hall', 'Training Room A', 'Staff Briefing Room', 'Executive Office', 'Flight Deck'].map(loc => (
+                          <button
+                            key={loc}
+                            type="button"
+                            onClick={() => setLogDetentionLocation(loc)}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              border: '1px solid',
+                              borderColor: logDetentionLocation === loc ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                              background: logDetentionLocation === loc ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
+                              color: logDetentionLocation === loc ? '#f59e0b' : '#d1d5db',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {loc}
+                          </button>
+                        ))}
+                      </div>
                       <input 
                         type="text" 
                         required 
@@ -659,6 +970,8 @@ export default function Infractions() {
                         className="input-field"
                       />
                     </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div style={styles.inputWrapper}>
                       <label style={styles.label}>Detention Date *</label>
                       <input 

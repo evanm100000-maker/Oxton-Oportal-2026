@@ -134,6 +134,7 @@ export default function AdminPanel() {
   const [infMainMessage, setInfMainMessage] = useState('');
   const [infConfidentialMessage, setInfConfidentialMessage] = useState('');
   const [infDetentionLocation, setInfDetentionLocation] = useState('Hall');
+  const [infDetentionTime, setInfDetentionTime] = useState('14:55 - 15:15');
   const [infDetentionDate, setInfDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [expandedInfractions, setExpandedInfractions] = useState({});
 
@@ -268,6 +269,7 @@ export default function AdminPanel() {
         mainMessage: `[${infCategory}] ${infMainMessage}`, 
         confidentialMessage: infConfidentialMessage,
         detentionDate: infType.startsWith('C4') ? infDetentionDate : null,
+        detentionTime: infType.startsWith('C4') ? infDetentionTime : null,
         detentionLocation: infType.startsWith('C4') ? (infDetentionLocation || 'Hall') : null
       });
       if (!wasLogged) {
@@ -280,6 +282,8 @@ export default function AdminPanel() {
     setInfType('C1 Warning');
     setInfMainMessage('');
     setInfConfidentialMessage('');
+    setInfDetentionLocation('Hall');
+    setInfDetentionTime('14:55 - 15:15');
     setShowInfractionModal(false);
     displaySuccess('Consequence successfully logged against staff member.');
   };
@@ -2127,7 +2131,13 @@ export default function AdminPanel() {
               <div style={styles.inputWrapper}>
                 <label style={styles.label}>Action Level *</label>
                 <select value={infType} onChange={e => {
-                  setInfType(e.target.value);
+                  const val = e.target.value;
+                  setInfType(val);
+                  if (val.includes('C4B')) {
+                    setInfDetentionTime('14:55 - 15:35');
+                  } else if (val.includes('C4A')) {
+                    setInfDetentionTime('14:55 - 15:15');
+                  }
                 }} className="input-field">
                   <option value="C1 Warning">C1 - Warning</option>
                   <option value="C2 Warning">C2 - Warning</option>
@@ -2139,9 +2149,40 @@ export default function AdminPanel() {
               </div>
 
               {infType.startsWith('C4') && (
-                <>
+                <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.25)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                    <Clock size={16} />
+                    <span>Detention Schedule & Location</span>
+                  </div>
                   <div style={styles.inputWrapper}>
-                    <label style={styles.label}>Detention Location *</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={styles.label}>Location on C4 (Replaces "Hall") *</label>
+                      <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: '600' }}>Editable</span>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0 0 6px 0' }}>
+                      Controls the location displayed on the C4 sanction (e.g. C4A (Location) / C4B (Location))
+                    </p>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                      {['Hall', 'Training Room A', 'Staff Briefing Room', 'Executive Office', 'Flight Deck'].map(loc => (
+                        <button
+                          key={loc}
+                          type="button"
+                          onClick={() => setInfDetentionLocation(loc)}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.75rem',
+                            border: '1px solid',
+                            borderColor: infDetentionLocation === loc ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                            background: infDetentionLocation === loc ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
+                            color: infDetentionLocation === loc ? '#f59e0b' : '#d1d5db',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {loc}
+                        </button>
+                      ))}
+                    </div>
                     <input
                       type="text"
                       required
@@ -2151,17 +2192,29 @@ export default function AdminPanel() {
                       className="input-field"
                     />
                   </div>
-                  <div style={styles.inputWrapper}>
-                    <label style={styles.label}>Detention Scheduled Date *</label>
-                    <input
-                      type="date"
-                      required
-                      value={infDetentionDate}
-                      onChange={e => setInfDetentionDate(e.target.value)}
-                      className="input-field"
-                    />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div style={styles.inputWrapper}>
+                      <label style={styles.label}>Scheduled Date *</label>
+                      <input
+                        type="date"
+                        required
+                        value={infDetentionDate}
+                        onChange={e => setInfDetentionDate(e.target.value)}
+                        className="input-field"
+                      />
+                    </div>
+                    <div style={styles.inputWrapper}>
+                      <label style={styles.label}>Time Slot</label>
+                      <input
+                        type="text"
+                        value={infDetentionTime}
+                        onChange={e => setInfDetentionTime(e.target.value)}
+                        placeholder="e.g. 14:55 - 15:15"
+                        className="input-field"
+                      />
+                    </div>
                   </div>
-                </>
+                </div>
               )}
 
               <div style={styles.inputWrapper}>
