@@ -396,7 +396,7 @@ export default function Dashboard() {
         {
           id: 'infractions',
           title: 'My Consequences',
-          description: 'Track disciplinary record. 25 consequences will result in termination from the staff team.',
+          description: 'Track disciplinary record. 35 consequences will result in termination from the staff team.',
           icon: Slash,
           color: '#1e3a8a',
           component: Infractions,

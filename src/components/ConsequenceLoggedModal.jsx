@@ -7,7 +7,7 @@ import {
 /**
  * Computes individual consequence tier counts and weighted points total.
  * Point scale: C1 = 1pt, C2 = 2pts, C3 = 3pts, C4 = 4pts, C5 = 5pts.
- * Termination limit: 25 points.
+ * Termination limit: 35 points.
  */
 export function computeStaffConsequenceStats(staffEmail, infractions = [], informalSanctions = [], additionalNewType = null) {
   if (!staffEmail) {
@@ -23,7 +23,7 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
       previousPoints: 0,
       pointsAdded: 0,
       totalPoints: 0,
-      thresholdLimit: 25,
+      thresholdLimit: 35,
       thresholdPercent: 0,
       isTerminated: false,
       isNearTermination: false,
@@ -66,10 +66,10 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
   const c1c2CombinedCount = c1 + c2 + genericWarn;
   const totalCount = c1c2CombinedCount + c3 + c4 + c5;
   const totalPoints = (c1 * 1) + (c2 * 2) + (genericWarn * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5);
-  const thresholdLimit = 25;
+  const thresholdLimit = 35;
   const thresholdPercent = Math.min(100, Math.max(2, Math.round((totalPoints / thresholdLimit) * 100)));
   const isTerminated = totalPoints >= thresholdLimit;
-  const isNearTermination = totalPoints >= 20 && totalPoints < thresholdLimit;
+  const isNearTermination = totalPoints >= 28 && totalPoints < thresholdLimit;
 
   return {
     c1Count: c1,
@@ -123,13 +123,13 @@ export default function ConsequenceLoggedModal({
   const totalPoints = stats?.totalPoints ?? 0;
   const previousPoints = stats?.previousPoints ?? 0;
   const pointsAdded = stats?.pointsAdded ?? 0;
-  const thresholdLimit = stats?.thresholdLimit ?? 25;
+  const thresholdLimit = stats?.thresholdLimit ?? 35;
   const thresholdPercent = stats?.thresholdPercent ?? Math.min(100, Math.round((totalPoints / thresholdLimit) * 100));
   const isTerminated = stats?.isTerminated ?? (totalPoints >= thresholdLimit);
-  const isNearTermination = stats?.isNearTermination ?? (totalPoints >= 20 && totalPoints < thresholdLimit);
+  const isNearTermination = stats?.isNearTermination ?? (totalPoints >= 28 && totalPoints < thresholdLimit);
   const remainingPoints = Math.max(0, thresholdLimit - totalPoints);
 
-  const meterColor = isTerminated ? '#ef4444' : isNearTermination ? '#f59e0b' : totalPoints >= 10 ? '#38bdf8' : '#10b981';
+  const meterColor = isTerminated ? '#ef4444' : isNearTermination ? '#f59e0b' : totalPoints >= 15 ? '#38bdf8' : '#10b981';
 
   return (
     <div style={modalStyles.overlay}>
@@ -289,7 +289,7 @@ export default function ConsequenceLoggedModal({
           {/* Progress Bar Meter */}
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '6px' }}>
-              <span>Progress to 25 Limit</span>
+              <span>Progress to 35 Limit</span>
               <span style={{ fontWeight: '700', color: meterColor }}>
                 {totalPoints} / {thresholdLimit} Points ({thresholdPercent}%)
               </span>
@@ -320,7 +320,7 @@ export default function ConsequenceLoggedModal({
             <AlertTriangle size={20} color={isTerminated ? '#ef4444' : isNearTermination ? '#f59e0b' : '#f87171'} style={{ flexShrink: 0 }} />
             <div style={{ fontSize: '0.85rem' }}>
               <strong style={{ color: isTerminated ? '#ef4444' : isNearTermination ? '#f59e0b' : '#f87171' }}>
-                Official Policy: 25 consequences will result in a termination from the staff team.
+                Official Policy: 35 consequences will result in a termination from the staff team.
               </strong>
               <div style={{ color: '#cbd5e1', marginTop: '2px', fontSize: '0.8rem' }}>
                 {isTerminated ? (
@@ -329,11 +329,11 @@ export default function ConsequenceLoggedModal({
                   </span>
                 ) : isNearTermination ? (
                   <span style={{ color: '#fde68a' }}>
-                    Warning: Staff member is only {remainingPoints} consequence point(s) away from the 25 limit.
+                    Warning: Staff member is only {remainingPoints} consequence point(s) away from the 35 limit.
                   </span>
                 ) : (
                   <span>
-                    Staff member has {remainingPoints} consequence points remaining before reaching the 25 termination threshold.
+                    Staff member has {remainingPoints} consequence points remaining before reaching the 35 termination threshold.
                   </span>
                 )}
               </div>

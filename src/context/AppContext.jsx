@@ -1366,6 +1366,21 @@ export const AppProvider = ({ children }) => {
 
     const type = infData.type || 'C1 Warning';
     const isDetention = type.startsWith('C4');
+    const detentionDate = infData.detentionDate || (isDetention ? new Date(Date.now() + 86400000).toISOString().split('T')[0] : null);
+
+    // Prevent duplicate C4 for the same user on the same date
+    if (isDetention && detentionDate) {
+      const duplicateC4 = (infractions || []).find(inf => 
+        inf &&
+        inf.staffEmail?.toLowerCase() === staffEmail.toLowerCase() &&
+        (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) &&
+        (inf.detentionDate || '').trim() === detentionDate.trim()
+      );
+      if (duplicateC4) {
+        alert('Unable to log (C4 Already Scheduled for this date for this user.)');
+        return false;
+      }
+    }
 
     const newInfraction = {
       id: makeId('inf'),
@@ -1374,7 +1389,7 @@ export const AppProvider = ({ children }) => {
       type,
       mainMessage,
       confidentialMessage: infData.confidentialMessage?.trim() || '',
-      detentionDate: infData.detentionDate || (isDetention ? new Date(Date.now() + 86400000).toISOString().split('T')[0] : null),
+      detentionDate: detentionDate,
       detentionTime: infData.detentionTime || (isDetention ? (type.includes('C4B') ? '14:55 - 15:35' : '14:55 - 15:15') : null),
       detentionLocation: infData.detentionLocation || (isDetention ? 'Hall' : null),
       detentionStatus: isDetention ? 'Scheduled' : null, // 'Scheduled' | 'Passed' | 'Failed'
@@ -1810,17 +1825,36 @@ useEffect(() => {
   };
 
   const addTicketComment = (ticketId, text) => {
+    if (!currentUser || !text?.trim()) return;
+    const authorName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername || currentUser.email || 'Admin';
     const newComment = {
       id: makeId('tcomm'),
       authorEmail: currentUser.email,
-      authorName: `${currentUser.firstName} ${currentUser.lastName || ''}`.trim(),
-      text,
+      authorName,
+      text: text.trim(),
       timestamp: new Date().toISOString(),
-      isAdmin: !!currentUser.isAdmin
+      isAdmin: Boolean(currentUser.isAdmin || currentUser.siteRole === 'Admin' || currentUser.siteRole === 'Owner' || currentUser.siteRole === 'Moderator')
     };
-    setTickets(prev => prev.map(t => 
-      t.id === ticketId ? { ...t, comments: [...(t.comments || []), newComment] } : t
-    ));
+
+    setTickets(prev => (prev || []).map(t => {
+      if (t.id !== ticketId) return t;
+      const currentComments = Array.isArray(t.comments) 
+        ? t.comments 
+        : (t.comments && typeof t.comments === 'object' ? Object.values(t.comments) : []);
+
+      const isStaffOrAdmin = Boolean(currentUser.isAdmin || currentUser.siteRole === 'Admin' || currentUser.siteRole === 'Owner' || currentUser.siteRole === 'Moderator');
+
+      return {
+        ...t,
+        status: t.status === 'Closed' ? 'Open' : (t.status || 'Open'),
+        claimedByEmail: t.claimedByEmail || (isStaffOrAdmin ? currentUser.email : null),
+        claimedByName: t.claimedByName || (isStaffOrAdmin ? authorName : null),
+        comments: [...currentComments, newComment],
+        updatedAt: new Date().toISOString()
+      };
+    }));
+
+    logAction('ticket_comment_added', `Added comment to ticket ${ticketId}`, { ticketId, text: text.trim() });
   };
 
   const addUnavailableDate = (dateStr) => {

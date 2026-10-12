@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { AlertTriangle, Volume2, VolumeX, ShieldAlert, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { startAlarmSiren, stopAlarmSiren, resumeAlarmSiren } from '../utils/sirenAudio';
 
 export default function EmergencyAlertOverlay() {
   const { emergencyAlertConfig } = useApp();
   const [dismissedId, setDismissedId] = useState(null);
   const [countdown, setCountdown] = useState(10);
   const [isSilenced, setIsSilenced] = useState(false);
-  const audioContextRef = useRef(null);
-  const oscillatorIntervalRef = useRef(null);
 
   // Read dismissed alert id from sessionStorage so user isn't re-prompted within the session if dismissed
   useEffect(() => {
@@ -58,179 +57,61 @@ export default function EmergencyAlertOverlay() {
     return () => clearInterval(timer);
   }, [alertActive, countdown]);
 
-  // Audio siren synthesized via Web Audio API (Dual-tone alarm)
+  const isSevere = (emergencyAlertConfig?.soundType === 'severe') || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
+
+  // Trigger alarm siren reliably via multi-layered sirenAudio engine
   useEffect(() => {
     if (!alertActive || isSilenced) {
-      stopAlarm();
+      stopAlarmSiren();
       return;
     }
 
-    startAlarm();
+    startAlarmSiren(isSevere ? 'severe' : 'standard');
 
     return () => {
-      stopAlarm();
+      stopAlarmSiren();
     };
-  }, [alertActive, isSilenced]);
+  }, [alertActive, isSilenced, isSevere, emergencyAlertConfig?.id]);
 
-  // Ensure AudioContext is unlocked upon any user interaction or alert mount
+  // Proactively resume alarm on any user movement, hover, key, or window focus
   useEffect(() => {
-    const unlockAudio = () => {
-      if (audioContextRef.current) {
-        if (audioContextRef.current.state === 'suspended') {
-          audioContextRef.current.resume().then(() => {
-            setIsAudioBlocked(false);
-          }).catch(() => {});
-        } else {
-          setIsAudioBlocked(false);
-        }
-      } else if (alertActive && !isSilenced) {
-        startAlarm();
-      }
+    if (!alertActive || isSilenced) return;
+
+    const resumeSound = () => {
+      setIsAudioBlocked(false);
+      resumeAlarmSiren();
     };
 
-    window.addEventListener('click', unlockAudio, { passive: true });
-    window.addEventListener('keydown', unlockAudio, { passive: true });
-    window.addEventListener('touchstart', unlockAudio, { passive: true });
-    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('click', resumeSound, { passive: true });
+    window.addEventListener('keydown', resumeSound, { passive: true });
+    window.addEventListener('touchstart', resumeSound, { passive: true });
+    window.addEventListener('pointerdown', resumeSound, { passive: true });
+    window.addEventListener('mousemove', resumeSound, { passive: true, once: true });
+    window.addEventListener('focus', resumeSound, { passive: true });
 
     return () => {
-      window.removeEventListener('click', unlockAudio);
-      window.removeEventListener('keydown', unlockAudio);
-      window.removeEventListener('touchstart', unlockAudio);
-      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('click', resumeSound);
+      window.removeEventListener('keydown', resumeSound);
+      window.removeEventListener('touchstart', resumeSound);
+      window.removeEventListener('pointerdown', resumeSound);
+      window.removeEventListener('mousemove', resumeSound);
+      window.removeEventListener('focus', resumeSound);
     };
   }, [alertActive, isSilenced]);
-
-  const isSevere = (emergencyAlertConfig?.soundType === 'severe') || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
-
-  const startAlarm = () => {
-    try {
-      if (!audioContextRef.current) {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        audioContextRef.current = new AudioCtx();
-      }
-
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume().then(() => {
-          setIsAudioBlocked(false);
-        }).catch(() => {
-          // Browser autoplay policy blocked audio
-          setIsAudioBlocked(true);
-        });
-      } else {
-        setIsAudioBlocked(false);
-      }
-
-      // Check whether sound mode is severe or standard (less severe)
-      const isSevereAlarm = emergencyAlertConfig?.soundType === 'severe' || (emergencyAlertConfig?.header || '').toLowerCase().includes('severe');
-
-      if (isSevereAlarm) {
-        // SEVERE: Ultra-loud high-frequency sweeping emergency siren
-        let step = 0;
-        const playSevereSiren = () => {
-          try {
-            if (!audioContextRef.current || isSilenced) return;
-            if (ctx.state === 'suspended') {
-              ctx.resume().then(() => setIsAudioBlocked(false)).catch(() => setIsAudioBlocked(true));
-            }
-
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-
-            osc.type = 'sawtooth';
-            const startTime = ctx.currentTime;
-            const duration = 0.35;
-
-            // Frequency sweep for urgency
-            const startFreq = step % 2 === 0 ? 1150 : 850;
-            const endFreq = step % 2 === 0 ? 1380 : 980;
-            osc.frequency.setValueAtTime(startFreq, startTime);
-            osc.frequency.exponentialRampToValueAtTime(endFreq, startTime + duration);
-
-            // Maximum loud volume
-            gain.gain.setValueAtTime(0.7, startTime);
-            gain.gain.linearRampToValueAtTime(0.5, startTime + duration * 0.8);
-            gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            osc.start(startTime);
-            osc.stop(startTime + duration);
-            step++;
-          } catch (e) {
-            console.warn('Audio tone error', e);
-          }
-        };
-
-        playSevereSiren();
-        clearInterval(oscillatorIntervalRef.current);
-        oscillatorIntervalRef.current = setInterval(playSevereSiren, 320);
-      } else {
-        // LESS SEVERE: Exact original sawtooth dual-frequency sound (880Hz & 620Hz)
-        let highTone = true;
-        const playOriginalStandardTone = () => {
-          try {
-            if (!audioContextRef.current || isSilenced) return;
-            if (ctx.state === 'suspended') {
-              ctx.resume().then(() => setIsAudioBlocked(false)).catch(() => setIsAudioBlocked(true));
-            }
-
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-
-            osc.type = 'sawtooth';
-            const startTime = ctx.currentTime;
-            osc.frequency.setValueAtTime(highTone ? 880 : 620, startTime);
-
-            // Original volume ramp
-            gain.gain.setValueAtTime(0.35, startTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.38);
-
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-
-            osc.start(startTime);
-            osc.stop(startTime + 0.4);
-            highTone = !highTone;
-          } catch (e) {
-            console.warn('Audio tone error', e);
-          }
-        };
-
-        playOriginalStandardTone();
-        clearInterval(oscillatorIntervalRef.current);
-        oscillatorIntervalRef.current = setInterval(playOriginalStandardTone, 420);
-      }
-    } catch (e) {
-      console.warn('Web Audio API not permitted without interaction', e);
-      setIsAudioBlocked(true);
-    }
-  };
-
-  const stopAlarm = () => {
-    if (oscillatorIntervalRef.current) {
-      clearInterval(oscillatorIntervalRef.current);
-      oscillatorIntervalRef.current = null;
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      try {
-        audioContextRef.current.suspend();
-      } catch (e) {
-        // ignore
-      }
-    }
-  };
 
   const handleSilence = () => {
     setIsSilenced(prev => {
       const next = !prev;
-      if (next && emergencyAlertConfig?.id) {
-        sessionStorage.setItem('silencedEmergencyAlertId', emergencyAlertConfig.id);
+      if (next) {
+        stopAlarmSiren();
+        if (emergencyAlertConfig?.id) {
+          sessionStorage.setItem('silencedEmergencyAlertId', emergencyAlertConfig.id);
+        }
       } else {
-        sessionStorage.removeItem('silencedEmergencyAlertId');
+        startAlarmSiren(isSevere ? 'severe' : 'standard');
+        if (emergencyAlertConfig?.id) {
+          sessionStorage.removeItem('silencedEmergencyAlertId');
+        }
       }
       return next;
     });
@@ -238,7 +119,7 @@ export default function EmergencyAlertOverlay() {
 
   const handleDismiss = () => {
     if (countdown > 0) return;
-    stopAlarm();
+    stopAlarmSiren();
     if (emergencyAlertConfig?.id) {
       setDismissedId(emergencyAlertConfig.id);
       sessionStorage.setItem('dismissedEmergencyAlertId', emergencyAlertConfig.id);
@@ -248,13 +129,10 @@ export default function EmergencyAlertOverlay() {
   };
 
   const triggerAudioResume = () => {
-    if (audioContextRef.current) {
-      audioContextRef.current.resume().then(() => {
-        setIsAudioBlocked(false);
-      }).catch(() => {});
-    }
-    if (!isSilenced) {
-      startAlarm();
+    setIsAudioBlocked(false);
+    resumeAlarmSiren();
+    if (!isSilenced && alertActive) {
+      startAlarmSiren(isSevere ? 'severe' : 'standard');
     }
   };
 

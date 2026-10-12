@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import FlightRegister from './FlightRegister';
 import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
+import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
@@ -174,7 +175,7 @@ export default function AdminPanel() {
   // Support Tickets States in Admin Panel
   const [ticketFilter, setTicketFilter] = useState('all'); // 'all' | 'unclaimed' | 'mine' | 'escalated' | 'closed'
   const [selectedTicketId, setSelectedTicketId] = useState(null);
-  const [adminTicketReply, setAdminTicketReply] = useState('');
+  const [adminTicketReplies, setAdminTicketReplies] = useState({});
 
   // Audit modal state
   const [selectedAuditLog, setSelectedAuditLog] = useState(null);
@@ -259,8 +260,25 @@ export default function AdminPanel() {
     if (!infStaffEmail || !infMainMessage.trim()) return;
 
     const targetEmail = infStaffEmail;
-    const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
     const isDetention = infType.startsWith('C4');
+
+    // Prevent duplicate C4 on the same date for this user
+    if (isDetention) {
+      const scheduledDate = (infDetentionDate || '').trim();
+      const existingC4ForDate = (infractions || []).find(inf => 
+        inf &&
+        inf.staffEmail?.toLowerCase() === targetEmail.toLowerCase() &&
+        (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) &&
+        (inf.detentionDate || '').trim() === scheduledDate
+      );
+
+      if (existingC4ForDate) {
+        alert('Unable to log (C4 Already Scheduled for this date for this user.)');
+        return;
+      }
+    }
+
+    const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
     const consequenceData = {
       type: infType,
       mainMessage: `[${infCategory}] ${infMainMessage}`,
@@ -387,6 +405,13 @@ export default function AdminPanel() {
       return;
     }
 
+    // Warm up audio context directly during the admin user gesture click
+    try {
+      getSharedAudioContext();
+    } catch {
+      // ignore
+    }
+
     setAlertPasswordError('');
     dispatchEmergencyAlert(alertHeader.trim() || 'Emergency Alert', alertMessage.trim(), alertSound);
     displaySuccess(`Emergency alert (${alertHeader}) dispatched system-wide with ${alertSound === 'severe' ? 'LOUD' : 'Standard'} alarm!`);
@@ -402,9 +427,10 @@ export default function AdminPanel() {
   // Support Tickets Reply Handler
   const handleAdminTicketReply = (e, ticketId) => {
     e.preventDefault();
-    if (!adminTicketReply.trim()) return;
-    addTicketComment(ticketId, adminTicketReply.trim());
-    setAdminTicketReply('');
+    const replyText = (adminTicketReplies[ticketId] || '').trim();
+    if (!replyText) return;
+    addTicketComment(ticketId, replyText);
+    setAdminTicketReplies(prev => ({ ...prev, [ticketId]: '' }));
     displaySuccess('Reply added to ticket.');
   };
 
@@ -1995,51 +2021,66 @@ export default function AdminPanel() {
                       }}>
                         <h5 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--color-primary)' }}>Conversation Thread</h5>
 
-                        {(!ticket.comments || ticket.comments.length === 0) ? (
-                          <p style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', margin: '4px 0' }}>No replies in this thread yet.</p>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {ticket.comments.map(c => {
-                              const isSys = c.isSystem || c.authorEmail === 'system';
-                              return (
-                                <div
-                                  key={c.id}
-                                  style={{
-                                    background: isSys ? 'rgba(99, 102, 241, 0.1)' : c.isAdmin ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                                    border: '1px solid ' + (isSys ? 'rgba(99, 102, 241, 0.25)' : c.isAdmin ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)'),
-                                    borderRadius: '8px',
-                                    padding: '10px 14px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px'
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                                    <strong style={{ color: isSys ? '#a5b4fc' : c.isAdmin ? '#f87171' : '#60a5fa' }}>
-                                      {c.authorName} {isSys ? '(Automated)' : c.isAdmin ? '(Admin)' : ''}
-                                    </strong>
-                                    <span style={{ color: '#94a3b8' }}>{new Date(c.timestamp).toLocaleString()}</span>
+                        {(() => {
+                          const threadComments = Array.isArray(ticket.comments) 
+                            ? ticket.comments 
+                            : (ticket.comments && typeof ticket.comments === 'object' ? Object.values(ticket.comments) : []);
+
+                          if (threadComments.length === 0) {
+                            return (
+                              <p style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', margin: '4px 0' }}>No replies in this thread yet.</p>
+                            );
+                          }
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {threadComments.map(c => {
+                                const isSys = c.isSystem || c.authorEmail === 'system';
+                                return (
+                                  <div
+                                    key={c.id || Math.random()}
+                                    style={{
+                                      background: isSys ? 'rgba(99, 102, 241, 0.1)' : c.isAdmin ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                                      border: '1px solid ' + (isSys ? 'rgba(99, 102, 241, 0.25)' : c.isAdmin ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)'),
+                                      borderRadius: '8px',
+                                      padding: '10px 14px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                                      <strong style={{ color: isSys ? '#a5b4fc' : c.isAdmin ? '#f87171' : '#60a5fa' }}>
+                                        {c.authorName || 'Staff'} {isSys ? '(Automated)' : c.isAdmin ? '(Admin)' : ''}
+                                      </strong>
+                                      <span style={{ color: '#94a3b8' }}>{c.timestamp ? new Date(c.timestamp).toLocaleString() : ''}</span>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>{c.text}</p>
                                   </div>
-                                  <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--color-text-main)' }}>{c.text}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
 
                         {/* Admin Reply Form */}
                         {ticket.status !== 'Closed' && (
-                          <form onSubmit={(e) => handleAdminTicketReply(e, ticket.id)} style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <form onSubmit={(e) => handleAdminTicketReply(e, ticket.id)} style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                             <input
                               type="text"
-                              value={adminTicketReply}
-                              onChange={e => setAdminTicketReply(e.target.value)}
-                              placeholder="Write admin response..."
+                              value={adminTicketReplies[ticket.id] || ''}
+                              onChange={e => setAdminTicketReplies(prev => ({ ...prev, [ticket.id]: e.target.value }))}
+                              placeholder="Write admin reply..."
                               className="input-field"
                               style={{ flex: 1 }}
                             />
-                            <button type="submit" className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}>
-                              <Send size={15} /> Reply
+                            <button 
+                              type="submit" 
+                              className="btn-primary" 
+                              disabled={!(adminTicketReplies[ticket.id] || '').trim()}
+                              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', borderRadius: '8px', cursor: 'pointer' }}
+                            >
+                              <Send size={15} /> Send Reply
                             </button>
                           </form>
                         )}

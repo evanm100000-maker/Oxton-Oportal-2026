@@ -101,6 +101,23 @@ export default function Infractions() {
 
     const isDetention = logType.startsWith('C4');
     const targetEmail = logStaffEmail;
+
+    // Check duplicate C4 for this user on this date
+    if (isDetention) {
+      const scheduledDate = (logDetentionDate || '').trim();
+      const existingC4ForDate = safeInfractions.find(inf => 
+        inf &&
+        inf.staffEmail?.toLowerCase() === targetEmail.toLowerCase() &&
+        (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) &&
+        (inf.detentionDate || '').trim() === scheduledDate
+      );
+
+      if (existingC4ForDate) {
+        alert('Unable to log (C4 Already Scheduled for this date for this user.)');
+        return;
+      }
+    }
+
     const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
     const consequenceData = {
       type: logType,
@@ -222,15 +239,15 @@ export default function Infractions() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.7rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Official Policy</span>
               <strong style={{ color: '#ef4444', fontSize: '1.02rem', letterSpacing: '0.2px' }}>
-                25 consequences will result in a termination from the staff team.
+                35 consequences will result in a termination from the staff team.
               </strong>
             </div>
             <div style={{ color: '#9ca3af', fontSize: '0.84rem', marginTop: '4px' }}>
-              All staff members must maintain fewer than 25 consequence points to remain in active standing.
+              All staff members must maintain fewer than 35 consequence points to remain in active standing.
               {totalWeightedPoints > 0 ? (
-                <> Your record: <strong style={{ color: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#3b82f6' }}>{totalWeightedPoints} / 25 points</strong>.</>
+                <> Your record: <strong style={{ color: totalWeightedPoints >= 30 ? '#ef4444' : totalWeightedPoints >= 18 ? '#f59e0b' : '#3b82f6' }}>{totalWeightedPoints} / 35 points</strong>.</>
               ) : (
-                <> Your current record is clean (<strong>0 / 25 points</strong>).</>
+                <> Your current record is clean (<strong>0 / 35 points</strong>).</>
               )}
             </div>
           </div>
@@ -238,13 +255,13 @@ export default function Infractions() {
         <div style={{ minWidth: '170px', flex: '1 1 200px', maxWidth: '320px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>
             <span>Termination Threshold</span>
-            <span style={{ fontWeight: '700', color: totalWeightedPoints >= 25 ? '#ef4444' : '#f87171' }}>{totalWeightedPoints} / 25 ({Math.round((totalWeightedPoints / 25) * 100)}%)</span>
+            <span style={{ fontWeight: '700', color: totalWeightedPoints >= 35 ? '#ef4444' : '#f87171' }}>{totalWeightedPoints} / 35 ({Math.round((totalWeightedPoints / 35) * 100)}%)</span>
           </div>
           <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
             <div style={{
-              width: `${Math.min(100, Math.max(2, (totalWeightedPoints / 25) * 100))}%`,
+              width: `${Math.min(100, Math.max(2, (totalWeightedPoints / 35) * 100))}%`,
               height: '100%',
-              background: totalWeightedPoints >= 20 ? '#ef4444' : totalWeightedPoints >= 10 ? '#f59e0b' : '#10b981',
+              background: totalWeightedPoints >= 30 ? '#ef4444' : totalWeightedPoints >= 18 ? '#f59e0b' : '#10b981',
               borderRadius: '999px',
               transition: 'width 0.4s ease'
             }} />

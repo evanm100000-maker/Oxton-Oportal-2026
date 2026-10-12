@@ -13,6 +13,7 @@ import EmergencyAlertOverlay from './components/EmergencyAlertOverlay';
 import LandingPage from './components/LandingPage';
 import { useState } from 'react';
 import UpdateNotifier from './components/UpdateNotifier';
+import './utils/sirenAudio';
 
 function MainApp() {
   const { currentUser, maintenanceConfig } = useApp();
