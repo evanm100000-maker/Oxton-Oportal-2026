@@ -584,19 +584,36 @@ export const AppProvider = ({ children }) => {
     const connectedRef = ref(db, '.info/connected');
 
     let onDisconnectRef = null;
+    const offlineTimeoutRefKey = `offline_timer_${safeEmail}`;
 
     const unsubConnected = onValue(connectedRef, (snap) => {
       if (snap.val() === true) {
-         onDisconnectRef = onDisconnect(myPresenceRef);
-         onDisconnectRef.set(false).then(() => {
-           set(myPresenceRef, true);
-         });
+        // Clear any pending offline timer if page reloaded or reconnected
+        if (window[offlineTimeoutRefKey]) {
+          clearTimeout(window[offlineTimeoutRefKey]);
+          delete window[offlineTimeoutRefKey];
+        }
+
+        onDisconnectRef = onDisconnect(myPresenceRef);
+        onDisconnectRef.set(false).then(() => {
+          set(myPresenceRef, true);
+        });
       }
     });
+
     return () => {
       if (typeof unsubConnected === 'function') unsubConnected();
       if (onDisconnectRef) onDisconnectRef.cancel();
-      set(myPresenceRef, false);
+
+      // When component unmounts (e.g. user refreshes or navigates away), wait 30 seconds before setting presence to false.
+      // If the user reloads within 30 seconds, the new instance cancels this timer, saving redundant Firebase writes and thrashing.
+      if (window[offlineTimeoutRefKey]) {
+        clearTimeout(window[offlineTimeoutRefKey]);
+      }
+      window[offlineTimeoutRefKey] = setTimeout(() => {
+        set(myPresenceRef, false).catch(() => {});
+        delete window[offlineTimeoutRefKey];
+      }, 30000);
     };
   }, [currentUser]);
 
@@ -865,6 +882,16 @@ export const AppProvider = ({ children }) => {
   };
 
   const logout = () => {
+    if (currentUser?.email) {
+      const safeEmail = currentUser.email.replace(/\./g, ',');
+      const offlineTimeoutRefKey = `offline_timer_${safeEmail}`;
+      if (window[offlineTimeoutRefKey]) {
+        clearTimeout(window[offlineTimeoutRefKey]);
+        delete window[offlineTimeoutRefKey];
+      }
+      const db = getDatabase(firebaseApp);
+      set(ref(db, `onlinePresence/${safeEmail}`), false).catch(() => {});
+    }
     setCurrentUser(null);
   };
 
