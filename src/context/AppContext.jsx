@@ -561,18 +561,65 @@ export const AppProvider = ({ children }) => {
     });
 
     const onlinePresenceRef = ref(db, 'onlinePresence');
+    const offlineDebounceTimers = {};
+
     const unsubscribeOnline = onValue(onlinePresenceRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setOnlineUsers(data);
-      } else {
-        setOnlineUsers({});
-      }
+      const data = snapshot.val() || {};
+      
+      setOnlineUsers(prevOnline => {
+        const nextState = { ...prevOnline };
+
+        // Process incoming entries
+        Object.keys(data).forEach(userKey => {
+          const isOnline = !!data[userKey];
+          if (isOnline) {
+            // Cancel any pending removal timer
+            if (offlineDebounceTimers[userKey]) {
+              clearTimeout(offlineDebounceTimers[userKey]);
+              delete offlineDebounceTimers[userKey];
+            }
+            nextState[userKey] = true;
+          } else {
+            // If currently online, delay switching to offline by 30 seconds
+            if (nextState[userKey] && !offlineDebounceTimers[userKey]) {
+              offlineDebounceTimers[userKey] = setTimeout(() => {
+                setOnlineUsers(current => {
+                  const updated = { ...current };
+                  delete updated[userKey];
+                  return updated;
+                });
+                delete offlineDebounceTimers[userKey];
+              }, 30000);
+            } else if (!nextState[userKey]) {
+              delete nextState[userKey];
+            }
+          }
+        });
+
+        // Any keys in prevOnline that are completely missing in data
+        Object.keys(nextState).forEach(userKey => {
+          if (data[userKey] === undefined) {
+            if (!offlineDebounceTimers[userKey]) {
+              offlineDebounceTimers[userKey] = setTimeout(() => {
+                setOnlineUsers(current => {
+                  const updated = { ...current };
+                  delete updated[userKey];
+                  return updated;
+                });
+                delete offlineDebounceTimers[userKey];
+              }, 30000);
+            }
+          }
+        });
+
+        return nextState;
+      });
     });
 
     return () => {
       if (typeof unsubscribeSiteVersion === 'function') unsubscribeSiteVersion();
       if (typeof unsubscribeOnline === 'function') unsubscribeOnline();
+      Object.keys(offlineDebounceTimers).forEach(k => clearTimeout(offlineDebounceTimers[k]));
     };
   }, []);
 
@@ -583,30 +630,35 @@ export const AppProvider = ({ children }) => {
     const myPresenceRef = ref(db, `onlinePresence/${safeEmail}`);
     const connectedRef = ref(db, '.info/connected');
 
-    let onDisconnectRef = null;
     const offlineTimeoutRefKey = `offline_timer_${safeEmail}`;
+
+    // If an offline timer was scheduled from unmount/unload, clear it immediately
+    if (window[offlineTimeoutRefKey]) {
+      clearTimeout(window[offlineTimeoutRefKey]);
+      delete window[offlineTimeoutRefKey];
+    }
 
     const unsubConnected = onValue(connectedRef, (snap) => {
       if (snap.val() === true) {
-        // Clear any pending offline timer if page reloaded or reconnected
+        // Clear any pending offline timer if reconnected
         if (window[offlineTimeoutRefKey]) {
           clearTimeout(window[offlineTimeoutRefKey]);
           delete window[offlineTimeoutRefKey];
         }
 
-        onDisconnectRef = onDisconnect(myPresenceRef);
-        onDisconnectRef.set(false).then(() => {
-          set(myPresenceRef, true);
-        });
+        // Set presence to true in Firebase.
+        // We do NOT use onDisconnect(myPresenceRef).set(false) because onDisconnect fires instantly
+        // the millisecond a browser tab refreshes, which flickers the user offline and spams Firebase.
+        // Instead, presence is held active across refreshes, and unmount/pageclose waits 30 seconds.
+        set(myPresenceRef, true).catch(() => {});
       }
     });
 
     return () => {
       if (typeof unsubConnected === 'function') unsubConnected();
-      if (onDisconnectRef) onDisconnectRef.cancel();
 
-      // When component unmounts (e.g. user refreshes or navigates away), wait 30 seconds before setting presence to false.
-      // If the user reloads within 30 seconds, the new instance cancels this timer, saving redundant Firebase writes and thrashing.
+      // When component unmounts (e.g. user refreshes or closes tab), wait 30 seconds before writing offline to Firebase.
+      // If the user reloads within 30 seconds, the new instance immediately cancels this timer and keeps them online!
       if (window[offlineTimeoutRefKey]) {
         clearTimeout(window[offlineTimeoutRefKey]);
       }
