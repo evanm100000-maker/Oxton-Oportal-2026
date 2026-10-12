@@ -416,6 +416,8 @@ export const AppProvider = ({ children }) => {
 
   const clearUserNotifications = () => {
     if (!currentUser) return;
+    setUserNotifications([]);
+    setNotifications([]);
     const db = getDatabase(firebaseApp);
     const safeEmail = currentUser.email.replace(/\./g, ',');
     set(ref(db, `userNotifications/${safeEmail}`), null);
@@ -732,104 +734,108 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [setLoaRequests, setAnnouncements]);
 
+  const mountTimeRef = useRef(Date.now());
   const prevDataRef = useRef({ chatMessages: null, infractions: null, loaRequests: null, tickets: null, tasks: null });
-  const initialLoadRef = useRef({ chatMessages: true, infractions: true, loaRequests: true, tickets: true, tasks: true });
+  const initialUserPointsSyncedRef = useRef(false);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!initialLoadRef.current.chatMessages && prevDataRef.current.chatMessages && visibleChatMessages.length > prevDataRef.current.chatMessages.length) {
+    if (prevDataRef.current.chatMessages !== null && visibleChatMessages.length > prevDataRef.current.chatMessages.length) {
       const newMsg = visibleChatMessages.find(m => !prevDataRef.current.chatMessages.some(pm => pm.id === m.id));
       if (newMsg && newMsg.senderEmail !== currentUser.email) {
-        const text = newMsg.text || '';
-        addNotification(`New message from ${newMsg.senderName}`, text.length > 40 ? text.substring(0, 40) + '...' : text, 'info');
+        const msgTime = new Date(newMsg.timestamp || 0).getTime();
+        if (msgTime > mountTimeRef.current) {
+          const text = newMsg.text || '';
+          addNotification(`New message from ${newMsg.senderName}`, text.length > 40 ? text.substring(0, 40) + '...' : text, 'info');
+        }
       }
-    }
-    if (visibleChatMessages.length > 0 || prevDataRef.current.chatMessages !== null) {
-       initialLoadRef.current.chatMessages = false;
     }
     prevDataRef.current.chatMessages = visibleChatMessages;
   }, [visibleChatMessages, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!initialLoadRef.current.infractions && prevDataRef.current.infractions && infractions.length > prevDataRef.current.infractions.length) {
+    if (prevDataRef.current.infractions !== null && infractions.length > prevDataRef.current.infractions.length) {
       const newInf = infractions.find(i => !prevDataRef.current.infractions.some(pi => pi.id === i.id));
       if (newInf && newInf.staffEmail === currentUser.email) {
-        addNotification(`New Consequence: ${newInf.type}`, `You received a ${newInf.type}. Check your dashboard.`, 'danger');
+        const infTime = new Date(newInf.timestamp || newInf.createdAt || 0).getTime();
+        if (infTime > mountTimeRef.current) {
+          addNotification(`New Consequence: ${newInf.type}`, `You received a ${newInf.type}. Check your dashboard.`, 'danger');
+        }
       }
-    }
-    if (infractions.length > 0 || prevDataRef.current.infractions !== null) {
-       initialLoadRef.current.infractions = false;
     }
     prevDataRef.current.infractions = infractions;
   }, [infractions, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!initialLoadRef.current.loaRequests && prevDataRef.current.loaRequests) {
+    if (prevDataRef.current.loaRequests !== null) {
       loaRequests.forEach(loa => {
         const prevLoa = prevDataRef.current.loaRequests.find(p => p.id === loa.id);
         if (prevLoa && prevLoa.status !== loa.status && loa.userEmail === currentUser.email) {
-          addNotification(`LOA Status Updated`, `Your LOA request is now ${loa.status}`, 'info');
+          const updateTime = new Date(loa.reviewedAt || loa.updatedAt || Date.now()).getTime();
+          if (updateTime > mountTimeRef.current) {
+            addNotification(`LOA Status Updated`, `Your LOA request is now ${loa.status}`, 'info');
+          }
         }
       });
-    }
-    if (loaRequests.length > 0 || prevDataRef.current.loaRequests !== null) {
-       initialLoadRef.current.loaRequests = false;
     }
     prevDataRef.current.loaRequests = loaRequests;
   }, [loaRequests, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!initialLoadRef.current.tickets && prevDataRef.current.tickets) {
+    if (prevDataRef.current.tickets !== null) {
       tickets.forEach(ticket => {
         const prevTicket = prevDataRef.current.tickets.find(p => p.id === ticket.id);
         if (prevTicket && ticket.comments && (!prevTicket.comments || ticket.comments.length > prevTicket.comments.length)) {
           if (ticket.authorEmail === currentUser.email || currentUser.isAdmin) {
              const newComment = ticket.comments[ticket.comments.length - 1];
-             if (newComment.authorEmail !== currentUser.email) {
-               addNotification(`New Response on Support Ticket`, newComment.text.length > 40 ? newComment.text.substring(0, 40) + '...' : newComment.text, 'info');
+             if (newComment && newComment.authorEmail !== currentUser.email) {
+               const commTime = new Date(newComment.timestamp || 0).getTime();
+               if (commTime > mountTimeRef.current) {
+                 addNotification(`New Response on Support Ticket`, newComment.text.length > 40 ? newComment.text.substring(0, 40) + '...' : newComment.text, 'info');
+               }
              }
           }
         }
       });
-    }
-    if (tickets.length > 0 || prevDataRef.current.tickets !== null) {
-       initialLoadRef.current.tickets = false;
     }
     prevDataRef.current.tickets = tickets;
   }, [tickets, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!initialLoadRef.current.tasks && prevDataRef.current.tasks && tasks.length > prevDataRef.current.tasks.length) {
+    if (prevDataRef.current.tasks !== null && tasks.length > prevDataRef.current.tasks.length) {
       const newTask = tasks.find(t => !prevDataRef.current.tasks.some(pt => pt.id === t.id));
       if (newTask && newTask.assignedToEmail === currentUser.email) {
-        addNotification(`New Task Assigned`, `You have a new task: ${newTask.title}`, 'info');
+        const taskTime = new Date(newTask.timestamp || 0).getTime();
+        if (taskTime > mountTimeRef.current) {
+          addNotification(`New Task Assigned`, `You have a new task: ${newTask.title}`, 'info');
+        }
       }
-    }
-    if (tasks.length > 0 || prevDataRef.current.tasks !== null) {
-       initialLoadRef.current.tasks = false;
     }
     prevDataRef.current.tasks = tasks;
   }, [tasks, currentUser]);
 
   useEffect(() => {
-  }, []);
-
-  useEffect(() => {
     if (currentUser && users && users.length > 0) {
       const dbUser = users.find(u => u.email === currentUser.email);
       if (dbUser && JSON.stringify(dbUser) !== JSON.stringify(currentUser)) {
-        if (currentUser.points !== undefined && dbUser.points !== currentUser.points) {
+        if (initialUserPointsSyncedRef.current) {
+          if (currentUser.points !== undefined && dbUser.points !== currentUser.points) {
             if (dbUser.points > currentUser.points) {
-                addNotification(`Points Earned!`, `You received ${dbUser.points - currentUser.points} points.`, 'info');
+              addNotification(`Points Earned!`, `You received ${dbUser.points - currentUser.points} points.`, 'info');
             } else {
-                addNotification(`Points Deducted`, `You lost ${currentUser.points - dbUser.points} points.`, 'danger');
+              addNotification(`Points Deducted`, `You lost ${currentUser.points - dbUser.points} points.`, 'danger');
             }
+          }
+        } else {
+          initialUserPointsSyncedRef.current = true;
         }
         setCurrentUser(dbUser);
+      } else if (dbUser && !initialUserPointsSyncedRef.current) {
+        initialUserPointsSyncedRef.current = true;
       }
     }
   }, [users, currentUser]);

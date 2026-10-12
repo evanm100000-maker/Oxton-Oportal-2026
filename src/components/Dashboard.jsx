@@ -14,7 +14,6 @@ import Performance from './Performance';
 import Tasks from './Tasks';
 import SupportTickets from './SupportTickets';
 import Analytics from './Analytics';
-import FlightRegister from './FlightRegister';
 import LeaveOfAbsence from './LeaveOfAbsence';
 import Documents from './Documents';
 import Reports from './Reports';
@@ -55,7 +54,7 @@ const tabToPath = {
 const pathToTab = Object.fromEntries(Object.entries(tabToPath).map(([k, v]) => [v, k]));
 
 export default function Dashboard() {
-  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat } = useApp();
+  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [] } = useApp();
 
   // Compute flight quota progress: 3 completed flights needed to be full (100%)
   // Either verified 'Present' on flight attendanceRecord OR approved flight log
@@ -275,14 +274,6 @@ export default function Dashboard() {
           color: '#2563eb',
           component: AllocationRequests,
           badgeCount: unreadFlightCount
-        },
-        {
-          id: 'register',
-          title: 'Flight Register',
-          description: 'Track crew allocation and verify attendance present or absent.',
-          icon: ClipboardList,
-          color: '#3b82f6',
-          component: FlightRegister
         },
         {
           id: 'calendar',
@@ -580,8 +571,29 @@ export default function Dashboard() {
             {currentUser.isAdmin && <span className="badge badge-admin">Admin</span>}
           </div>
 
-          <button onClick={() => setIsNotificationsOpen(true)} className="btn-secondary" style={{...styles.logoutBtn, color: 'var(--color-text-main)'}}>
+          <button onClick={() => setIsNotificationsOpen(true)} className="btn-secondary" style={{...styles.logoutBtn, color: 'var(--color-text-main)', position: 'relative'}} title="Notifications">
             <Bell size={16} />
+            {userNotifications && userNotifications.length > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-4px',
+                background: '#ef4444',
+                color: '#fff',
+                fontSize: '10px',
+                fontWeight: '700',
+                borderRadius: '10px',
+                minWidth: '16px',
+                height: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 4px',
+                boxShadow: '0 0 6px rgba(239, 68, 68, 0.6)'
+              }}>
+                {userNotifications.length > 9 ? '9+' : userNotifications.length}
+              </span>
+            )}
           </button>
 
           <button onClick={() => setIsSettingsOpen(true)} className="btn-secondary" style={{...styles.logoutBtn, color: 'var(--color-text-main)'}}>

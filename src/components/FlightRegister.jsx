@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Users, CheckCircle, XCircle, Clock, ShieldCheck, Plane, Search, Calendar } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Clock, ShieldCheck, Plane, Search, Calendar, UserPlus, Trash2, RotateCcw } from 'lucide-react';
 
 const escapeEmail = (email) => (email ? email.replace(/\./g, ',') : '');
 
 export default function FlightRegister() {
-  const { flights, users, currentUser, markFlightAttendance } = useApp();
+  const { flights, users, currentUser, markFlightAttendance, allocateStaffDirectly, deallocateStaffDirectly } = useApp();
   const [selectedFlightId, setSelectedFlightId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [staffToAdd, setStaffToAdd] = useState('');
+
+  const isAdmin = Boolean(currentUser?.isAdmin || currentUser?.siteRole === 'Admin' || currentUser?.siteRole === 'Owner' || currentUser?.siteRole === 'Moderator');
 
   // Sort flights descending by date/time
   const sortedFlights = [...flights].sort((a, b) => {
@@ -46,6 +49,10 @@ export default function FlightRegister() {
   const presentCount = allocatedCrew.filter(c => c.mark === 'Present').length;
   const absentCount = allocatedCrew.filter(c => c.mark === 'Absent').length;
   const pendingCount = allocatedCrew.filter(c => c.mark !== 'Present' && c.mark !== 'Absent').length;
+
+  const unallocatedCrew = (users || []).filter(u => 
+    u && u.email && !(activeFlight?.allocatedStaff || []).includes(u.email)
+  ).sort((a, b) => `${a.firstName || ''} ${a.lastName || ''}`.localeCompare(`${b.firstName || ''} ${b.lastName || ''}`));
 
   return (
     <div style={styles.container}>
@@ -106,6 +113,45 @@ export default function FlightRegister() {
             </div>
           </div>
 
+          {/* Admin manual crew addition */}
+          {isAdmin && (
+            <div style={styles.addCrewBar} className="glass-panel">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserPlus size={18} color="#3b82f6" />
+                <span style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--color-text-main)' }}>Add Staff to Flight Register:</span>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', flex: 1, minWidth: '280px', flexWrap: 'wrap' }}>
+                <select
+                  value={staffToAdd}
+                  onChange={(e) => setStaffToAdd(e.target.value)}
+                  className="input-field"
+                  style={{ flex: 1, minWidth: '220px', padding: '8px 12px', fontSize: '0.88rem' }}
+                >
+                  <option value="">-- Select staff to add to this flight --</option>
+                  {unallocatedCrew.map(u => (
+                    <option key={u.email} value={u.email}>
+                      {u.firstName} {u.lastName} (@{u.robloxUsername || 'N/A'}) &mdash; {u.customRole || u.role || 'Staff'}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!staffToAdd}
+                  onClick={() => {
+                    if (staffToAdd && activeFlight) {
+                      allocateStaffDirectly(activeFlight.id, staffToAdd);
+                      setStaffToAdd('');
+                    }
+                  }}
+                  className="btn-primary"
+                  style={{ padding: '8px 18px', fontSize: '0.88rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <UserPlus size={15} /> Add to Flight
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Filter Bar */}
           <div style={styles.filterBar}>
             <div style={styles.searchWrapper}>
@@ -157,7 +203,7 @@ export default function FlightRegister() {
                     <th style={styles.th}>Roblox Username</th>
                     <th style={styles.th}>Role</th>
                     <th style={styles.th}>Status</th>
-                    {currentUser.isAdmin && <th style={{ ...styles.th, textAlign: 'right' }}>Admin Verification</th>}
+                    {isAdmin && <th style={{ ...styles.th, textAlign: 'right' }}>Admin Verification</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -206,12 +252,13 @@ export default function FlightRegister() {
                             </span>
                           )}
                         </td>
-                        {currentUser.isAdmin && (
-                          <td style={{ ...styles.td, textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', gap: '8px' }}>
+                        {isAdmin && (
+                          <td style={{ ...styles.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
                               <button
                                 type="button"
                                 onClick={() => markFlightAttendance(activeFlight.id, member.email, 'Present')}
+                                title="Mark Present (+7 pts)"
                                 style={{
                                   ...styles.actionBtn,
                                   background: isPresent ? '#10b981' : 'rgba(16, 185, 129, 0.15)',
@@ -224,6 +271,7 @@ export default function FlightRegister() {
                               <button
                                 type="button"
                                 onClick={() => markFlightAttendance(activeFlight.id, member.email, 'Absent')}
+                                title="Mark Absent"
                                 style={{
                                   ...styles.actionBtn,
                                   background: isAbsent ? '#ef4444' : 'rgba(239, 68, 68, 0.15)',
@@ -232,6 +280,38 @@ export default function FlightRegister() {
                                 }}
                               >
                                 <XCircle size={14} /> Absent
+                              </button>
+                              {!isPending && (
+                                <button
+                                  type="button"
+                                  onClick={() => markFlightAttendance(activeFlight.id, member.email, 'Pending')}
+                                  title="Reset status back to Pending"
+                                  style={{
+                                    ...styles.iconActionBtn,
+                                    background: 'rgba(245, 158, 11, 0.15)',
+                                    color: '#fbbf24',
+                                    borderColor: 'rgba(245, 158, 11, 0.3)'
+                                  }}
+                                >
+                                  <RotateCcw size={14} />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Remove ${member.name} from this flight?`)) {
+                                    deallocateStaffDirectly(activeFlight.id, member.email);
+                                  }
+                                }}
+                                title="Remove staff member from flight"
+                                style={{
+                                  ...styles.iconActionBtn,
+                                  background: 'rgba(255, 255, 255, 0.05)',
+                                  color: '#9ca3af',
+                                  borderColor: 'rgba(255, 255, 255, 0.1)'
+                                }}
+                              >
+                                <Trash2 size={14} />
                               </button>
                             </div>
                           </td>
@@ -380,13 +460,26 @@ const styles = {
     flexDirection: 'column',
     alignItems: 'center'
   },
+  addCrewBar: {
+    padding: '14px 18px',
+    borderRadius: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '14px',
+    flexWrap: 'wrap',
+    border: '1px solid rgba(59, 130, 246, 0.25)',
+    background: 'rgba(59, 130, 246, 0.05)'
+  },
   tableWrapper: {
     borderRadius: '14px',
-    overflow: 'hidden',
+    overflowX: 'auto',
+    WebkitOverflowScrolling: 'touch',
     border: '1px solid rgba(255,255,255,0.06)'
   },
   table: {
     width: '100%',
+    minWidth: '720px',
     borderCollapse: 'collapse',
     textAlign: 'left'
   },
@@ -463,6 +556,16 @@ const styles = {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '6px',
+    transition: 'all 0.15s ease'
+  },
+  iconActionBtn: {
+    padding: '7px 9px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    border: '1px solid',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     transition: 'all 0.15s ease'
   }
 };
