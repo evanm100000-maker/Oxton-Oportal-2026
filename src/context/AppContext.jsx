@@ -1425,19 +1425,15 @@ export const AppProvider = ({ children }) => {
 
   const failDetention = (infractionId) => {
     const target = infractions.find(i => i.id === infractionId);
-    if (!target) return;
+    if (!target) return null;
 
-    // Mark current as failed
-    setInfractions(prev => prev.map(inf => {
-      if (inf.id !== infractionId) return inf;
-      return { ...inf, detentionStatus: 'Failed', failedAt: new Date().toISOString() };
-    }));
+    const isTargetC4A = target.type.includes('C4A') || target.type === 'C4A - Infraction + 20m Detention';
+    let escalatedInfraction = null;
 
-    // If it was C4A, escalate to C4B (40 min detention)
-    // If it was C4B, escalate to C5 2-day suspension
-    if (target.type.includes('C4A') || target.type === 'C4A - Infraction + 20m Detention') {
+    if (isTargetC4A) {
+      // Escalate from C4A (+4 pts) to C4B (+4 pts) => total 8 points
       const nextDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-      const escalatedInfraction = {
+      escalatedInfraction = {
         id: makeId('inf'),
         staffEmail: target.staffEmail,
         staffName: target.staffName,
@@ -1453,13 +1449,35 @@ export const AppProvider = ({ children }) => {
         issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
         timestamp: new Date().toISOString()
       };
-      setInfractions(prev => [escalatedInfraction, ...prev]);
+
+      // Atomically update target as Failed and prepend escalated infraction
+      setInfractions(prev => {
+        const updated = (prev || []).map(inf => {
+          if (inf.id !== infractionId) return inf;
+          return { ...inf, detentionStatus: 'Failed', failedAt: new Date().toISOString() };
+        });
+        return [escalatedInfraction, ...updated];
+      });
+
+      // Deduct staff points for C4 escalation
+      setUsers(prev => (prev || []).map(u => 
+        u.email === target.staffEmail 
+          ? { ...u, points: Number(u.points || 0) - 10, lastInfractionDate: new Date().toISOString() } 
+          : u
+      ));
+      logPointsAction(target.staffEmail, -10, `Escalation to C4B - 40m Detention (Failed C4A)`);
       logAction('detention_escalated', `Detention escalated to C4B for ${target.staffEmail}`, { targetId: infractionId });
+
+      return {
+        escalatedType: 'C4B - 40m Detention',
+        staffEmail: target.staffEmail,
+        staffName: target.staffName,
+        pointsAdded: 4
+      };
     } else {
-      // Escalate to C5 2-day suspension
+      // Escalate from C4B (+4 pts) to C5 Suspension (+5 pts) => total 13 points
       const suspendedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      setUsers(prev => prev.map(u => u.email === target.staffEmail ? { ...u, suspendedUntil, lastInfractionDate: new Date().toISOString() } : u));
-      const escalatedSuspension = {
+      escalatedInfraction = {
         id: makeId('inf'),
         staffEmail: target.staffEmail,
         staffName: target.staffName,
@@ -1472,8 +1490,30 @@ export const AppProvider = ({ children }) => {
         issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
         timestamp: new Date().toISOString()
       };
-      setInfractions(prev => [escalatedSuspension, ...prev]);
+
+      // Atomically update target as Failed and prepend escalated suspension
+      setInfractions(prev => {
+        const updated = (prev || []).map(inf => {
+          if (inf.id !== infractionId) return inf;
+          return { ...inf, detentionStatus: 'Failed', failedAt: new Date().toISOString() };
+        });
+        return [escalatedInfraction, ...updated];
+      });
+
+      // Apply 48-hour suspension to user
+      setUsers(prev => (prev || []).map(u => 
+        u.email === target.staffEmail 
+          ? { ...u, suspendedUntil, lastInfractionDate: new Date().toISOString() } 
+          : u
+      ));
       logAction('detention_escalated', `Detention escalated to 2-day C5 Suspension for ${target.staffEmail}`, { targetId: infractionId });
+
+      return {
+        escalatedType: 'C5 Suspension',
+        staffEmail: target.staffEmail,
+        staffName: target.staffName,
+        pointsAdded: 5
+      };
     }
   };
 

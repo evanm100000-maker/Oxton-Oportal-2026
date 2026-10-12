@@ -581,8 +581,26 @@ button {
   .actionRow, div[style*="gap: 8px"] {
     flex-wrap: wrap !important;
   }
+
+  /* Admin panel forms and grids on mobile */
+  form[style*="padding: 24px"],
+  div[style*="padding: 24px"] {
+    padding: 14px !important;
+  }
+
+  div[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Modal container padding & sizing */
+  div[style*="zIndex: 9999"] {
+    padding: 10px !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
 }
 
+/* Tablet screen responsiveness (769px to 1024px) */
 @media screen and (min-width: 769px) and (max-width: 1024px) {
   .dashboard-card-grid {
     grid-template-columns: repeat(2, 1fr) !important;
@@ -590,6 +608,40 @@ button {
   }
   .interactive-card {
     padding: 18px 20px !important;
+  }
+
+  .admin-layout {
+    flex-direction: column !important;
+    gap: 20px !important;
+  }
+
+  .admin-sidebar {
+    width: 100% !important;
+    position: static !important;
+    height: auto !important;
+    max-height: none !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 10px !important;
+    gap: 8px !important;
+    scrollbar-width: thin;
+    border-radius: 14px !important;
+  }
+
+  .admin-sidebar button {
+    flex-shrink: 0 !important;
+    padding: 10px 16px !important;
+    border-radius: 10px !important;
+    font-size: 0.88rem !important;
+  }
+
+  .glass-panel[style*="width: 500px"],
+  .glass-panel[style*="width: 440px"],
+  .glass-panel[style*="width: 400px"] {
+    width: 90vw !important;
+    max-width: 560px !important;
   }
 }
 

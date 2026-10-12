@@ -609,19 +609,19 @@ export default function AdminPanel() {
       {activeSubTab === 'infractions' && (
 <div id="section-infractions">
         <div style={styles.panelSection}>
-          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px'}}>
             <h3 style={styles.panelTitle}>Staff Consequences</h3>
-            <div style={{ display: 'flex', gap: '16px', flex: 1, margin: '0 24px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '12px', flex: 1, minWidth: '220px', maxWidth: '400px' }}>
               <input 
                 type="text" 
                 placeholder="Search staff..." 
                 value={consequencesSearchQuery} 
                 onChange={(e) => setConsequencesSearchQuery(e.target.value)} 
                 className="input-field" 
-                style={{ width: '100%', maxWidth: '300px' }} 
+                style={{ width: '100%' }} 
               />
             </div>
-            <button type="button" className="btn-danger" onClick={() => setShowInfractionModal(true)} style={{padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <button type="button" className="btn-danger" onClick={() => setShowInfractionModal(true)} style={{padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'}}>
               <ShieldAlert size={16} /> Log New Consequence
             </button>
           </div>
@@ -661,17 +661,17 @@ export default function AdminPanel() {
               groupedInfractions.filter(group => `${group.name} ${group.email}`.toLowerCase().includes(consequencesSearchQuery.toLowerCase())).map(group => (
                 <div key={group.email} className="glass-panel" style={{ borderRadius: '12px', overflow: 'hidden' }}>
                   <div 
-                    style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: 'rgba(255,255,255,0.05)' }}
+                    style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)' }}
                     onClick={() => setExpandedInfractions(prev => ({ ...prev, [group.email]: !prev[group.email] }))}
                   >
                     <div>
                       <h4 style={{ color: 'var(--color-text-main)', margin: 0 }}>{group.name}</h4>
                       <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{group.email}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                      <span style={{ color: '#f87171', fontSize: '0.9rem' }}>{group.regular} Infractions</span>
-                      <span style={{ color: '#fb923c', fontSize: '0.9rem' }}>{group.suspensions} Suspensions</span>
-                      <span style={{ color: '#eab308', fontSize: '0.9rem' }}>{group.informal} Informal Sanctions</span>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{group.regular} Infractions</span>
+                      <span style={{ color: '#fb923c', fontSize: '0.85rem' }}>{group.suspensions} Suspensions</span>
+                      <span style={{ color: '#eab308', fontSize: '0.85rem' }}>{group.informal} Informal Sanctions</span>
                     </div>
                   </div>
                   
@@ -876,8 +876,10 @@ export default function AdminPanel() {
                                     type="button"
                                     onClick={() => {
                                       if (window.confirm(`Fail detention for ${item.staffName}? This will escalate to ${isC4b ? '2-day C5 Suspension' : 'C4B (40m detention)'}.`)) {
-                                        failDetention(item.id);
-                                        displaySuccess(`Failed detention. Escalated sanction logged.`);
+                                        const res = failDetention(item.id);
+                                        const escalatedTo = isC4b ? 'C5 Suspension' : 'C4B - 40m Detention';
+                                        const updatedStats = computeStaffConsequenceStats(item.staffEmail, infractions, informalSanctions, escalatedTo);
+                                        displaySuccess(`Failed detention for ${item.staffName}. Escalated to ${escalatedTo}! Consequence points: ${updatedStats.totalPoints}/35 points.`);
                                       }
                                     }}
                                     className="btn-danger"
