@@ -458,20 +458,24 @@ export default function AdminPanel() {
   });
 
   const groupedInfractions = Object.values([...infractions, ...informalSanctions].reduce((acc, inf) => {
-    if (!acc[inf.staffEmail]) acc[inf.staffEmail] = { 
-      name: inf.staffName || (() => { const u = users.find(u => u.email === inf.staffEmail); return u ? `${u.firstName} ${u.lastName}` : inf.staffEmail; })(), 
-      email: inf.staffEmail, 
-      items: [], 
-      suspensions: 0, 
-      regular: 0,
-      informal: 0
-    };
-    acc[inf.staffEmail].items.push(inf);
-    if (inf.type === 'Suspension') acc[inf.staffEmail].suspensions++;
-    else if (!inf.type && inf.reason) acc[inf.staffEmail].informal++;
-    else acc[inf.staffEmail].regular++;
+    if (!inf || !inf.staffEmail) return acc;
+    const emailKey = inf.staffEmail.toLowerCase().trim();
+    if (!acc[emailKey]) {
+      acc[emailKey] = { 
+        name: inf.staffName || (() => { const u = users.find(u => u && u.email?.toLowerCase() === emailKey); return u ? `${u.firstName} ${u.lastName}` : inf.staffEmail; })(), 
+        email: inf.staffEmail, 
+        items: []
+      };
+    }
+    acc[emailKey].items.push(inf);
     return acc;
-  }, {}));
+  }, {})).map(group => {
+    const stats = computeStaffConsequenceStats(group.email, infractions, informalSanctions);
+    return {
+      ...group,
+      stats
+    };
+  });
 
   const isSuperAdmin = currentUser.email === superAdminEmail;
 
@@ -661,49 +665,160 @@ export default function AdminPanel() {
               groupedInfractions.filter(group => `${group.name} ${group.email}`.toLowerCase().includes(consequencesSearchQuery.toLowerCase())).map(group => (
                 <div key={group.email} className="glass-panel" style={{ borderRadius: '12px', overflow: 'hidden' }}>
                   <div 
-                    style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)' }}
+                    style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', transition: 'background 0.2s' }}
                     onClick={() => setExpandedInfractions(prev => ({ ...prev, [group.email]: !prev[group.email] }))}
                   >
                     <div>
-                      <h4 style={{ color: 'var(--color-text-main)', margin: 0 }}>{group.name}</h4>
-                      <span style={{ fontSize: '0.85rem', color: '#9ca3af' }}>{group.email}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h4 style={{ color: 'var(--color-text-main)', margin: 0, fontSize: '1.05rem', fontWeight: '700' }}>{group.name}</h4>
+                        {group.stats?.totalPoints >= 35 && (
+                          <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                            Terminated
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: '0.85rem', color: '#94a3af' }}>{group.email}</span>
                     </div>
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{group.regular} Infractions</span>
-                      <span style={{ color: '#fb923c', fontSize: '0.85rem' }}>{group.suspensions} Suspensions</span>
-                      <span style={{ color: '#eab308', fontSize: '0.85rem' }}>{group.informal} Informal Sanctions</span>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {/* Total Consequence Points pill */}
+                      <span style={{
+                        background: group.stats?.totalPoints >= 30 ? 'rgba(239, 68, 68, 0.2)' : group.stats?.totalPoints >= 18 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                        color: group.stats?.totalPoints >= 30 ? '#ef4444' : group.stats?.totalPoints >= 18 ? '#f59e0b' : '#60a5fa',
+                        border: `1px solid ${group.stats?.totalPoints >= 30 ? 'rgba(239, 68, 68, 0.4)' : group.stats?.totalPoints >= 18 ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)'}`,
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: '700'
+                      }}>
+                        {group.stats?.totalPoints || 0} / 35 Points
+                      </span>
+
+                      {/* C1 - C2 Warnings */}
+                      <span style={{
+                        background: 'rgba(59, 130, 246, 0.12)',
+                        color: '#60a5fa',
+                        border: '1px solid rgba(59, 130, 246, 0.25)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600'
+                      }}>
+                        {group.stats?.c1c2CombinedCount || 0} C1-2s
+                      </span>
+
+                      {/* C3 Informal */}
+                      <span style={{
+                        background: 'rgba(234, 179, 8, 0.12)',
+                        color: '#eab308',
+                        border: '1px solid rgba(234, 179, 8, 0.25)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600'
+                      }}>
+                        {group.stats?.c3Count || 0} C3s
+                      </span>
+
+                      {/* C4 Detentions */}
+                      <span style={{
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        color: '#f59e0b',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600'
+                      }}>
+                        {group.stats?.c4Count || 0} C4s
+                      </span>
+
+                      {/* C5 Suspensions */}
+                      <span style={{
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        color: '#f87171',
+                        border: '1px solid rgba(239, 68, 68, 0.25)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600'
+                      }}>
+                        {group.stats?.c5Count || 0} C5s
+                      </span>
                     </div>
                   </div>
                   
                   {expandedInfractions[group.email] && (
-                    <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
                       <div style={styles.tableWrapper}>
                         <table style={styles.table}>
                           <thead>
                             <tr style={styles.trHead}>
-                              <th style={styles.th}>Type</th>
+                              <th style={styles.th}>Level</th>
                               <th style={styles.th}>Message & Appeal</th>
-                              <th style={styles.th}>Logged By</th>
+                              <th style={styles.th}>Logged By & Date</th>
                               <th style={styles.th}>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
                             {group.items.map(inf => {
                               const isInformal = !inf.type && inf.reason;
+                              const isC5 = inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension');
+                              const isC4 = inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention');
+                              const isC3 = isInformal || inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal');
+                              const isC2 = inf.type?.startsWith('C2');
+                              const isC1 = inf.type?.startsWith('C1');
+
+                              const badgeBg = isC5 
+                                ? 'rgba(239, 68, 68, 0.18)' 
+                                : isC4 
+                                ? 'rgba(245, 158, 11, 0.18)' 
+                                : isC3 
+                                ? 'rgba(234, 179, 8, 0.18)' 
+                                : 'rgba(59, 130, 246, 0.18)';
+                              const badgeColor = isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#60a5fa';
+                              const badgeBorder = isC5 ? 'rgba(239, 68, 68, 0.35)' : isC4 ? 'rgba(245, 158, 11, 0.35)' : isC3 ? 'rgba(234, 179, 8, 0.35)' : 'rgba(59, 130, 246, 0.35)';
+                              const displayType = isInformal ? 'C3 Informal Sanction' : (inf.type || 'C1 Warning');
+
                               return (
                               <tr key={inf.id} style={styles.trBody}>
-                                <td style={styles.td}><span style={{...styles.infractionBadge, background: isInformal ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: isInformal ? '#eab308' : '#ef4444'}}>{isInformal ? 'Informal Sanction' : inf.type}</span></td>
                                 <td style={styles.td}>
-                                  <div style={{ marginBottom: '8px' }}>{isInformal ? inf.reason : inf.mainMessage}</div>
+                                  <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{
+                                      ...styles.infractionBadge, 
+                                      background: badgeBg, 
+                                      color: badgeColor,
+                                      borderColor: badgeBorder
+                                    }}>
+                                      {displayType}
+                                    </span>
+                                    {inf.isEscalation && (
+                                      <span style={{ fontSize: '0.68rem', color: '#fb923c', fontWeight: '700' }}>
+                                        Escalated
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td style={styles.td}>
+                                  <div style={{ marginBottom: '6px', lineHeight: '1.4' }}>{isInformal ? inf.reason : inf.mainMessage}</div>
+                                  {isC4 && (
+                                    <div style={{ fontSize: '0.8rem', color: '#fcd34d', margin: '4px 0', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                      <Clock size={13} />
+                                      <span><strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate} &bull; {inf.detentionTime || '14:55'} (Status: {inf.detentionStatus || 'Scheduled'})</span>
+                                    </div>
+                                  )}
                                   {inf.appeal && (
-                                    <div style={{ padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderLeft: '3px solid #3b82f6', borderRadius: '4px', marginBottom: '8px' }}>
-                                      <span style={{ color: '#60a5fa', fontSize: '0.8rem', fontWeight: 'bold' }}>STAFF APPEAL:</span>
-                                      <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#bfdbfe' }}>{inf.appeal.text}</p>
+                                    <div style={{ padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderLeft: '3px solid #3b82f6', borderRadius: '4px', margin: '6px 0' }}>
+                                      <span style={{ color: '#60a5fa', fontSize: '0.78rem', fontWeight: 'bold' }}>STAFF APPEAL:</span>
+                                      <p style={{ margin: '2px 0 0 0', fontSize: '0.82rem', color: '#bfdbfe' }}>{inf.appeal.text}</p>
                                     </div>
                                   )}
                                   {inf.confidentialMessage && <div style={styles.confidentialNote}>Admin note: {inf.confidentialMessage}</div>}
                                 </td>
-                                <td style={styles.td}>{isInformal ? inf.issuedByName : inf.adminName}<br />{isInformal ? new Date(inf.timestamp).toLocaleDateString() : inf.date}</td>
+                                <td style={styles.td}>
+                                  <div>{isInformal ? inf.issuedByName : (inf.issuedByName || inf.adminName || 'Admin')}</div>
+                                  <div style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{isInformal ? new Date(inf.timestamp).toLocaleDateString() : (inf.date || new Date(inf.timestamp || Date.now()).toLocaleDateString())}</div>
+                                </td>
                                 <td style={styles.td}>
                                   <button type="button" onClick={() => isInformal ? deleteInformalSanction(inf.id) : deleteInfraction(inf.id)} className="btn-danger" style={styles.actionMiniBtn}>
                                     <Trash2 size={14} /> Remove
