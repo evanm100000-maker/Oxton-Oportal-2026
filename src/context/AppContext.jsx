@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useMemo } from 
 import { db, storage, firebaseApp } from "../firebase"; 
 import { ref, onValue, set, runTransaction, push, get, remove, getDatabase, query, limitToLast, update, onDisconnect } from "firebase/database";
 import { getNextMondayMidnightUK } from '../utils/timeUtils.js';
+import { playNotificationSound, isDndActive, setDndActive } from '../utils/notificationSound';
 const AppContext = createContext();
 
 const SUPER_ADMIN_EMAIL = 'evanm.100000@gmail.com';
@@ -127,6 +128,8 @@ const initialPageConfig = {
   events: true,
   meetings: true,
   flightRegister: true,
+  flightLogs: true,
+  flightQuotas: true,
   announcements: true,
   staffChat: true,
   allStaff: true,
@@ -141,8 +144,13 @@ const initialPageConfig = {
   adminPanel: true,
   analytics: true,
   passengerPortal: true,
+  emergencyAlerts: true,
+  bypassAnnouncement: true,
+  // Aliases
   logs: true,
-  admin: true
+  register: true,
+  admin: true,
+  flight_quotas: true
 };
 
 const STORAGE_KEYS = {
@@ -475,9 +483,39 @@ export const AppProvider = ({ children }) => {
     setUseLongDateFormat(safeParse(localStorage, STORAGE_KEYS.useLongDateFormat, false));
   }, []);
 
-  const addNotification = (title, message, type = 'info') => {
+  // Do Not Disturb (DND) state
+  const [isDnd, setIsDnd] = useState(() => {
+    try {
+      return localStorage.getItem('oxton_dnd_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleDnd = () => {
+    setIsDnd(prev => {
+      const next = !prev;
+      setDndActive(next);
+      return next;
+    });
+  };
+
+  const addNotification = (title, message, type = 'info', soundType = null) => {
     const id = makeId('notif');
-    const newNotif = { id, title, message, type, timestamp: Date.now() };
+    const isPoints = type === 'points' || 
+                     soundType === 'points' || 
+                     (title && title.toLowerCase().includes('point')) || 
+                     (message && message.toLowerCase().includes('point'));
+    const effectiveSoundType = isPoints ? 'points' : (soundType || 'general');
+
+    const newNotif = { 
+      id, 
+      title, 
+      message, 
+      type, 
+      soundType: effectiveSoundType, 
+      timestamp: Date.now() 
+    };
     
     setNotifications(prev => [...prev, newNotif]);
     setTimeout(() => {
@@ -492,8 +530,34 @@ export const AppProvider = ({ children }) => {
        update(ref(db, `userNotifications/${safeEmail}`), updates).catch(err => console.error('Failed to save notification:', err));
     }
     
-    const audio = new Audio('/notificationsound.mp3');
-    audio.play().catch(e => console.error("Could not play notification sound", e));
+    // Play custom sound (points vs general) respecting Do Not Disturb
+    if (!isDnd) {
+      playNotificationSound(effectiveSoundType);
+    }
+  };
+
+  const broadcastNotification = (title, message, type = 'info', soundType = 'general') => {
+    const id = makeId('notif');
+    const isPoints = type === 'points' || soundType === 'points';
+    const effectiveSoundType = isPoints ? 'points' : 'general';
+    const newNotif = { 
+      id, 
+      title, 
+      message, 
+      type, 
+      soundType: effectiveSoundType, 
+      timestamp: Date.now() 
+    };
+
+    const db = getDatabase(firebaseApp);
+    (users || []).forEach(u => {
+      if (u.email && u.approved && u.role !== 'passenger') {
+        const safeEmail = escapeEmail(u.email);
+        update(ref(db, `userNotifications/${safeEmail}`), { [id]: newNotif }).catch(e => console.error(e));
+      }
+    });
+
+    addNotification(title, message, type, effectiveSoundType);
   };
 
   const removeNotification = (id) => {
@@ -1045,6 +1109,9 @@ export const AppProvider = ({ children }) => {
     }));
     logPointsAction(email, amount, reason || 'Manual adjustment');
     logAction('points_added', `Added ${amount} points to ${email}`, { email, amount, reason });
+    if (amount > 0) {
+      sendNotificationToUser(email, 'Points Rewarded!', `You were awarded ${amount} points. Reason: ${reason || 'Staff reward'}`, 'points', 'points');
+    }
   };
 
   const suspendUser = (email, hours, reason) => {
@@ -1163,6 +1230,12 @@ export const AppProvider = ({ children }) => {
     };
     setFlights(prev => [...prev, newFlight]);
     logAction('flight_added', `Scheduled flight ${flightData.flightCode}`, { flightCode: flightData.flightCode });
+    broadcastNotification(
+      `New Flight to Allocate: ${newFlight.flightCode}`,
+      `Flight to ${newFlight.location} on ${newFlight.date} ${newFlight.time || ''} is now open for crew allocation!`,
+      'flight',
+      'general'
+    );
   };
 
   const editFlight = (flightId, updatedData) => {
@@ -1432,16 +1505,32 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
-  const sendNotificationToUser = (targetEmail, title, message, type = 'info') => {
+  const sendNotificationToUser = (targetEmail, title, message, type = 'info', soundType = null) => {
     if (!targetEmail) return;
     const id = makeId('notif');
-    const newNotif = { id, title, message, type, timestamp: Date.now() };
+    const isPoints = type === 'points' || 
+                     soundType === 'points' || 
+                     (title && title.toLowerCase().includes('point')) || 
+                     (message && message.toLowerCase().includes('point'));
+    const effectiveSoundType = isPoints ? 'points' : (soundType || 'general');
+
+    const newNotif = { 
+      id, 
+      title, 
+      message, 
+      type, 
+      soundType: effectiveSoundType, 
+      timestamp: Date.now() 
+    };
     const db = getDatabase(firebaseApp);
     const safeEmail = escapeEmail(targetEmail);
     update(ref(db, `userNotifications/${safeEmail}`), { [id]: newNotif }).catch(err => console.error(err));
     if (currentUser?.email === targetEmail) {
       setNotifications(prev => [...prev, newNotif]);
       setTimeout(() => removeNotification(id), 5000);
+      if (!isDnd) {
+        playNotificationSound(effectiveSoundType);
+      }
     }
   };
 
@@ -1997,6 +2086,12 @@ useEffect(() => {
       timestamp: new Date().toISOString()
     };
     setAnnouncements(prev => [newAnn, ...prev]);
+    broadcastNotification(
+      `New Announcement: ${newAnn.title || newAnn.type}`,
+      newAnn.message.length > 60 ? newAnn.message.substring(0, 60) + '...' : newAnn.message,
+      'announcement',
+      'general'
+    );
   };
 
   const deleteAnnouncement = (annId) => {
@@ -2016,6 +2111,15 @@ useEffect(() => {
       completedAt: null
     };
     setTasks(prev => [newTask, ...prev]);
+    if (newTask.assignedToEmail) {
+      sendNotificationToUser(
+        newTask.assignedToEmail,
+        `New Task Assigned: ${newTask.title}`,
+        newTask.description ? (newTask.description.length > 60 ? newTask.description.substring(0, 60) + '...' : newTask.description) : 'You have a new task waiting on your dashboard.',
+        'task',
+        'general'
+      );
+    }
   };
 
   const updateTaskStatus = (taskId, status) => {
@@ -2064,6 +2168,18 @@ useEffect(() => {
       comments: []
     };
     setTickets(prev => [newTicket, ...prev]);
+    // Notify admins of new support ticket
+    (users || []).filter(u => u.isAdmin || u.siteRole === 'Admin' || u.siteRole === 'Owner').forEach(admin => {
+      if (admin.email && admin.email !== currentUser?.email) {
+        sendNotificationToUser(
+          admin.email,
+          `New Support Ticket: ${newTicket.title}`,
+          `Opened by ${authorName}. Check Support Tickets.`,
+          'ticket',
+          'general'
+        );
+      }
+    });
     return newTicket.id;
   };
 
@@ -2147,6 +2263,22 @@ useEffect(() => {
     }));
 
     logAction('ticket_comment_added', `Added comment to ticket ${ticketId}`, { ticketId, text: text.trim() });
+
+    const targetTicket = (tickets || []).find(t => t.id === ticketId);
+    if (targetTicket) {
+      const recipientEmail = currentUser.email === targetTicket.authorEmail 
+        ? targetTicket.claimedByEmail 
+        : targetTicket.authorEmail;
+      if (recipientEmail && recipientEmail !== currentUser.email) {
+        sendNotificationToUser(
+          recipientEmail,
+          `New Support Ticket Message: ${targetTicket.title}`,
+          `${authorName}: ${text.trim().substring(0, 50)}${text.trim().length > 50 ? '...' : ''}`,
+          'ticket',
+          'general'
+        );
+      }
+    }
   };
 
   const addUnavailableDate = (dateStr) => {
@@ -2165,10 +2297,17 @@ useEffect(() => {
     const newEvent = {
       id: makeId('event'),
       ...eventData,
+      authorEmail: currentUser?.email || 'admin',
       timestamp: Date.now()
     };
     setEvents(prev => [...prev, newEvent]);
     logAction('event_created', `Scheduled event: ${eventData.title}`);
+    broadcastNotification(
+      `New Upcoming Event: ${newEvent.title}`,
+      `Scheduled for ${newEvent.date || 'upcoming date'}. Check the Events calendar!`,
+      'info',
+      'general'
+    );
   };
 
   const deleteEvent = (eventId) => {
@@ -2180,10 +2319,17 @@ useEffect(() => {
     const newMeeting = {
       id: makeId('meeting'),
       ...meetingData,
+      authorEmail: currentUser?.email || 'admin',
       timestamp: Date.now()
     };
     setMeetings(prev => [...prev, newMeeting]);
     logAction('meeting_created', `Scheduled meeting: ${meetingData.title}`);
+    broadcastNotification(
+      `Upcoming Meeting Scheduled: ${newMeeting.title}`,
+      `Date: ${newMeeting.date || 'TBD'} ${newMeeting.time || ''}. Check Meetings tab!`,
+      'info',
+      'general'
+    );
   };
 
   const deleteMeeting = (meetingId) => {
@@ -2379,6 +2525,12 @@ useEffect(() => {
           };
           setEmergencyAlertConfig(newAlert);
           logAction('emergency_alert_dispatched', `Dispatched ${header} with ${soundType} sound: ${message}`, { header, message, soundType });
+          broadcastNotification(
+            `Emergency Alert: ${header || 'Priority Alert'}`,
+            message || 'A priority alert has been issued for all personnel.',
+            'danger',
+            'general'
+          );
         },
         clearEmergencyAlert: () => {
           setEmergencyAlertConfig(prev => ({ ...prev, isActive: false }));
@@ -2410,14 +2562,21 @@ useEffect(() => {
         addMeeting,
         deleteMeeting,
         superAdminEmail: SUPER_ADMIN_EMAIL,
+        isDnd,
+        setIsDnd,
+        toggleDnd,
+        broadcastNotification,
         pageConfig,
         updatePageConfig: (key, value) => {
           setPageConfig(prev => {
             const updated = { ...prev, [key]: value };
-            if (key === 'flightRegister') updated.logs = value;
-            if (key === 'logs') updated.flightRegister = value;
+            if (key === 'flightRegister') { updated.logs = value; updated.register = value; }
+            if (key === 'logs') { updated.flightRegister = value; updated.register = value; }
+            if (key === 'register') { updated.flightRegister = value; updated.logs = value; }
             if (key === 'adminPanel') updated.admin = value;
             if (key === 'admin') updated.adminPanel = value;
+            if (key === 'flightQuotas') updated.flight_quotas = value;
+            if (key === 'flight_quotas') updated.flightQuotas = value;
             return updated;
           });
           logAction('page_config_updated', `Updated page config: ${key} to ${value}`);

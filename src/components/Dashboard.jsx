@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plane, ClipboardList, Calendar, FileText, 
   AlertTriangle, Slash, Settings, LogOut, ArrowLeft, User, Trophy, Medal, Award, MessageSquare, Eye,
-  Activity, CheckSquare, LifeBuoy, BarChart2, Megaphone, Bell, Battery, BatteryCharging, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Clock
+  Activity, CheckSquare, LifeBuoy, BarChart2, Megaphone, Bell, BellOff, Battery, BatteryCharging, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Clock
 } from 'lucide-react';
 
 // Subcomponents (we will create these next)
@@ -55,7 +55,7 @@ const tabToPath = {
 const pathToTab = Object.fromEntries(Object.entries(tabToPath).map(([k, v]) => [v, k]));
 
 export default function Dashboard() {
-  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [], quotaConfig } = useApp();
+  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [], quotaConfig, isDnd, toggleDnd } = useApp();
 
   // Compute flight quota progress: 3 completed flights needed to be full (100%)
   // Either verified 'Present' on submitted flight register OR approved flight log in the current quota period
@@ -507,7 +507,7 @@ export default function Dashboard() {
       return <AdminPanel />;
     }
     if (activeTab === 'flightRegister' || activeTab === 'logs' || activeTab === 'register') {
-      if (pageConfig && (pageConfig.flightRegister === false || pageConfig.logs === false) && currentUser?.email !== superAdminEmail) {
+      if (pageConfig && (pageConfig.flightRegister === false || pageConfig.logs === false || pageConfig.register === false) && currentUser?.email !== superAdminEmail) {
         return (
           <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px', textAlign: 'center'}}>
             <Slash size={48} color="#ef4444" style={{marginBottom: '20px'}} />
@@ -520,7 +520,11 @@ export default function Dashboard() {
     }
     const item = navItems.find(i => i.id === activeTab);
     if (item) {
-      if (pageConfig && pageConfig[item.id] === false) {
+      const isItemDisabled = pageConfig && (
+        pageConfig[item.id] === false || 
+        (item.alias && pageConfig[item.alias] === false)
+      );
+      if (isItemDisabled && currentUser?.email !== superAdminEmail) {
         return (
           <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px', textAlign: 'center'}}>
             <Slash size={48} color="#ef4444" style={{marginBottom: '20px'}} />
@@ -598,14 +602,25 @@ export default function Dashboard() {
             {currentUser.isAdmin && <span className="badge badge-admin">Admin</span>}
           </div>
 
-          <button onClick={() => setIsNotificationsOpen(true)} className="btn-secondary" style={{...styles.logoutBtn, color: 'var(--color-text-main)', position: 'relative'}} title="Notifications">
-            <Bell size={16} />
+          <button 
+            onClick={() => setIsNotificationsOpen(true)} 
+            className="btn-secondary" 
+            style={{
+              ...styles.logoutBtn, 
+              color: isDnd ? '#f87171' : 'var(--color-text-main)', 
+              borderColor: isDnd ? 'rgba(239, 68, 68, 0.4)' : undefined,
+              background: isDnd ? 'rgba(239, 68, 68, 0.15)' : undefined,
+              position: 'relative'
+            }} 
+            title={isDnd ? "Notifications (Do Not Disturb ON)" : "Notifications"}
+          >
+            {isDnd ? <BellOff size={16} color="#f87171" /> : <Bell size={16} />}
             {userNotifications && userNotifications.length > 0 && (
               <span style={{
                 position: 'absolute',
                 top: '-4px',
                 right: '-4px',
-                background: '#ef4444',
+                background: isDnd ? '#9ca3af' : '#ef4444',
                 color: '#fff',
                 fontSize: '10px',
                 fontWeight: '700',
@@ -616,7 +631,7 @@ export default function Dashboard() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '0 4px',
-                boxShadow: '0 0 6px rgba(239, 68, 68, 0.6)'
+                boxShadow: isDnd ? 'none' : '0 0 6px rgba(239, 68, 68, 0.6)'
               }}>
                 {userNotifications.length > 9 ? '9+' : userNotifications.length}
               </span>

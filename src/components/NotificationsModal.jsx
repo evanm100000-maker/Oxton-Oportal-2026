@@ -1,10 +1,10 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { X, Bell, Info, ShieldAlert, CheckCircle, Trash2 } from 'lucide-react';
+import { X, Bell, BellOff, Info, ShieldAlert, CheckCircle, Trash2, Award, Megaphone, Plane, Calendar, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function NotificationsModal({ isOpen, onClose }) {
-  const { userNotifications, clearUserNotifications } = useApp();
+  const { userNotifications, clearUserNotifications, isDnd, toggleDnd } = useApp();
 
   if (!isOpen) return null;
 
@@ -26,14 +26,58 @@ export default function NotificationsModal({ isOpen, onClose }) {
           <div style={styles.header}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bell size={20} color="#3b82f6" />
-              <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>Your Notifications</h2>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>Notification Center</h2>
             </div>
-            <button onClick={onClose} style={styles.closeBtn}>
-              <X size={20} color="#9ca3af" />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* Do Not Disturb Toggle Button */}
+              <button
+                type="button"
+                onClick={toggleDnd}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  background: isDnd ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: isDnd ? '#f87171' : '#94a3b8',
+                  border: `1px solid ${isDnd ? 'rgba(239, 68, 68, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  transition: 'all 0.15s ease'
+                }}
+                title={isDnd ? "Do Not Disturb is ON (Notifications muted)" : "Click to enable Do Not Disturb"}
+              >
+                {isDnd ? <BellOff size={14} color="#f87171" /> : <Bell size={14} color="#94a3b8" />}
+                <span>{isDnd ? 'DND: ON' : 'Do Not Disturb'}</span>
+              </button>
+
+              <button onClick={onClose} style={styles.closeBtn}>
+                <X size={20} color="#9ca3af" />
+              </button>
+            </div>
           </div>
 
           <div style={styles.content}>
+            {isDnd && (
+              <div style={{
+                marginBottom: '12px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                color: '#fca5a5',
+                fontSize: '0.82rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <BellOff size={14} color="#f87171" />
+                <span>Do Not Disturb is active. Notification sounds are currently muted.</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <span style={{ color: '#9ca3af', fontSize: '0.9rem' }}>
                 Showing last 30 notifications
@@ -58,7 +102,11 @@ export default function NotificationsModal({ isOpen, onClose }) {
                   let color = '#3b82f6';
                   let bg = 'rgba(59, 130, 246, 0.1)';
                   
-                  if (notif.type === 'danger') {
+                  if (notif.type === 'points' || notif.soundType === 'points' || (notif.title && notif.title.toLowerCase().includes('point'))) {
+                    Icon = Award;
+                    color = '#fbbf24';
+                    bg = 'rgba(245, 158, 11, 0.15)';
+                  } else if (notif.type === 'danger' || notif.type === 'emergency') {
                     Icon = ShieldAlert;
                     color = '#ef4444';
                     bg = 'rgba(239, 68, 68, 0.1)';
@@ -66,6 +114,22 @@ export default function NotificationsModal({ isOpen, onClose }) {
                     Icon = CheckCircle;
                     color = '#10b981';
                     bg = 'rgba(16, 185, 129, 0.1)';
+                  } else if (notif.type === 'announcement') {
+                    Icon = Megaphone;
+                    color = '#8b5cf6';
+                    bg = 'rgba(139, 92, 246, 0.12)';
+                  } else if (notif.type === 'flight') {
+                    Icon = Plane;
+                    color = '#06b6d4';
+                    bg = 'rgba(6, 182, 212, 0.12)';
+                  } else if (notif.type === 'event' || notif.type === 'meeting') {
+                    Icon = Calendar;
+                    color = '#3b82f6';
+                    bg = 'rgba(59, 130, 246, 0.12)';
+                  } else if (notif.type === 'ticket') {
+                    Icon = HelpCircle;
+                    color = '#ec4899';
+                    bg = 'rgba(236, 72, 153, 0.12)';
                   }
 
                   return (
@@ -74,7 +138,14 @@ export default function NotificationsModal({ isOpen, onClose }) {
                         <Icon size={18} />
                       </div>
                       <div style={{ flex: 1 }}>
-                        <h4 style={styles.notifTitle}>{notif.title}</h4>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <h4 style={styles.notifTitle}>{notif.title}</h4>
+                          {notif.soundType === 'points' && (
+                            <span style={{ fontSize: '0.72rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: '700' }}>
+                              +Points
+                            </span>
+                          )}
+                        </div>
                         <p style={styles.notifMessage}>{notif.message}</p>
                         <span style={styles.notifTime}>{new Date(notif.timestamp).toLocaleString()}</span>
                       </div>

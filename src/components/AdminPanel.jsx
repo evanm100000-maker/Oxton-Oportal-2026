@@ -18,6 +18,8 @@ const PAGE_TOGGLES_DEF = [
   { key: 'events', label: 'Upcoming Events', group: 'Operations & Schedule' },
   { key: 'meetings', label: 'Upcoming Meetings', group: 'Operations & Schedule' },
   { key: 'flightRegister', label: 'Flight Register', alias: 'logs', group: 'Operations & Schedule' },
+  { key: 'flightLogs', label: 'Flight Logs Submission', group: 'Operations & Schedule' },
+  { key: 'flightQuotas', label: 'Staff Flight Quotas', alias: 'flight_quotas', group: 'Operations & Schedule' },
 
   // Communications & Team
   { key: 'announcements', label: 'Announcements', group: 'Communications & Team' },
@@ -36,10 +38,12 @@ const PAGE_TOGGLES_DEF = [
   { key: 'documents', label: 'Documents & Manuals', group: 'Documentation & Reports' },
   { key: 'reports', label: 'Player Reports', group: 'Documentation & Reports' },
 
-  // Administration & Portals
+  // Administration, Overlays & Portals
   { key: 'adminPanel', label: 'Admin Control Center', alias: 'admin', group: 'Administration & Portals' },
   { key: 'analytics', label: 'Server Analytics', group: 'Administration & Portals' },
   { key: 'passengerPortal', label: 'Passenger Portal', group: 'Administration & Portals' },
+  { key: 'emergencyAlerts', label: 'Emergency Alert Broadcasts', group: 'Administration & Portals' },
+  { key: 'bypassAnnouncement', label: 'Screen Takeovers (Bypass)', group: 'Administration & Portals' },
 ];
 
 export default function AdminPanel() {
