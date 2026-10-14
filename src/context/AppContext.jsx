@@ -122,23 +122,27 @@ const initialMeetings = [];
 const EMPTY_ARRAY = [];
 
 const initialPageConfig = {
-  staffChat: true,
-  announcements: true,
-  tickets: true,
   allocation: true,
-  tasks: true,
-  reports: true,
-  documents: true,
-  loa: true,
-  analytics: true,
-  performance: true,
-  leaderboard: true,
-  adminPanel: true,
-  passengerPortal: true,
+  calendar: true,
   events: true,
-  logs: true,
+  meetings: true,
+  flightRegister: true,
+  announcements: true,
+  staffChat: true,
+  allStaff: true,
+  leaderboard: true,
+  performance: true,
+  tasks: true,
+  loa: true,
+  tickets: true,
   infractions: true,
-  allStaff: true
+  documents: true,
+  reports: true,
+  adminPanel: true,
+  analytics: true,
+  passengerPortal: true,
+  logs: true,
+  admin: true
 };
 
 const STORAGE_KEYS = {
@@ -328,7 +332,7 @@ const useFirebaseObject = (path, initialValue, enabled = true) => {
     const db = getDatabase(firebaseApp);
     const unsub = onValue(ref(db, path), snapshot => {
       const data = snapshot.val();
-      setLocalData(data ? data : initialValue);
+      setLocalData(data ? (typeof initialValue === 'object' && initialValue !== null && !Array.isArray(initialValue) ? { ...initialValue, ...data } : data) : initialValue);
       setIsLoaded(true);
     });
     return unsub;
@@ -336,7 +340,7 @@ const useFirebaseObject = (path, initialValue, enabled = true) => {
 
   const updateData = (updater) => {
     setLocalData(prev => {
-      const dataToUpdate = prev ? prev : initialValue;
+      const dataToUpdate = prev ? (typeof initialValue === 'object' && initialValue !== null && !Array.isArray(initialValue) ? { ...initialValue, ...prev } : prev) : initialValue;
       const nextData = typeof updater === 'function' ? updater(dataToUpdate) : updater;
       const db = getDatabase(firebaseApp);
       try {
@@ -2408,7 +2412,14 @@ useEffect(() => {
         superAdminEmail: SUPER_ADMIN_EMAIL,
         pageConfig,
         updatePageConfig: (key, value) => {
-          setPageConfig(prev => ({ ...prev, [key]: value }));
+          setPageConfig(prev => {
+            const updated = { ...prev, [key]: value };
+            if (key === 'flightRegister') updated.logs = value;
+            if (key === 'logs') updated.flightRegister = value;
+            if (key === 'adminPanel') updated.admin = value;
+            if (key === 'admin') updated.adminPanel = value;
+            return updated;
+          });
           logAction('page_config_updated', `Updated page config: ${key} to ${value}`);
         },
       }}

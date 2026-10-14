@@ -27,6 +27,7 @@ import AllStaff from './AllStaff';
 import Events from './Events';
 import Meetings from './Meetings';
 import CalendarPage from './CalendarPage';
+import FlightRegister from './FlightRegister';
 import { formatCustomLongDate } from '../utils/timeUtils';
 
 const tabToPath = {
@@ -494,7 +495,7 @@ export default function Dashboard() {
 
   const renderActiveComponent = () => {
     if (activeTab === 'admin') {
-      if (pageConfig && !pageConfig.adminPanel && currentUser?.email !== superAdminEmail) {
+      if (pageConfig && (pageConfig.adminPanel === false || pageConfig.admin === false) && currentUser?.email !== superAdminEmail) {
         return (
           <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px', textAlign: 'center'}}>
             <Slash size={48} color="#ef4444" style={{marginBottom: '20px'}} />
@@ -504,6 +505,18 @@ export default function Dashboard() {
         );
       }
       return <AdminPanel />;
+    }
+    if (activeTab === 'flightRegister' || activeTab === 'logs' || activeTab === 'register') {
+      if (pageConfig && (pageConfig.flightRegister === false || pageConfig.logs === false) && currentUser?.email !== superAdminEmail) {
+        return (
+          <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px', textAlign: 'center'}}>
+            <Slash size={48} color="#ef4444" style={{marginBottom: '20px'}} />
+            <h2 style={{color: '#fff', fontSize: '1.5rem', marginBottom: '10px'}}>Temporarily Unavailable</h2>
+            <p style={{color: '#94a3b8'}}>This page has been temporarily disabled by the administration.</p>
+          </div>
+        );
+      }
+      return <FlightRegister />;
     }
     const item = navItems.find(i => i.id === activeTab);
     if (item) {
@@ -758,6 +771,10 @@ export default function Dashboard() {
                       {group.items.map((item) => {
                         const Icon = item.icon;
                         const isAdminCard = item.isAdminSpecial;
+                        const isPageDisabled = pageConfig && (
+                          pageConfig[item.id] === false || 
+                          (item.id === 'admin' && (pageConfig.adminPanel === false || pageConfig.admin === false))
+                        );
                         return (
                           <motion.div
                             key={item.id}
@@ -766,15 +783,16 @@ export default function Dashboard() {
                             className={`glass-panel interactive-card ${isAdminCard ? 'admin-special-card' : ''}`}
                             style={{
                               ...styles.menuCard,
-                              ...(isAdminCard ? { border: '1px dashed rgba(6, 182, 212, 0.4)' } : {})
+                              ...(isAdminCard ? { border: '1px dashed rgba(6, 182, 212, 0.4)' } : {}),
+                              ...(isPageDisabled ? { opacity: 0.7, border: '1px solid rgba(239, 68, 68, 0.25)' } : {})
                             }}
                           >
                             <div style={{ 
                               ...styles.cardIconWrapper, 
-                              backgroundColor: isAdminCard ? 'rgba(6, 182, 212, 0.15)' : `${item.color}15`, 
+                              backgroundColor: isPageDisabled ? 'rgba(239, 68, 68, 0.12)' : (isAdminCard ? 'rgba(6, 182, 212, 0.15)' : `${item.color}15`), 
                               position: 'relative' 
                             }}>
-                              <Icon size={24} color={item.color} />
+                              <Icon size={24} color={isPageDisabled ? '#ef4444' : item.color} />
                               {item.badgeCount > 0 && (
                                 <div style={styles.notificationBadge}>
                                   {item.badgeCount > 99 ? '99+' : item.badgeCount}
@@ -782,12 +800,19 @@ export default function Dashboard() {
                               )}
                             </div>
                             <div style={styles.cardInfo}>
-                              <h3 style={{ 
-                                ...styles.cardTitle,
-                                ...(isAdminCard ? { color: '#22d3ee' } : {})
-                              }}>
-                                {item.title}
-                              </h3>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                <h3 style={{ 
+                                  ...styles.cardTitle,
+                                  ...(isAdminCard ? { color: '#22d3ee' } : {})
+                                }}>
+                                  {item.title}
+                                </h3>
+                                {isPageDisabled && (
+                                  <span style={{ fontSize: '0.68rem', color: '#ef4444', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '2px 6px', borderRadius: '4px', fontWeight: '700', textTransform: 'uppercase' }}>
+                                    Disabled
+                                  </span>
+                                )}
+                              </div>
                               <p style={styles.cardDescription}>{item.description}</p>
                             </div>
                           </motion.div>
@@ -815,7 +840,7 @@ export default function Dashboard() {
               </button>
               <div style={styles.pageTitleContainer}>
                 <h2 style={styles.pageTitle}>
-                  {activeTab === 'admin' ? 'Admin Control Center' : navItems.find(i => i.id === activeTab)?.title}
+                  {activeTab === 'admin' ? 'Admin Control Center' : (activeTab === 'flightRegister' || activeTab === 'logs' || activeTab === 'register' ? 'Flight Register' : navItems.find(i => i.id === activeTab)?.title)}
                 </h2>
               </div>
             </div>

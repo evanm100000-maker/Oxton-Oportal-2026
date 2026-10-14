@@ -11,6 +11,37 @@ import {
 } from 'lucide-react';
 import { renderTextWithLinks, normalizeUrl } from '../utils/linkUtils';
 
+const PAGE_TOGGLES_DEF = [
+  // Operations & Flight Schedule
+  { key: 'allocation', label: 'Allocation Requests', group: 'Operations & Schedule' },
+  { key: 'calendar', label: 'Calendar Overview', group: 'Operations & Schedule' },
+  { key: 'events', label: 'Upcoming Events', group: 'Operations & Schedule' },
+  { key: 'meetings', label: 'Upcoming Meetings', group: 'Operations & Schedule' },
+  { key: 'flightRegister', label: 'Flight Register', alias: 'logs', group: 'Operations & Schedule' },
+
+  // Communications & Team
+  { key: 'announcements', label: 'Announcements', group: 'Communications & Team' },
+  { key: 'staffChat', label: 'Staff Messages / Chat', group: 'Communications & Team' },
+  { key: 'allStaff', label: 'All Staff Roster', group: 'Communications & Team' },
+  { key: 'leaderboard', label: 'Staff of the Week', group: 'Communications & Team' },
+
+  // Staff Duties & Workspace
+  { key: 'performance', label: 'My Performance', group: 'Duties & Workspace' },
+  { key: 'tasks', label: 'Tasks & Assignments', group: 'Duties & Workspace' },
+  { key: 'loa', label: 'Leave of Absence (LOA)', group: 'Duties & Workspace' },
+  { key: 'tickets', label: 'Support Tickets', group: 'Duties & Workspace' },
+  { key: 'infractions', label: 'Staff Consequences', group: 'Duties & Workspace' },
+
+  // Documentation & Moderation
+  { key: 'documents', label: 'Documents & Manuals', group: 'Documentation & Reports' },
+  { key: 'reports', label: 'Player Reports', group: 'Documentation & Reports' },
+
+  // Administration & Portals
+  { key: 'adminPanel', label: 'Admin Control Center', alias: 'admin', group: 'Administration & Portals' },
+  { key: 'analytics', label: 'Server Analytics', group: 'Administration & Portals' },
+  { key: 'passengerPortal', label: 'Passenger Portal', group: 'Administration & Portals' },
+];
+
 export default function AdminPanel() {
   const { 
     users, 
@@ -1615,26 +1646,137 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            <div style={{ padding: '20px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)', marginTop: '8px' }}>
-              <h4 style={{ color: '#60a5fa', marginBottom: '8px' }}>Page Access Toggles</h4>
-              <p style={{fontSize: '0.85rem', color: '#94a3b8', marginBottom: '20px'}}>Enable or disable specific pages. Disabled pages will show a "Temporarily unavailable" screen.</p>
-              
-              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '16px'}}>
-                {Object.keys(pageConfig || {}).map(key => (
-                  <div key={key} style={{display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)'}}>
-                    <input 
-                      type="checkbox" 
-                      id={`toggle-${key}`}
-                      checked={pageConfig[key]}
-                      onChange={(e) => updatePageConfig(key, e.target.checked)}
-                      style={{width: '18px', height: '18px'}}
-                    />
-                    <label htmlFor={`toggle-${key}`} style={{fontSize: '0.9rem', color: 'var(--color-text-main)', textTransform: 'capitalize', cursor: 'pointer', flex: 1}}>
-                      {key.replace(/([A-Z])/g, ' $1').trim()}
-                    </label>
-                  </div>
-                ))}
+            <div style={{ padding: '24px', background: 'rgba(59, 130, 246, 0.05)', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.2)', marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                <div>
+                  <h4 style={{ color: '#60a5fa', marginBottom: '4px', fontSize: '1.1rem', fontWeight: '700' }}>Page Access Toggles</h4>
+                  <p style={{fontSize: '0.85rem', color: '#94a3b8', margin: 0}}>Enable or disable specific pages across the portal. Disabled pages will show a "Temporarily unavailable" screen to staff.</p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allToggles = [
+                        ...PAGE_TOGGLES_DEF,
+                        ...Object.keys(pageConfig || {})
+                          .filter(k => !new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean))).has(k))
+                          .map(k => ({ key: k }))
+                      ];
+                      allToggles.forEach(item => {
+                        updatePageConfig(item.key, true);
+                        if (item.alias) updatePageConfig(item.alias, true);
+                      });
+                    }}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.8rem', padding: '6px 14px', borderRadius: '6px' }}
+                  >
+                    Enable All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allToggles = [
+                        ...PAGE_TOGGLES_DEF,
+                        ...Object.keys(pageConfig || {})
+                          .filter(k => !new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean))).has(k))
+                          .map(k => ({ key: k }))
+                      ];
+                      allToggles.forEach(item => {
+                        if (item.key !== 'adminPanel' && item.key !== 'admin') {
+                          updatePageConfig(item.key, false);
+                          if (item.alias && item.alias !== 'admin' && item.alias !== 'adminPanel') updatePageConfig(item.alias, false);
+                        }
+                      });
+                    }}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.8rem', padding: '6px 14px', borderRadius: '6px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                  >
+                    Disable All
+                  </button>
+                </div>
               </div>
+
+              {(() => {
+                const knownKeys = new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean)));
+                const extraConfigKeys = Object.keys(pageConfig || {}).filter(k => !knownKeys.has(k));
+                const allDisplayToggles = [
+                  ...PAGE_TOGGLES_DEF,
+                  ...extraConfigKeys.map(k => ({
+                    key: k,
+                    label: k.replace(/([A-Z])/g, ' $1').trim(),
+                    group: 'Other Pages'
+                  }))
+                ];
+                const groups = Array.from(new Set(allDisplayToggles.map(t => t.group)));
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {groups.map(groupName => {
+                      const groupItems = allDisplayToggles.filter(t => t.group === groupName);
+                      return (
+                        <div key={groupName} style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                          <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#93c5fd', marginBottom: '12px' }}>
+                            {groupName}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                            {groupItems.map(item => {
+                              const isEnabled = pageConfig ? (pageConfig[item.key] !== false && (!item.alias || pageConfig[item.alias] !== false)) : true;
+                              return (
+                                <div
+                                  key={item.key}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px',
+                                    background: isEnabled ? 'rgba(255,255,255,0.02)' : 'rgba(239, 68, 68, 0.06)',
+                                    padding: '10px 14px',
+                                    borderRadius: '8px',
+                                    border: isEnabled ? '1px solid rgba(255,255,255,0.06)' : '1px solid rgba(239, 68, 68, 0.3)',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    id={`toggle-${item.key}`}
+                                    checked={isEnabled}
+                                    onChange={(e) => {
+                                      const val = e.target.checked;
+                                      updatePageConfig(item.key, val);
+                                      if (item.alias) updatePageConfig(item.alias, val);
+                                    }}
+                                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#3b82f6' }}
+                                  />
+                                  <label
+                                    htmlFor={`toggle-${item.key}`}
+                                    style={{
+                                      fontSize: '0.88rem',
+                                      color: isEnabled ? 'var(--color-text-main)' : '#94a3b8',
+                                      cursor: 'pointer',
+                                      flex: 1,
+                                      fontWeight: isEnabled ? '500' : '400',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      userSelect: 'none'
+                                    }}
+                                  >
+                                    <span>{item.label}</span>
+                                    {!isEnabled && (
+                                      <span style={{ fontSize: '0.68rem', color: '#ef4444', fontWeight: '700', textTransform: 'uppercase', background: 'rgba(239,68,68,0.14)', padding: '2px 5px', borderRadius: '4px' }}>
+                                        Disabled
+                                      </span>
+                                    )}
+                                  </label>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             <div style={{ padding: '20px', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', marginTop: '8px' }}>
