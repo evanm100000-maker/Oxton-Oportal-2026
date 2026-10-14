@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { User, Shield, CheckCircle, Clock, AlertTriangle, FileText, TrendingUp, Trophy } from 'lucide-react';
+import { User, Shield, CheckCircle, Clock, AlertTriangle, FileText, TrendingUp, Trophy, Plane } from 'lucide-react';
 
 export default function Performance() {
-  const { currentUser, users, flightLogs, flights, reports, infractions, activeUsers } = useApp();
+  const { currentUser, users, flightLogs, flights = [], reports, infractions, activeUsers, quotaConfig } = useApp();
   const [selectedEmail, setSelectedEmail] = useState(currentUser.email);
 
   const targetUser = useMemo(() => {
@@ -15,11 +15,54 @@ export default function Performance() {
   const userReports = useMemo(() => reports.filter(r => r.reporterEmail === targetUser.email), [reports, targetUser]);
   const userInfractions = useMemo(() => infractions.filter(inf => inf.staffEmail === targetUser.email), [infractions, targetUser]);
   
+  // Total completed flights: approved flight logs + flights verified Present on submitted registers
+  const flightsCount = useMemo(() => {
+    if (!targetUser?.email) return 0;
+    const safeEmail = targetUser.email.replace(/\./g, ',');
+    const flightIds = new Set();
+
+    (approvedFlightLogs || []).forEach(log => {
+      flightIds.add(log.flightId || log.id);
+    });
+
+    (flights || []).forEach(f => {
+      if (f.registerSubmitted && f.attendanceRecord?.[safeEmail] === 'Present') {
+        flightIds.add(f.id);
+      }
+    });
+
+    return flightIds.size;
+  }, [approvedFlightLogs, flights, targetUser?.email]);
+
+  // Current flight quota progress (target: 3)
+  const currentQuota = useMemo(() => {
+    if (!targetUser?.email) return 0;
+    const safeEmail = targetUser.email.replace(/\./g, ',');
+    const resetTime = quotaConfig?.lastResetDate ? new Date(quotaConfig.lastResetDate).getTime() : 0;
+    
+    const countSet = new Set();
+    (flights || []).forEach(f => {
+      if (f.registerSubmitted && f.attendanceRecord?.[safeEmail] === 'Present') {
+        const t = f.registerSubmittedAt ? new Date(f.registerSubmittedAt).getTime() : (f.date ? new Date(`${f.date}T${f.time || '00:00'}`).getTime() : 0);
+        if (t >= resetTime) countSet.add(f.id);
+      }
+    });
+
+    (approvedFlightLogs || []).forEach(l => {
+      const t = l.timestamp ? new Date(l.timestamp).getTime() : 0;
+      if (t >= resetTime) countSet.add(l.flightId || l.id);
+    });
+
+    if (targetUser.quotaFlights !== undefined && resetTime > 0 && targetUser.lastQuotaReset === quotaConfig?.lastResetDate) {
+      return Number(targetUser.quotaFlights);
+    }
+    return countSet.size;
+  }, [flights, approvedFlightLogs, targetUser?.email, targetUser?.quotaFlights, targetUser?.lastQuotaReset, quotaConfig?.lastResetDate]);
+
   // Calculate badges
-  const flightsCount = approvedFlightLogs.length;
   let badge = 'Unranked';
   let badgeColor = '#9ca3af'; // gray
-  if (flightsCount >= 50) { badge = 'Platinum'; badgeColor = '#e5e7eb'; } // lighter gray/white for platinum
+  if (flightsCount >= 50) { badge = 'Platinum'; badgeColor = '#e5e7eb'; }
   else if (flightsCount >= 30) { badge = 'Gold'; badgeColor = '#fbbf24'; }
   else if (flightsCount >= 20) { badge = 'Silver'; badgeColor = '#9ca3af'; }
   else if (flightsCount >= 10) { badge = 'Bronze'; badgeColor = '#b45309'; }
@@ -76,18 +119,25 @@ export default function Performance() {
       </div>
 
       <div style={styles.topCards}>
-        <div className="glass-panel" style={styles.card}>
-          <div style={styles.cardIcon}><FileText size={24} color="#3b82f6" /></div>
+        <div className="glass-panel" style={{ ...styles.card, borderColor: currentQuota >= 3 ? 'rgba(16, 185, 129, 0.4)' : 'rgba(59, 130, 246, 0.4)' }}>
+          <div style={styles.cardIcon}><Plane size={24} color={currentQuota >= 3 ? "#10b981" : "#3b82f6"} /></div>
           <div style={styles.cardInfo}>
-            <span style={styles.cardLabel}>Logs Submitted</span>
-            <strong style={styles.cardValue}>{userFlightLogs.length}</strong>
+            <span style={styles.cardLabel}>Flight Quota</span>
+            <strong style={{ ...styles.cardValue, color: currentQuota >= 3 ? '#34d399' : '#60a5fa' }}>{currentQuota} / 3 {currentQuota >= 3 ? '✓ Full' : 'Flights'}</strong>
           </div>
         </div>
         <div className="glass-panel" style={styles.card}>
           <div style={styles.cardIcon}><CheckCircle size={24} color="#10b981" /></div>
           <div style={styles.cardInfo}>
-            <span style={styles.cardLabel}>Approved Flights</span>
+            <span style={styles.cardLabel}>Completed Flights</span>
             <strong style={styles.cardValue}>{flightsCount}</strong>
+          </div>
+        </div>
+        <div className="glass-panel" style={styles.card}>
+          <div style={styles.cardIcon}><FileText size={24} color="#3b82f6" /></div>
+          <div style={styles.cardInfo}>
+            <span style={styles.cardLabel}>Logs Submitted</span>
+            <strong style={styles.cardValue}>{userFlightLogs.length}</strong>
           </div>
         </div>
         <div className="glass-panel" style={styles.card}>
@@ -155,6 +205,81 @@ export default function Performance() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Flight Attendance History Section */}
+      <div className="glass-panel" style={styles.section}>
+        <h4 style={styles.sectionTitle}><Plane size={18} /> Verified Flight Attendance Records ({(() => {
+          const safeEmail = targetUser?.email ? targetUser.email.replace(/\./g, ',') : '';
+          const list = [];
+          (flights || []).forEach(f => {
+            const mark = f.attendanceRecord?.[safeEmail];
+            if (mark && mark !== 'Pending') {
+              list.push({ flightId: f.id, flightCode: f.flightCode, date: f.date, time: f.time, location: f.location, status: mark, isSubmitted: f.registerSubmitted });
+            }
+          });
+          (targetUser?.attendedFlights || []).forEach(af => {
+            if (!list.some(r => r.flightId === af.flightId)) {
+              list.push({ flightId: af.flightId, flightCode: af.flightCode, date: af.date, time: af.time, location: af.location, status: af.status, isSubmitted: true });
+            }
+          });
+          return list.length;
+        })()})</h4>
+        
+        {(() => {
+          const safeEmail = targetUser?.email ? targetUser.email.replace(/\./g, ',') : '';
+          const list = [];
+          (flights || []).forEach(f => {
+            const mark = f.attendanceRecord?.[safeEmail];
+            if (mark && mark !== 'Pending') {
+              list.push({ flightId: f.id, flightCode: f.flightCode, date: f.date, time: f.time, location: f.location, status: mark, isSubmitted: f.registerSubmitted });
+            }
+          });
+          (targetUser?.attendedFlights || []).forEach(af => {
+            if (!list.some(r => r.flightId === af.flightId)) {
+              list.push({ flightId: af.flightId, flightCode: af.flightCode, date: af.date, time: af.time, location: af.location, status: af.status, isSubmitted: true });
+            }
+          });
+
+          if (list.length === 0) {
+            return (
+              <div style={{ color: '#9ca3af', textAlign: 'center', padding: '24px' }}>
+                No flight register attendances on record yet.
+              </div>
+            );
+          }
+
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+              {list.map((item, idx) => (
+                <div key={idx} style={{ padding: '14px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ color: '#fff', fontSize: '1.02rem' }}>{item.flightCode}</strong>
+                    <span style={{
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: '700',
+                      background: item.status === 'Present' ? 'rgba(16, 185, 129, 0.2)' : item.status === 'Late' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: item.status === 'Present' ? '#34d399' : item.status === 'Late' ? '#fbbf24' : '#f87171',
+                      border: `1px solid ${item.status === 'Present' ? '#10b981' : item.status === 'Late' ? '#f59e0b' : '#ef4444'}`
+                    }}>
+                      {item.status}
+                    </span>
+                  </div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '6px' }}>
+                    {item.location} &bull; {item.date} {item.time ? `at ${item.time}` : ''}
+                  </div>
+                  {item.isSubmitted && (
+                    <div style={{ color: '#34d399', fontSize: '0.75rem', marginTop: '6px', fontWeight: '600' }}>
+                      ✓ Verified on Register
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

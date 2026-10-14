@@ -18,7 +18,8 @@ export default function AllocationRequests() {
     users,
     activeUsers,
     toggleFlightLock,
-    editFlight
+    editFlight,
+    submitFlightRegister
   } = useApp();
 
   const [activeRegisterFlight, setActiveRegisterFlight] = useState(null);
@@ -235,6 +236,46 @@ export default function AllocationRequests() {
                 })}
               </div>
             )}
+          </div>
+
+          <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
+              {flight.registerSubmitted ? (
+                <span style={{ color: '#34d399', fontWeight: 'bold' }}>✓ Register Submitted & Credited to Profiles</span>
+              ) : (
+                <span>Mark staff as Present, Late, or Absent and submit to credit profiles.</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                type="button" 
+                onClick={() => setActiveRegisterFlight(null)} 
+                className="btn-secondary" 
+                style={{ padding: '8px 16px', borderRadius: '8px' }}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Submit attendance register for flight ${flight.flightCode}? This will record completed flights onto staff profiles.`)) {
+                    submitFlightRegister(flight.id, flight.attendanceRecord);
+                    setActiveRegisterFlight(null);
+                  }
+                }}
+                className="btn-primary"
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: '8px',
+                  background: '#10b981',
+                  borderColor: '#059669',
+                  color: '#fff',
+                  fontWeight: '600'
+                }}
+              >
+                {flight.registerSubmitted ? 'Update & Re-submit' : 'Submit Flight Register'}
+              </button>
+            </div>
           </div>
 
         </div>

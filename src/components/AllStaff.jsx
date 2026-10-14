@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Users, User, Trophy, ShieldAlert, Award, FileText, Send, X, Trash2, Medal } from 'lucide-react';
+import { Users, User, Trophy, ShieldAlert, Award, FileText, Send, X, Trash2, Medal, Plane, CheckCircle, Clock } from 'lucide-react';
 
 export default function AllStaff() {
   const { 
     users,
     onlineUsers, 
     flightLogs, 
+    flights = [],
+    quotaConfig,
     currentUser, 
     staffNotes, 
     addStaffNote, 
@@ -25,8 +27,28 @@ export default function AllStaff() {
 
   const displayUsers = users ? users.filter(u => u?.approved && u?.role !== 'passenger') : [];
 
+  const getStaffTotalCompletedFlights = (email) => {
+    if (!email) return 0;
+    const safeEmail = email.replace(/\./g, ',');
+    const flightIds = new Set();
+    
+    (flightLogs || []).forEach(log => {
+      if (log.status === 'Approved' && log.submitterEmail === email) {
+        flightIds.add(log.flightId || log.id);
+      }
+    });
+
+    (flights || []).forEach(f => {
+      if (f.registerSubmitted && f.attendanceRecord?.[safeEmail] === 'Present') {
+        flightIds.add(f.id);
+      }
+    });
+
+    return flightIds.size;
+  };
+
   const calculateBadge = (email) => {
-    const flightsCount = flightLogs.filter(log => log.submitterEmail === email && log.status === 'Approved').length;
+    const flightsCount = getStaffTotalCompletedFlights(email);
     if (flightsCount >= 50) return { label: 'Platinum', color: '#e5e7eb' };
     if (flightsCount >= 30) return { label: 'Gold', color: '#fbbf24' };
     if (flightsCount >= 20) return { label: 'Silver', color: '#9ca3af' };
@@ -245,27 +267,100 @@ export default function AllStaff() {
                 const staffLogs = flightLogs.filter(l => l.submitterEmail === currentStaff.email);
                 const staffInfs = infractions.filter(i => i.staffEmail === currentStaff.email);
                 const staffLoas = loaRequests.filter(l => l.userEmail === currentStaff.email);
+                const totalCompleted = getStaffTotalCompletedFlights(currentStaff.email);
+                const safeEmail = currentStaff.email.replace(/\./g, ',');
+                
+                // Collect flight register records for this staff member
+                const registerAttendances = [];
+                (flights || []).forEach(f => {
+                  const mark = f.attendanceRecord?.[safeEmail];
+                  if (mark && mark !== 'Pending') {
+                    registerAttendances.push({
+                      flightId: f.id,
+                      flightCode: f.flightCode,
+                      date: f.date,
+                      time: f.time,
+                      location: f.location,
+                      status: mark,
+                      isSubmitted: f.registerSubmitted,
+                      submittedAt: f.registerSubmittedAt
+                    });
+                  }
+                });
+
+                // Also merge user.attendedFlights if available
+                (currentStaff.attendedFlights || []).forEach(af => {
+                  if (!registerAttendances.some(r => r.flightId === af.flightId)) {
+                    registerAttendances.push({
+                      flightId: af.flightId,
+                      flightCode: af.flightCode,
+                      date: af.date,
+                      time: af.time,
+                      location: af.location,
+                      status: af.status,
+                      isSubmitted: true,
+                      submittedAt: af.submittedAt
+                    });
+                  }
+                });
 
                 return (
                   <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
                     <h4 style={{color: '#fff', margin: 0}}>Summary Record for {currentStaff.firstName}</h4>
-                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px'}}>
-                      <div className="glass-panel" style={{padding: '16px', borderRadius: '8px'}}>
-                        <h5 style={{margin: '0 0 8px 0', color: '#9ca3af'}}>Approved Flights</h5>
-                        <p style={{margin: 0, fontSize: '1.5rem', color: '#fff'}}>{staffLogs.filter(l => l.status === 'Approved').length} <span style={{fontSize: '0.9rem', color: '#6b7280'}}>out of {staffLogs.length} total</span></p>
+                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px'}}>
+                      <div className="glass-panel" style={{padding: '14px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.3)'}}>
+                        <h5 style={{margin: '0 0 6px 0', color: '#60a5fa', fontSize: '0.82rem', textTransform: 'uppercase'}}>Completed Flights</h5>
+                        <p style={{margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 'bold'}}>{totalCompleted} <span style={{fontSize: '0.8rem', color: '#9ca3af'}}>total</span></p>
                       </div>
-                      <div className="glass-panel" style={{padding: '16px', borderRadius: '8px'}}>
-                        <h5 style={{margin: '0 0 8px 0', color: '#9ca3af'}}>Consequences on Record</h5>
-                        <p style={{margin: 0, fontSize: '1.5rem', color: staffInfs.length > 0 ? '#ef4444' : '#10b981'}}>{staffInfs.length}</p>
+                      <div className="glass-panel" style={{padding: '14px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)'}}>
+                        <h5 style={{margin: '0 0 6px 0', color: '#34d399', fontSize: '0.82rem', textTransform: 'uppercase'}}>Flight Quota</h5>
+                        <p style={{margin: 0, fontSize: '1.4rem', color: '#34d399', fontWeight: 'bold'}}>{Math.min(3, Number(currentStaff.quotaFlights || 0))} / 3 <span style={{fontSize: '0.8rem', color: '#9ca3af'}}>flights</span></p>
                       </div>
-                      <div className="glass-panel" style={{padding: '16px', borderRadius: '8px'}}>
-                        <h5 style={{margin: '0 0 8px 0', color: '#9ca3af'}}>LOA Requests</h5>
-                        <p style={{margin: 0, fontSize: '1.5rem', color: '#fff'}}>{staffLoas.length}</p>
+                      <div className="glass-panel" style={{padding: '14px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)'}}>
+                        <h5 style={{margin: '0 0 6px 0', color: '#f87171', fontSize: '0.82rem', textTransform: 'uppercase'}}>Consequences</h5>
+                        <p style={{margin: 0, fontSize: '1.4rem', color: staffInfs.length > 0 ? '#ef4444' : '#10b981', fontWeight: 'bold'}}>{staffInfs.length}</p>
                       </div>
-                      <div className="glass-panel" style={{padding: '16px', borderRadius: '8px'}}>
-                        <h5 style={{margin: '0 0 8px 0', color: '#9ca3af'}}>Reports Filed</h5>
-                        <p style={{margin: 0, fontSize: '1.5rem', color: '#fff'}}>{staffReports.length}</p>
+                      <div className="glass-panel" style={{padding: '14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.3)'}}>
+                        <h5 style={{margin: '0 0 6px 0', color: '#fbbf24', fontSize: '0.82rem', textTransform: 'uppercase'}}>LOA Requests</h5>
+                        <p style={{margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 'bold'}}>{staffLoas.length}</p>
                       </div>
+                    </div>
+
+                    {/* Flight Register Attendance on Profile */}
+                    <div style={{ marginTop: '8px' }}>
+                      <h5 style={{ color: '#fff', margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Plane size={16} color="#3b82f6" /> Flight Attendance Records ({registerAttendances.length})
+                      </h5>
+                      {registerAttendances.length === 0 ? (
+                        <div style={{ padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', color: '#9ca3af', fontSize: '0.88rem', textAlign: 'center' }}>
+                          No flight register attendances on profile yet.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                          {registerAttendances.map((rec, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                              <div>
+                                <span style={{ fontWeight: '700', color: '#fff' }}>{rec.flightCode}</span>
+                                <span style={{ color: '#9ca3af', fontSize: '0.8rem', marginLeft: '10px' }}>{rec.location} &bull; {rec.date}</span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: '700',
+                                  background: rec.status === 'Present' ? 'rgba(16, 185, 129, 0.2)' : rec.status === 'Late' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                                  color: rec.status === 'Present' ? '#34d399' : rec.status === 'Late' ? '#fbbf24' : '#f87171',
+                                  border: `1px solid ${rec.status === 'Present' ? '#10b981' : rec.status === 'Late' ? '#f59e0b' : '#ef4444'}`
+                                }}>
+                                  {rec.status}
+                                </span>
+                                {rec.isSubmitted && <span style={{ fontSize: '0.75rem', color: '#34d399' }}>✓ Verified</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -273,12 +368,12 @@ export default function AllStaff() {
 
               {manageTab === 'promotion' && (() => {
                 const logins = currentStaff.loginHistory || [];
-                const approvedFlights = flightLogs.filter(l => l.submitterEmail === currentStaff.email && l.status === 'Approved').length;
+                const approvedFlights = getStaffTotalCompletedFlights(currentStaff.email);
                 const infs = infractions.filter(i => i.staffEmail === currentStaff.email).length;
 
                 const reasons = [];
                 
-                if (approvedFlights < 10) reasons.push(`Flights: Needs 10 approved flights (has ${approvedFlights})`);
+                if (approvedFlights < 10) reasons.push(`Flights: Needs 10 completed flights (has ${approvedFlights})`);
                 if (infs > 2) reasons.push(`Consequences: Must have 2 or fewer (has ${infs})`);
 
                 const isEligible = reasons.length === 0;

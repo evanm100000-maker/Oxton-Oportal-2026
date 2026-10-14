@@ -380,6 +380,7 @@ export const AppProvider = ({ children }) => {
   const [announcements, setAnnouncements] = useFirebaseArray('announcements', initialAnnouncements, true, 50);
   const [bypassConfig, setBypassConfig] = useFirebaseObject('bypassConfig', initialBypassConfig);
   const [emergencyAlertConfig, setEmergencyAlertConfig] = useFirebaseObject('emergencyAlert', initialEmergencyAlertConfig);
+  const [quotaConfig, setQuotaConfig] = useFirebaseObject('quotaConfig', { lastResetDate: null, resetBy: null, resetByName: null });
 
   const [informalSanctions, setInformalSanctions] = useFirebaseArray('informalSanctions', EMPTY_ARRAY, isLoggedIn, 50);
   const [pointLogs, setPointLogs] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isLoggedIn, 500);
@@ -1216,7 +1217,16 @@ export const AppProvider = ({ children }) => {
         delete newAbsenceReasons[safeEmail];
       }
 
-      return { ...f, staffStatus: newStatus, absenceReasons: newAbsenceReasons };
+      let newAllocatedStaff = Array.isArray(f.allocatedStaff) ? [...f.allocatedStaff] : [];
+      if (status === 'Attending') {
+        if (!newAllocatedStaff.includes(email)) {
+          newAllocatedStaff.push(email);
+        }
+      } else {
+        newAllocatedStaff = newAllocatedStaff.filter(e => e !== email);
+      }
+
+      return { ...f, allocatedStaff: newAllocatedStaff, staffStatus: newStatus, absenceReasons: newAbsenceReasons };
     }));
   };
 
@@ -1418,6 +1428,19 @@ export const AppProvider = ({ children }) => {
     }));
   };
 
+  const sendNotificationToUser = (targetEmail, title, message, type = 'info') => {
+    if (!targetEmail) return;
+    const id = makeId('notif');
+    const newNotif = { id, title, message, type, timestamp: Date.now() };
+    const db = getDatabase(firebaseApp);
+    const safeEmail = escapeEmail(targetEmail);
+    update(ref(db, `userNotifications/${safeEmail}`), { [id]: newNotif }).catch(err => console.error(err));
+    if (currentUser?.email === targetEmail) {
+      setNotifications(prev => [...prev, newNotif]);
+      setTimeout(() => removeNotification(id), 5000);
+    }
+  };
+
   const markFlightAttendance = (flightId, email, status) => {
     const safeEmail = escapeEmail(email);
     setFlights(prev => prev.map(f => {
@@ -1426,16 +1449,152 @@ export const AppProvider = ({ children }) => {
       const newRecord = { ...currentRecord, [safeEmail]: status };
       return { ...f, attendanceRecord: newRecord };
     }));
+    logAction('flight_attendance_marked', `Marked ${email} as ${status} on flight ${flightId}`, { flightId, email, status });
+  };
 
-    // If marked Present, award 7 points for completing flight if not already awarded
-    if (status === 'Present') {
-      const user = users.find(u => u.email === email);
-      if (user) {
-        setUsers(prev => prev.map(u => u.email === email ? { ...u, points: Number(u.points || 0) + 7 } : u));
-        logPointsAction(email, 7, `Flight Attendance Verified: Present`);
+  const submitFlightRegister = (flightId, customAttendanceRecord = null) => {
+    const nowIso = new Date().toISOString();
+    let targetFlight = null;
+
+    setFlights(prev => prev.map(f => {
+      if (f.id !== flightId) return f;
+      const currentRecord = customAttendanceRecord || f.attendanceRecord || {};
+      targetFlight = {
+        ...f,
+        attendanceRecord: currentRecord,
+        registerSubmitted: true,
+        registerSubmittedAt: nowIso,
+        registerSubmittedBy: currentUser?.email || 'Admin'
+      };
+      return targetFlight;
+    }));
+
+    if (!targetFlight) {
+      targetFlight = flights.find(f => f.id === flightId);
+      if (targetFlight) {
+        targetFlight = {
+          ...targetFlight,
+          attendanceRecord: customAttendanceRecord || targetFlight.attendanceRecord || {},
+          registerSubmitted: true,
+          registerSubmittedAt: nowIso,
+          registerSubmittedBy: currentUser?.email || 'Admin'
+        };
       }
     }
-    logAction('flight_attendance_marked', `Marked ${email} as ${status} on flight ${flightId}`, { flightId, email, status });
+
+    if (!targetFlight) return false;
+
+    const record = customAttendanceRecord || targetFlight.attendanceRecord || {};
+
+    setUsers(prev => prev.map(u => {
+      const safeEmail = escapeEmail(u.email);
+      const mark = record[safeEmail];
+      if (!mark || mark === 'Pending') return u;
+
+      const attendedFlights = Array.isArray(u.attendedFlights) ? [...u.attendedFlights] : [];
+      const existingEntryIndex = attendedFlights.findIndex(a => a.flightId === targetFlight.id);
+      const wasAlreadyPresent = existingEntryIndex >= 0 && attendedFlights[existingEntryIndex].status === 'Present';
+
+      const entry = {
+        flightId: targetFlight.id,
+        flightCode: targetFlight.flightCode,
+        date: targetFlight.date,
+        time: targetFlight.time || '',
+        location: targetFlight.location,
+        status: mark,
+        submittedAt: nowIso
+      };
+
+      if (existingEntryIndex >= 0) {
+        attendedFlights[existingEntryIndex] = entry;
+      } else {
+        attendedFlights.unshift(entry);
+      }
+
+      let updatedPoints = Number(u.points || 0);
+      let updatedQuota = Number(u.quotaFlights || 0);
+      let updatedCompleted = Number(u.completedFlightsCount || 0);
+
+      if (mark === 'Present') {
+        if (!wasAlreadyPresent) {
+          updatedPoints += 7;
+          updatedQuota += 1;
+          updatedCompleted += 1;
+          logPointsAction(u.email, 7, `Flight Attendance Verified: ${targetFlight.flightCode}`);
+          sendNotificationToUser(u.email, 'Flight Verified: Present', `You were marked Present on flight ${targetFlight.flightCode}. 7 points & quota credited!`, 'success');
+        }
+      } else if (mark === 'Late') {
+        sendNotificationToUser(u.email, 'Flight Attendance: Late', `You were marked Late on flight ${targetFlight.flightCode}.`, 'warning');
+      } else if (mark === 'Absent') {
+        sendNotificationToUser(u.email, 'Flight Attendance: Absent', `You were marked Absent on flight ${targetFlight.flightCode}.`, 'danger');
+      }
+
+      return {
+        ...u,
+        points: updatedPoints,
+        quotaFlights: updatedQuota,
+        completedFlightsCount: updatedCompleted,
+        attendedFlights
+      };
+    }));
+
+    logAction('flight_register_submitted', `Submitted attendance register for flight ${targetFlight.flightCode}`, { flightId });
+    return true;
+  };
+
+  const reopenFlightRegister = (flightId) => {
+    setFlights(prev => prev.map(f => {
+      if (f.id !== flightId) return f;
+      return { ...f, registerSubmitted: false };
+    }));
+    logAction('flight_register_reopened', `Reopened attendance register for flight ${flightId}`);
+  };
+
+  const resetAllFlightQuotas = () => {
+    const nowIso = new Date().toISOString();
+    const newConfig = {
+      lastResetDate: nowIso,
+      resetBy: currentUser?.email || 'admin',
+      resetByName: currentUser ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : 'Admin'
+    };
+    setQuotaConfig(newConfig);
+
+    setUsers(prev => prev.map(u => ({
+      ...u,
+      quotaFlights: 0,
+      lastQuotaReset: nowIso
+    })));
+
+    const db = getDatabase(firebaseApp);
+    update(ref(db, 'quotaConfig'), newConfig).catch(err => console.error('Failed to sync quotaConfig to Firebase:', err));
+
+    logAction('flight_quotas_reset', `Reset all staff flight quota progress to 0`, { resetBy: currentUser?.email });
+    return true;
+  };
+
+  const resetStaffQuota = (email) => {
+    const nowIso = new Date().toISOString();
+    setUsers(prev => prev.map(u => {
+      if (u.email !== email) return u;
+      return {
+        ...u,
+        quotaFlights: 0,
+        lastQuotaReset: nowIso
+      };
+    }));
+    logAction('staff_quota_reset', `Reset flight quota for ${email} to 0`, { email });
+  };
+
+  const adjustStaffQuota = (email, delta) => {
+    setUsers(prev => prev.map(u => {
+      if (u.email !== email) return u;
+      const current = Math.max(0, Number(u.quotaFlights || 0) + delta);
+      return {
+        ...u,
+        quotaFlights: current
+      };
+    }));
+    logAction('staff_quota_adjusted', `Adjusted flight quota for ${email} by ${delta}`, { email, delta });
   };
 
   const addInfraction = (infData) => {
@@ -2218,6 +2377,13 @@ useEffect(() => {
           logAction('emergency_alert_cleared', 'Cleared emergency alert');
         },
         markFlightAttendance,
+        submitFlightRegister,
+        reopenFlightRegister,
+        resetAllFlightQuotas,
+        resetStaffQuota,
+        adjustStaffQuota,
+        sendNotificationToUser,
+        quotaConfig,
         passDetention,
         failDetention,
         rescheduleDetention,

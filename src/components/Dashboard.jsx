@@ -54,31 +54,44 @@ const tabToPath = {
 const pathToTab = Object.fromEntries(Object.entries(tabToPath).map(([k, v]) => [v, k]));
 
 export default function Dashboard() {
-  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [] } = useApp();
+  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [], quotaConfig } = useApp();
 
   // Compute flight quota progress: 3 completed flights needed to be full (100%)
-  // Either verified 'Present' on flight attendanceRecord OR approved flight log
+  // Either verified 'Present' on submitted flight register OR approved flight log in the current quota period
   const userCompletedFlights = React.useMemo(() => {
     if (!currentUser?.email) return 0;
     const safeEmail = currentUser.email.replace(/\./g, ',');
+    const resetTime = quotaConfig?.lastResetDate ? new Date(quotaConfig.lastResetDate).getTime() : 0;
     
-    // Flights where admin marked user Present
+    // Flights where admin marked user Present on submitted register
     const verifiedPresentFlightIds = new Set();
     (flights || []).forEach(f => {
-      if (f.attendanceRecord && f.attendanceRecord[safeEmail] === 'Present') {
-        verifiedPresentFlightIds.add(f.id);
+      if (f.attendanceRecord && f.attendanceRecord[safeEmail] === 'Present' && f.registerSubmitted) {
+        const flightTime = f.registerSubmittedAt 
+          ? new Date(f.registerSubmittedAt).getTime() 
+          : (f.date ? new Date(`${f.date}T${f.time || '00:00'}`).getTime() : 0);
+        if (flightTime >= resetTime) {
+          verifiedPresentFlightIds.add(f.id);
+        }
       }
     });
 
     // Approved flight logs
     (flightLogs || []).forEach(log => {
       if (log.status === 'Approved' && log.submitterEmail === currentUser.email) {
-        verifiedPresentFlightIds.add(log.flightId || log.id);
+        const logTime = log.timestamp ? new Date(log.timestamp).getTime() : 0;
+        if (logTime >= resetTime) {
+          verifiedPresentFlightIds.add(log.flightId || log.id);
+        }
       }
     });
 
+    if (currentUser.quotaFlights !== undefined && resetTime > 0 && currentUser.lastQuotaReset === quotaConfig?.lastResetDate) {
+      return Number(currentUser.quotaFlights);
+    }
+
     return verifiedPresentFlightIds.size;
-  }, [flights, flightLogs, currentUser?.email]);
+  }, [flights, flightLogs, currentUser?.email, currentUser?.quotaFlights, currentUser?.lastQuotaReset, quotaConfig?.lastResetDate]);
 
   const quotaTarget = 3;
   const quotaPercent = Math.min(100, Math.round((userCompletedFlights / quotaTarget) * 100));

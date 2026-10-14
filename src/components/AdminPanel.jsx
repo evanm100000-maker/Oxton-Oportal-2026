@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import FlightRegister from './FlightRegister';
+import FlightQuotaProgress from './FlightQuotaProgress';
 import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
 import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
-  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock, ClipboardList
+  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock, ClipboardList, Target
 } from 'lucide-react';
 
 export default function AdminPanel() {
@@ -505,6 +506,9 @@ export default function AdminPanel() {
         </button>
         <button type="button" onClick={() => setActiveSubTab('flight_register')} style={getTabStyle(activeSubTab === 'flight_register' || activeSubTab === 'flight_logs')}>
           <ClipboardList size={16} /> Flight Register
+        </button>
+        <button type="button" onClick={() => setActiveSubTab('flight_quotas')} style={getTabStyle(activeSubTab === 'flight_quotas')}>
+          <Target size={16} /> Flight Quotas
         </button>
         <button type="button" onClick={() => setActiveSubTab('loas')} style={getTabStyle(activeSubTab === 'loas')}>
           <Calendar size={16} /> LOAs ({pendingLoas.length})
@@ -1167,6 +1171,13 @@ export default function AdminPanel() {
       {(activeSubTab === 'flight_register' || activeSubTab === 'flight_logs') && (
         <div id="section-flight-register" className="admin-section active" style={{ width: '100%' }}>
           <FlightRegister />
+        </div>
+      )}
+
+      {/* Sub Tab: Staff Flight Quota Management */}
+      {activeSubTab === 'flight_quotas' && (
+        <div id="section-flight-quotas" className="admin-section active" style={{ width: '100%' }}>
+          <FlightQuotaProgress />
         </div>
       )}
 
