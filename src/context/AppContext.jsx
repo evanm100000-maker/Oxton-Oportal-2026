@@ -1493,7 +1493,7 @@ export const AppProvider = ({ children }) => {
 
       const attendedFlights = Array.isArray(u.attendedFlights) ? [...u.attendedFlights] : [];
       const existingEntryIndex = attendedFlights.findIndex(a => a.flightId === targetFlight.id);
-      const wasAlreadyPresent = existingEntryIndex >= 0 && attendedFlights[existingEntryIndex].status === 'Present';
+      const wasAlreadyCredited = existingEntryIndex >= 0 && (attendedFlights[existingEntryIndex].status === 'Present' || attendedFlights[existingEntryIndex].status === 'Late');
 
       const entry = {
         flightId: targetFlight.id,
@@ -1515,16 +1515,19 @@ export const AppProvider = ({ children }) => {
       let updatedQuota = Number(u.quotaFlights || 0);
       let updatedCompleted = Number(u.completedFlightsCount || 0);
 
-      if (mark === 'Present') {
-        if (!wasAlreadyPresent) {
+      if (mark === 'Present' || mark === 'Late') {
+        if (!wasAlreadyCredited) {
           updatedPoints += 7;
           updatedQuota += 1;
           updatedCompleted += 1;
-          logPointsAction(u.email, 7, `Flight Attendance Verified: ${targetFlight.flightCode}`);
-          sendNotificationToUser(u.email, 'Flight Verified: Present', `You were marked Present on flight ${targetFlight.flightCode}. 7 points & quota credited!`, 'success');
+          logPointsAction(u.email, 7, `Flight Attendance Verified (${mark}): ${targetFlight.flightCode}`);
+          sendNotificationToUser(
+            u.email, 
+            `Flight Verified: ${mark}`, 
+            `You were marked ${mark} on flight ${targetFlight.flightCode}. 7 points & flight log credited!`, 
+            mark === 'Present' ? 'success' : 'warning'
+          );
         }
-      } else if (mark === 'Late') {
-        sendNotificationToUser(u.email, 'Flight Attendance: Late', `You were marked Late on flight ${targetFlight.flightCode}.`, 'warning');
       } else if (mark === 'Absent') {
         sendNotificationToUser(u.email, 'Flight Attendance: Absent', `You were marked Absent on flight ${targetFlight.flightCode}.`, 'danger');
       }
@@ -1984,6 +1987,7 @@ useEffect(() => {
       message: annData.message,
       targetAudience: annData.targetAudience || 'All',
       countdownDate: annData.countdownDate || null,
+      linkUrl: annData.linkUrl || '',
       authorEmail: currentUser.email,
       authorName: `${currentUser.firstName} ${currentUser.lastName}`,
       timestamp: new Date().toISOString()

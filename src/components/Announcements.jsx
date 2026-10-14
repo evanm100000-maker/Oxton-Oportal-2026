@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion } from 'framer-motion';
-import { Megaphone, AlertTriangle, Hammer, Trash2, Send } from 'lucide-react';
+import { Megaphone, AlertTriangle, Hammer, Trash2, Send, ExternalLink } from 'lucide-react';
+import { renderTextWithLinks, normalizeUrl } from '../utils/linkUtils';
 
 const styles = {
   container: {
@@ -95,6 +96,8 @@ const styles = {
   },
   message: {
     whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    lineHeight: '1.6',
   },
   annTitle: {
     fontSize: '1.4rem',
@@ -288,9 +291,37 @@ export default function Announcements() {
                 </div>
               </div>
               <div style={styles.cardBody}>
-                {ann.title && <h3 style={styles.annTitle}>{ann.title}</h3>}
-                {ann.subtitle && <h4 style={styles.annSubtitle}>{ann.subtitle}</h4>}
-                <p style={styles.message}>{ann.message}</p>
+                {ann.title && <h3 style={styles.annTitle}>{renderTextWithLinks(ann.title)}</h3>}
+                {ann.subtitle && <h4 style={styles.annSubtitle}>{renderTextWithLinks(ann.subtitle)}</h4>}
+                <div style={styles.message}>{renderTextWithLinks(ann.message)}</div>
+                {ann.linkUrl && (
+                  <div style={{ marginTop: '14px' }}>
+                    <a
+                      href={normalizeUrl(ann.linkUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-primary"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 16px',
+                        borderRadius: '8px',
+                        fontSize: '0.88rem',
+                        fontWeight: '600',
+                        textDecoration: 'none',
+                        background: 'rgba(59, 130, 246, 0.2)',
+                        color: '#60a5fa',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <span>Open Link</span>
+                      <ExternalLink size={14} />
+                    </a>
+                  </div>
+                )}
                 {ann.countdownDate && <CountdownTimer targetDate={ann.countdownDate} />}
               </div>
               <div style={styles.badgeWrapper}>

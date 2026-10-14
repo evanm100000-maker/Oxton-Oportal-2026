@@ -63,10 +63,11 @@ export default function Dashboard() {
     const safeEmail = currentUser.email.replace(/\./g, ',');
     const resetTime = quotaConfig?.lastResetDate ? new Date(quotaConfig.lastResetDate).getTime() : 0;
     
-    // Flights where admin marked user Present on submitted register
+    // Flights where admin marked user Present or Late on submitted register
     const verifiedPresentFlightIds = new Set();
     (flights || []).forEach(f => {
-      if (f.attendanceRecord && f.attendanceRecord[safeEmail] === 'Present' && f.registerSubmitted) {
+      const mark = f.attendanceRecord?.[safeEmail];
+      if ((mark === 'Present' || mark === 'Late') && f.registerSubmitted) {
         const flightTime = f.registerSubmittedAt 
           ? new Date(f.registerSubmittedAt).getTime() 
           : (f.date ? new Date(`${f.date}T${f.time || '00:00'}`).getTime() : 0);

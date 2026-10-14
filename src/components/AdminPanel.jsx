@@ -7,8 +7,9 @@ import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
-  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock, ClipboardList, Target
+  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock, ClipboardList, Target, ExternalLink
 } from 'lucide-react';
+import { renderTextWithLinks, normalizeUrl } from '../utils/linkUtils';
 
 export default function AdminPanel() {
   const { 
@@ -100,6 +101,7 @@ export default function AdminPanel() {
   const [annMessage, setAnnMessage] = useState('');
   const [annTargetAudience, setAnnTargetAudience] = useState('All');
   const [annCountdownDate, setAnnCountdownDate] = useState('');
+  const [annLinkUrl, setAnnLinkUrl] = useState('');
   const [bypassTitle, setBypassTitle] = useState('');
   const [bypassMessage, setBypassMessage] = useState('');
 
@@ -354,10 +356,19 @@ export default function AdminPanel() {
   const handlePostAnnouncement = (e) => {
     e.preventDefault();
     if (!annMessage.trim()) return;
-    addAnnouncement({ type: annType, title: annTitle, subtitle: annSubtitle, message: annMessage, targetAudience: annTargetAudience, countdownDate: annCountdownDate || null });
+    addAnnouncement({ 
+      type: annType, 
+      title: annTitle, 
+      subtitle: annSubtitle, 
+      message: annMessage, 
+      targetAudience: annTargetAudience, 
+      countdownDate: annCountdownDate || null,
+      linkUrl: annLinkUrl.trim() || ''
+    });
     setAnnTitle('');
     setAnnSubtitle('');
     setAnnMessage('');
+    setAnnLinkUrl('');
     setAnnType('Normal');
     setAnnTargetAudience('All');
     setAnnCountdownDate('');
@@ -1375,9 +1386,15 @@ export default function AdminPanel() {
                   <label style={styles.label}>Message</label>
                   <textarea value={annMessage} onChange={e=>setAnnMessage(e.target.value)} className="input-field" rows="2" required />
                 </div>
-                <div style={styles.inputWrapper}>
-                  <label style={styles.label}>Countdown Target (Optional)</label>
-                  <input type="datetime-local" value={annCountdownDate} onChange={e=>setAnnCountdownDate(e.target.value)} className="input-field" />
+                <div style={styles.formRow}>
+                  <div style={styles.inputWrapper}>
+                    <label style={styles.label}>Action / External Link (Optional)</label>
+                    <input type="text" value={annLinkUrl} onChange={e=>setAnnLinkUrl(e.target.value)} className="input-field" placeholder="https://..." />
+                  </div>
+                  <div style={styles.inputWrapper}>
+                    <label style={styles.label}>Countdown Target (Optional)</label>
+                    <input type="datetime-local" value={annCountdownDate} onChange={e=>setAnnCountdownDate(e.target.value)} className="input-field" />
+                  </div>
                 </div>
                 <button type="submit" className="btn-primary" style={styles.submitBtn}>Post Announcement</button>
               </form>
@@ -1401,11 +1418,28 @@ export default function AdminPanel() {
             <div>
               <h3 style={{...styles.composeTitle, marginTop: '20px'}}>Active Announcements</h3>
               {announcements.map(ann => (
-                <div key={ann.id} style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                  <div>
-                    <strong>{ann.title || 'Untitled'}</strong> ({ann.type})
+                <div key={ann.id} style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <strong>{renderTextWithLinks(ann.title || 'Untitled')}</strong>
+                      <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: '#9ca3af' }}>{ann.type}</span>
+                      {ann.linkUrl && (
+                        <a
+                          href={normalizeUrl(ann.linkUrl)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: '0.78rem', color: '#60a5fa', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'underline' }}
+                        >
+                          <span>Open Link</span>
+                          <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#d1d5db', marginTop: '4px', wordBreak: 'break-word' }}>
+                      {renderTextWithLinks(ann.message)}
+                    </div>
                   </div>
-                  <button onClick={() => deleteAnnouncement(ann.id)} className="btn-danger" style={{ padding: '4px 12px' }}>Delete</button>
+                  <button onClick={() => deleteAnnouncement(ann.id)} className="btn-danger" style={{ padding: '6px 12px', flexShrink: 0 }}>Delete</button>
                 </div>
               ))}
             </div>

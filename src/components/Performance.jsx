@@ -15,7 +15,7 @@ export default function Performance() {
   const userReports = useMemo(() => reports.filter(r => r.reporterEmail === targetUser.email), [reports, targetUser]);
   const userInfractions = useMemo(() => infractions.filter(inf => inf.staffEmail === targetUser.email), [infractions, targetUser]);
   
-  // Total completed flights: approved flight logs + flights verified Present on submitted registers
+  // Total completed flights: approved flight logs + flights verified Present/Late on submitted registers
   const flightsCount = useMemo(() => {
     if (!targetUser?.email) return 0;
     const safeEmail = targetUser.email.replace(/\./g, ',');
@@ -26,7 +26,8 @@ export default function Performance() {
     });
 
     (flights || []).forEach(f => {
-      if (f.registerSubmitted && f.attendanceRecord?.[safeEmail] === 'Present') {
+      const mark = f.attendanceRecord?.[safeEmail];
+      if (f.registerSubmitted && (mark === 'Present' || mark === 'Late')) {
         flightIds.add(f.id);
       }
     });
@@ -42,7 +43,8 @@ export default function Performance() {
     
     const countSet = new Set();
     (flights || []).forEach(f => {
-      if (f.registerSubmitted && f.attendanceRecord?.[safeEmail] === 'Present') {
+      const mark = f.attendanceRecord?.[safeEmail];
+      if (f.registerSubmitted && (mark === 'Present' || mark === 'Late')) {
         const t = f.registerSubmittedAt ? new Date(f.registerSubmittedAt).getTime() : (f.date ? new Date(`${f.date}T${f.time || '00:00'}`).getTime() : 0);
         if (t >= resetTime) countSet.add(f.id);
       }

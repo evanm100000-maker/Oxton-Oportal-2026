@@ -161,7 +161,7 @@ export default function FlightRegister() {
                     Flight Register Submitted & Recorded to Profiles
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '4px' }}>
-                    Submitted by <strong>{activeFlight.registerSubmittedBy || 'Admin'}</strong> on {activeFlight.registerSubmittedAt ? new Date(activeFlight.registerSubmittedAt).toLocaleString() : 'N/A'}. Staff marked Present have received +7 points and completed flight credit towards their quota.
+                    Submitted by <strong>{activeFlight.registerSubmittedBy || 'Admin'}</strong> on {activeFlight.registerSubmittedAt ? new Date(activeFlight.registerSubmittedAt).toLocaleString() : 'N/A'}. Staff marked Present or Late have received +7 points and completed flight log credit towards their quota.
                   </div>
                 </div>
               </div>
@@ -203,7 +203,7 @@ export default function FlightRegister() {
                     Flight Register In Progress (Draft)
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '4px' }}>
-                    Mark crew as Present, Late, or Absent below. Once marked Present and the register is submitted, it goes onto their profile and completes their flight quota.
+                    Mark crew as Present, Late, or Absent below. Once marked Present or Late and the register is submitted, it goes onto their profile and completes their flight quota.
                   </div>
                 </div>
               </div>

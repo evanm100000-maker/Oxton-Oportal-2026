@@ -39,7 +39,8 @@ export default function AllStaff() {
     });
 
     (flights || []).forEach(f => {
-      if (f.registerSubmitted && f.attendanceRecord?.[safeEmail] === 'Present') {
+      const mark = f.attendanceRecord?.[safeEmail];
+      if (f.registerSubmitted && (mark === 'Present' || mark === 'Late')) {
         flightIds.add(f.id);
       }
     });

@@ -17,7 +17,7 @@ export default function FlightLogs() {
   const [isUploading, setIsUploading] = useState(false);
 
   const lockedFlights = flights.filter(f => {
-    if (!f.locked) return false;
+    if (!f.locked && !f.registerSubmitted) return false;
     const record = f.attendanceRecord;
     if (!record) return false;
     const myMark = record[escapeEmail(currentUser.email)];

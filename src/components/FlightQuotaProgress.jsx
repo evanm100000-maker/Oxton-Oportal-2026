@@ -41,7 +41,8 @@ export default function FlightQuotaProgress() {
 
     // Submitted flight registers
     (flights || []).forEach(f => {
-      if (f.attendanceRecord && f.attendanceRecord[safeEmail] === 'Present' && f.registerSubmitted) {
+      const mark = f.attendanceRecord?.[safeEmail];
+      if ((mark === 'Present' || mark === 'Late') && f.registerSubmitted) {
         lifetimeSet.add(f.id);
         const flightTime = f.registerSubmittedAt 
           ? new Date(f.registerSubmittedAt).getTime() 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { X, Megaphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { renderTextWithLinks } from '../utils/linkUtils';
 
 export default function BypassOverlay() {
   const { bypassConfig, currentUser } = useApp();
@@ -65,8 +66,8 @@ export default function BypassOverlay() {
           </div>
           
           <div style={styles.content}>
-            <h1 style={styles.title}>{bypassConfig.title || 'URGENT ANNOUNCEMENT'}</h1>
-            <p style={styles.message}>{bypassConfig.message}</p>
+            <h1 style={styles.title}>{renderTextWithLinks(bypassConfig.title || 'URGENT ANNOUNCEMENT', { linkColor: '#fca5a5' })}</h1>
+            <div style={styles.message}>{renderTextWithLinks(bypassConfig.message, { linkColor: '#93c5fd' })}</div>
           </div>
           
           <div style={styles.footer}>

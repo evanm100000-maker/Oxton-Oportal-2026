@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { AlertTriangle, Volume2, VolumeX, ShieldAlert, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { startAlarmSiren, stopAlarmSiren, resumeAlarmSiren } from '../utils/sirenAudio';
+import { renderTextWithLinks } from '../utils/linkUtils';
 
 export default function EmergencyAlertOverlay() {
   const { emergencyAlertConfig } = useApp();
@@ -207,9 +208,9 @@ export default function EmergencyAlertOverlay() {
           {/* Body Content */}
           <div style={styles.body}>
             <div style={styles.messageBox}>
-              <p style={styles.messageText}>
-                {emergencyAlertConfig?.message || 'A priority alert has been issued for all personnel.'}
-              </p>
+              <div style={styles.messageText}>
+                {renderTextWithLinks(emergencyAlertConfig?.message || 'A priority alert has been issued for all personnel.', { linkColor: '#93c5fd' })}
+              </div>
             </div>
             {emergencyAlertConfig?.timestamp && (
               <div style={styles.timestampRow}>
