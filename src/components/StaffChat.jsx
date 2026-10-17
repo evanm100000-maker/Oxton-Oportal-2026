@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Send, ShieldAlert, Users, MessageSquare, Globe, Reply, Trash2, Flag, Smile, X, Image as ImageIcon, Paperclip, Plus } from 'lucide-react';
+import { useCall } from '../context/CallContext';
+import { Send, ShieldAlert, Users, MessageSquare, Globe, Reply, Trash2, Flag, Smile, X, Image as ImageIcon, Paperclip, Plus, Phone } from 'lucide-react';
 import { storage } from "../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -38,6 +39,7 @@ export const formatMessageLocalTime = (timestamp, use24h = false) => {
 
 export default function StaffChat() {
   const { currentUser, chatMessages, addChatMessage, deleteChatMessage, addMessageReaction, submitReport, setCustomRole, users, use24HourClock } = useApp();
+  const { initiateCall } = useCall();
   const [activeChannel, setActiveChannel] = useState('Staff Chat');
   const [inputText, setInputText] = useState('');
   const [rolePromptTarget, setRolePromptTarget] = useState(null);
@@ -343,6 +345,24 @@ export default function StaffChat() {
                       </div>
                     )}
                   </div>
+                  {msg.senderEmail !== currentUser.email && (
+                    <button 
+                      style={{ ...styles.actionBtn, color: '#10b981' }} 
+                      onClick={() => {
+                        const targetUser = (users || []).find(u => u.email === msg.senderEmail) || {
+                          email: msg.senderEmail,
+                          firstName: msg.senderName || 'Staff',
+                          lastName: '',
+                          robloxUsername: '',
+                          profilePicture: msg.senderPfp || ''
+                        };
+                        initiateCall(targetUser);
+                      }} 
+                      title={`Call ${msg.senderName || 'Staff'}`}
+                    >
+                      <Phone size={14} />
+                    </button>
+                  )}
                   {msg.senderEmail !== currentUser.email && (
                     <button style={styles.actionBtn} onClick={() => handleReport(msg)} title="Report">
                       <Flag size={14} />

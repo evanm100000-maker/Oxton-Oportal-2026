@@ -5,7 +5,7 @@ import {
   Plane, ClipboardList, Calendar, FileText, 
   AlertTriangle, Slash, Settings, LogOut, ArrowLeft, User, Trophy, Medal, Award, MessageSquare, Eye,
   Activity, CheckSquare, LifeBuoy, BarChart2, Megaphone, Bell, BellOff, Battery, BatteryCharging, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Clock,
-  GraduationCap
+  GraduationCap, Phone
 } from 'lucide-react';
 
 // Subcomponents (we will create these next)
@@ -24,6 +24,7 @@ import AdminPanel from './AdminPanel';
 import Leaderboard from './Leaderboard';
 import SettingsModal from './SettingsModal';
 import NotificationsModal from './NotificationsModal';
+import CallModal from './CallModal';
 import StaffChat from './StaffChat';
 import AllStaff from './AllStaff';
 import Events from './Events';
@@ -60,19 +61,6 @@ const pathToTab = Object.fromEntries(Object.entries(tabToPath).map(([k, v]) => [
 
 export default function Dashboard() {
   const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [], unseenNotificationsCount = 0, markNotificationsAsSeen, quotaConfig, isDnd, toggleDnd } = useApp();
-
-  const [navTitleToggle, setNavTitleToggle] = React.useState(false);
-
-  React.useEffect(() => {
-    if (unseenNotificationsCount <= 0) {
-      setNavTitleToggle(false);
-      return;
-    }
-    const interval = setInterval(() => {
-      setNavTitleToggle(prev => !prev);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [unseenNotificationsCount]);
 
   // Compute flight quota progress: 3 completed flights needed to be full (100%)
   // Either verified 'Present' on submitted flight register OR approved flight log in the current quota period
@@ -129,6 +117,7 @@ export default function Dashboard() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
   const [lastReadChatCount, setLastReadChatCount] = useState(0);
   const [lastReadFlightCount, setLastReadFlightCount] = useState(0);
   const [lastReadAnnouncementsCount, setLastReadAnnouncementsCount] = useState(0);
@@ -572,25 +561,11 @@ export default function Dashboard() {
         <div 
           className="dashboard-nav-brand" 
           style={styles.navBrand} 
-          onClick={() => {
-            if (navTitleToggle && unseenNotificationsCount > 0) {
-              setIsNotificationsOpen(true);
-              if (markNotificationsAsSeen) markNotificationsAsSeen();
-            } else {
-              setActiveTab('home');
-            }
-          }}
-          title={unseenNotificationsCount > 0 ? `${unseenNotificationsCount} new notification(s) - click to view` : 'Go to Home'}
+          onClick={() => setActiveTab('home')}
+          title="Go to Home"
         >
           <img src="./logo.png" alt="Oxton Logo" style={styles.navLogo} />
-          {navTitleToggle && unseenNotificationsCount > 0 ? (
-            <span style={{ ...styles.navBrandText, color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 8px #38bdf8' }} />
-              {unseenNotificationsCount} New Notification{unseenNotificationsCount > 1 ? 's' : ''}
-            </span>
-          ) : (
-            <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
-          )}
+          <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
         </div>
 
         {/* Flight Quota Progress Indicator */}
@@ -703,6 +678,20 @@ export default function Dashboard() {
                 {userNotifications.length > 9 ? '9+' : userNotifications.length}
               </span>
             ))}
+          </button>
+
+          <button 
+            onClick={() => setIsCallModalOpen(true)} 
+            className="btn-secondary" 
+            style={{
+              ...styles.logoutBtn, 
+              color: '#34d399', 
+              borderColor: 'rgba(16, 185, 129, 0.35)', 
+              background: 'rgba(16, 185, 129, 0.1)' 
+            }}
+            title="Start Voice Call"
+          >
+            <Phone size={16} />
           </button>
 
           <button onClick={() => setIsSettingsOpen(true)} className="btn-secondary" style={{...styles.logoutBtn, color: 'var(--color-text-main)'}}>
@@ -943,6 +932,7 @@ export default function Dashboard() {
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <NotificationsModal isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+      <CallModal isOpen={isCallModalOpen} onClose={() => setIsCallModalOpen(false)} />
     </div>
   );
 }

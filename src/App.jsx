@@ -14,6 +14,8 @@ import LandingPage from './components/LandingPage';
 import { useState } from 'react';
 import UpdateNotifier from './components/UpdateNotifier';
 import './utils/sirenAudio';
+import { CallProvider } from './context/CallContext';
+import VoiceCallOverlay from './components/VoiceCallOverlay';
 
 function MainApp() {
   const { currentUser, maintenanceConfig } = useApp();
@@ -80,6 +82,7 @@ function MainApp() {
       <NotificationOverlay />
       <BypassOverlay />
       <EmergencyAlertOverlay />
+      <VoiceCallOverlay />
     </>
   );
 }
@@ -87,8 +90,10 @@ function MainApp() {
 export default function App() {
   return (
     <AppProvider>
-      <MainApp />
-      <UpdateNotifier />
+      <CallProvider>
+        <MainApp />
+        <UpdateNotifier />
+      </CallProvider>
     </AppProvider>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Users, User, Trophy, ShieldAlert, Award, FileText, Send, X, Trash2, Medal, Plane, CheckCircle, Clock } from 'lucide-react';
+import { useCall } from '../context/CallContext';
+import { Users, User, Trophy, ShieldAlert, Award, FileText, Send, X, Trash2, Medal, Plane, CheckCircle, Clock, Phone } from 'lucide-react';
 
 export default function AllStaff() {
   const { 
@@ -18,6 +19,7 @@ export default function AllStaff() {
     loaRequests,
     reports
   } = useApp();
+  const { initiateCall } = useCall();
   
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [manageTab, setManageTab] = useState('notes');
@@ -152,11 +154,22 @@ export default function AllStaff() {
                     <span style={styles.defaultRole}>Staff</span>
                   )}
                 </div>
-                {currentUser.isAdmin && (
-                  <button onClick={() => { setSelectedStaff(user); setManageTab('notes'); }} style={styles.manageBtn}>
-                    Manage
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {user.email !== currentUser?.email && (
+                    <button 
+                      onClick={() => initiateCall(user)} 
+                      style={styles.callBtn}
+                      title={`Call ${user.firstName}`}
+                    >
+                      <Phone size={13} /> Call
+                    </button>
+                  )}
+                  {currentUser.isAdmin && (
+                    <button onClick={() => { setSelectedStaff(user); setManageTab('notes'); }} style={styles.manageBtn}>
+                      Manage
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -169,7 +182,18 @@ export default function AllStaff() {
           <div style={styles.modalOverlay}>
             <div className="glass-panel" style={styles.modalContent}>
               <div style={styles.modalHeader}>
-                <h3 style={styles.modalTitle}>Manage Staff: {currentStaff.firstName} {currentStaff.lastName}</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <h3 style={styles.modalTitle}>Manage Staff: {currentStaff.firstName} {currentStaff.lastName}</h3>
+                  {currentStaff.email !== currentUser?.email && (
+                    <button 
+                      onClick={() => initiateCall(currentStaff)} 
+                      style={styles.modalCallBtn}
+                      title={`Call ${currentStaff.firstName}`}
+                    >
+                      <Phone size={14} /> Call Staff
+                    </button>
+                  )}
+                </div>
                 <button onClick={() => setSelectedStaff(null)} style={styles.closeModalBtn}><X size={20}/></button>
               </div>
 
@@ -438,6 +462,8 @@ const styles = {
   customRole: { fontSize: '0.85rem', color: '#c4b5fd', fontWeight: '500' },
   defaultRole: { fontSize: '0.85rem', color: '#9ca3af' },
   manageBtn: { padding: '4px 10px', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '4px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' },
+  callBtn: { display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.25) 100%)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.45)', borderRadius: '6px', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', transition: 'all 0.15s ease' },
+  modalCallBtn: { display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 12px', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)', transition: 'all 0.15s ease' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modalContent: { width: '90%', maxWidth: '600px', background: '#1e293b', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   modalHeader: { padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
