@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { db, firebaseApp } from '../firebase';
-import { ref, onValue, set, update, push, remove, getDatabase, onDisconnect } from 'firebase/database';
+import { ref, onValue, set, update, push, remove, onDisconnect } from 'firebase/database';
 import { useApp } from './AppContext';
 import { 
   playIncomingRingtone, 
@@ -32,7 +32,7 @@ export function CallProvider({ children }) {
   const [callStatus, setCallStatus] = useState('idle'); // 'idle' | 'calling' | 'connected' | 'declined' | 'ended'
   const [incomingCall, setIncomingCall] = useState(null);
   
-  // Audio Controls
+  // Basic Audio Controls
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
@@ -40,16 +40,50 @@ export function CallProvider({ children }) {
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
 
-  // WebRTC Refs
+  // Microphone selection & Volume state
+  const [selectedMicId, setSelectedMicId] = useState(() => {
+    try {
+      return localStorage.getItem('oxton_selected_mic') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [availableMics, setAvailableMics] = useState([]);
+  const [micVolume, setMicVolumeState] = useState(() => {
+    try {
+      const v = localStorage.getItem('oxton_mic_volume');
+      return v !== null ? Number(v) : 100;
+    } catch {
+      return 100;
+    }
+  });
+  const [peerVolume, setPeerVolumeState] = useState(() => {
+    try {
+      const v = localStorage.getItem('oxton_peer_volume');
+      return v !== null ? Number(v) : 100;
+    } catch {
+      return 100;
+    }
+  });
+  const [micInputLevel, setMicInputLevel] = useState(0);
+
+  // WebRTC & Audio Graph Refs
   const pcRef = useRef(null);
+  const rawLocalStreamRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const remoteAudioElRef = useRef(null);
   const iceCandidatesQueue = useRef([]);
   const durationTimerRef = useRef(null);
   const callTimeoutRef = useRef(null);
+  
+  // Web Audio Nodes
   const audioContextRef = useRef(null);
-  const analyserIntervalRef = useRef(null);
+  const micGainNodeRef = useRef(null);
+  const remoteGainNodeRef = useRef(null);
+  const localAnalyserRef = useRef(null);
+  const remoteAnalyserRef = useRef(null);
+  const meterIntervalRef = useRef(null);
 
   // Initialize hidden remote audio element
   useEffect(() => {
@@ -69,6 +103,241 @@ export function CallProvider({ children }) {
     };
   }, []);
 
+  // Enumerate input devices
+  const refreshAudioDevices = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      setAvailableMics(mics);
+    } catch (err) {
+      console.debug('Failed to enumerate devices:', err);
+    }
+  };
+
+  useEffect(() => {
+    refreshAudioDevices();
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', refreshAudioDevices);
+      };
+    }
+  }, []);
+
+  // Update Peer Volume
+  const setPeerVolume = (vol) => {
+    const num = Math.max(0, Math.min(200, Number(vol)));
+    setPeerVolumeState(num);
+    try { localStorage.setItem('oxton_peer_volume', num.toString()); } catch {}
+
+    if (remoteGainNodeRef.current) {
+      remoteGainNodeRef.current.gain.value = isDeafened ? 0 : num / 100;
+    }
+    if (remoteAudioElRef.current) {
+      remoteAudioElRef.current.volume = Math.min(1, num / 100);
+    }
+  };
+
+  // Update Mic Volume (Input Gain)
+  const setMicVolume = (vol) => {
+    const num = Math.max(0, Math.min(200, Number(vol)));
+    setMicVolumeState(num);
+    try { localStorage.setItem('oxton_mic_volume', num.toString()); } catch {}
+
+    if (micGainNodeRef.current) {
+      micGainNodeRef.current.gain.value = num / 100;
+    }
+  };
+
+  // Change Microphone Device
+  const changeMicrophone = async (deviceId) => {
+    setSelectedMicId(deviceId);
+    try { localStorage.setItem('oxton_selected_mic', deviceId); } catch {}
+
+    // If currently in a call, switch microphone track live!
+    if (rawLocalStreamRef.current && pcRef.current) {
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+
+        // Stop old hardware tracks
+        rawLocalStreamRef.current.getTracks().forEach(t => t.stop());
+        rawLocalStreamRef.current = newStream;
+
+        const newRawTrack = newStream.getAudioTracks()[0];
+        if (newRawTrack) {
+          newRawTrack.enabled = isDeafened ? false : !isMuted;
+        }
+
+        // Reconnect into Web Audio gain node if active
+        if (audioContextRef.current && micGainNodeRef.current) {
+          try {
+            const ctx = audioContextRef.current;
+            const newSource = ctx.createMediaStreamSource(newStream);
+            newSource.connect(micGainNodeRef.current);
+          } catch (e) {
+            console.debug('Failed to reconnect Web Audio source on device change:', e);
+          }
+        }
+
+        // Replace track on WebRTC RTCRtpSender
+        const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'audio');
+        if (sender) {
+          // If using Web Audio destination stream, replace with destination track or raw track
+          const trackToSend = localStreamRef.current?.getAudioTracks()[0] || newRawTrack;
+          if (trackToSend) {
+            await sender.replaceTrack(trackToSend);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to change microphone mid-call:', err);
+      }
+    }
+  };
+
+  // Setup Web Audio graph for local microphone with volume gain
+  const setupLocalAudioPipeline = async (deviceIdToUse) => {
+    const rawStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: deviceIdToUse ? { exact: deviceIdToUse } : undefined,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      },
+      video: false
+    });
+    rawLocalStreamRef.current = rawStream;
+
+    // Refresh devices list since permissions are now granted
+    refreshAudioDevices();
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioCtx();
+        }
+        const ctx = audioContextRef.current;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+
+        const source = ctx.createMediaStreamSource(rawStream);
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = micVolume / 100;
+        micGainNodeRef.current = gainNode;
+
+        const dest = ctx.createMediaStreamDestination();
+        source.connect(gainNode);
+        gainNode.connect(dest);
+
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        gainNode.connect(analyser);
+        localAnalyserRef.current = analyser;
+
+        startMeters();
+
+        // Use the gain-controlled stream for WebRTC transmission
+        localStreamRef.current = dest.stream;
+        return dest.stream;
+      }
+    } catch (err) {
+      console.debug('Web Audio local pipeline setup fallback to raw stream:', err);
+    }
+
+    localStreamRef.current = rawStream;
+    return rawStream;
+  };
+
+  // Setup Web Audio graph for remote peer with volume gain
+  const playRemoteStream = (stream) => {
+    remoteStreamRef.current = stream;
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioCtx();
+        }
+        const ctx = audioContextRef.current;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+
+        const remoteSource = ctx.createMediaStreamSource(stream);
+        const remoteGain = ctx.createGain();
+        remoteGain.gain.value = isDeafened ? 0 : peerVolume / 100;
+        remoteGainNodeRef.current = remoteGain;
+
+        remoteGain.connect(ctx.destination);
+
+        const remoteAnalyser = ctx.createAnalyser();
+        remoteAnalyser.fftSize = 256;
+        remoteGain.connect(remoteAnalyser);
+        remoteAnalyserRef.current = remoteAnalyser;
+
+        startMeters();
+        return;
+      }
+    } catch (err) {
+      console.debug('Web Audio remote pipeline fallback:', err);
+    }
+
+    // Fallback to HTMLAudioElement
+    if (remoteAudioElRef.current) {
+      remoteAudioElRef.current.srcObject = stream;
+      remoteAudioElRef.current.volume = Math.min(1, peerVolume / 100);
+      remoteAudioElRef.current.muted = isDeafened;
+      remoteAudioElRef.current.play().catch(err => {
+        console.debug('Autoplay remote stream note:', err);
+      });
+    }
+  };
+
+  // Start real-time audio volume meters
+  const startMeters = () => {
+    if (meterIntervalRef.current) return;
+
+    const dataArrayLocal = new Uint8Array(128);
+    const dataArrayRemote = new Uint8Array(128);
+
+    meterIntervalRef.current = setInterval(() => {
+      // 1. Local mic level & speaking
+      if (localAnalyserRef.current && !isMuted && !isDeafened) {
+        localAnalyserRef.current.getByteFrequencyData(dataArrayLocal);
+        let sum = 0;
+        for (let i = 0; i < 128; i++) sum += dataArrayLocal[i];
+        const avg = sum / 128;
+        const level = Math.min(100, Math.round((avg / 128) * 100));
+        setMicInputLevel(level);
+        setLocalSpeaking(level > 12);
+      } else {
+        setMicInputLevel(0);
+        setLocalSpeaking(false);
+      }
+
+      // 2. Remote peer speaking
+      if (remoteAnalyserRef.current && !isDeafened) {
+        remoteAnalyserRef.current.getByteFrequencyData(dataArrayRemote);
+        let sum = 0;
+        for (let i = 0; i < 128; i++) sum += dataArrayRemote[i];
+        const avg = sum / 128;
+        setRemoteSpeaking(avg > 15);
+      } else {
+        setRemoteSpeaking(false);
+      }
+    }, 100);
+  };
+
   // Cleanup helper
   const cleanupCall = (notifyEnd = false) => {
     stopIncomingRingtone();
@@ -85,16 +354,28 @@ export function CallProvider({ children }) {
       clearTimeout(callTimeoutRef.current);
       callTimeoutRef.current = null;
     }
-    if (analyserIntervalRef.current) {
-      clearInterval(analyserIntervalRef.current);
-      analyserIntervalRef.current = null;
+    if (meterIntervalRef.current) {
+      clearInterval(meterIntervalRef.current);
+      meterIntervalRef.current = null;
     }
     if (audioContextRef.current) {
       try { audioContextRef.current.close(); } catch {}
       audioContextRef.current = null;
     }
 
-    // Stop local media tracks
+    micGainNodeRef.current = null;
+    remoteGainNodeRef.current = null;
+    localAnalyserRef.current = null;
+    remoteAnalyserRef.current = null;
+
+    // Stop raw media tracks
+    if (rawLocalStreamRef.current) {
+      try {
+        rawLocalStreamRef.current.getTracks().forEach(track => track.stop());
+      } catch {}
+      rawLocalStreamRef.current = null;
+    }
+
     if (localStreamRef.current) {
       try {
         localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -130,6 +411,7 @@ export function CallProvider({ children }) {
     setCallDuration(0);
     setRemoteSpeaking(false);
     setLocalSpeaking(false);
+    setMicInputLevel(0);
   };
 
   // Listen for incoming calls targeted to currentUser
@@ -142,7 +424,6 @@ export function CallProvider({ children }) {
     const unsubscribe = onValue(userCallRef, (snapshot) => {
       const data = snapshot.val();
       if (!data || !data.callId) {
-        // If pointer was removed and we were showing incoming popup, dismiss it
         setIncomingCall(prev => {
           if (prev) stopIncomingRingtone();
           return null;
@@ -164,21 +445,20 @@ export function CallProvider({ children }) {
           }
           if (activeCall && activeCall.id === callObj.id) {
             setCallStatus(callObj.status);
-            setTimeout(() => cleanupCall(true), 1500);
+            playCallEndSound();
+            setTimeout(() => cleanupCall(false), 1500);
           }
           return;
         }
 
         // Check if this is an incoming call to me and I'm not the caller
         if (callObj.receiverEmail === currentUser.email && callObj.status === 'calling') {
-          // If already in a connected call with someone else, flag busy
           if (activeCall && activeCall.id !== callObj.id && callStatus === 'connected') {
             update(ref(db, `calls/${callObj.id}`), { status: 'busy', endedAt: Date.now() });
             remove(userCallRef);
             return;
           }
 
-          // Show incoming call popup and play ringtone!
           setIncomingCall(callObj);
           playIncomingRingtone();
         }
@@ -217,7 +497,6 @@ export function CallProvider({ children }) {
         if (!pc.currentRemoteDescription && pc.signalingState === 'have-local-offer') {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-            // Flush any queued ICE candidates
             while (iceCandidatesQueue.current.length > 0) {
               const candidate = iceCandidatesQueue.current.shift();
               try {
@@ -244,7 +523,6 @@ export function CallProvider({ children }) {
         }
       }
 
-      // Update activeCall object with remote mute/deafen states
       setActiveCall(prev => ({
         ...prev,
         ...data
@@ -289,63 +567,6 @@ export function CallProvider({ children }) {
     };
   }, [activeCall?.id, callRole]);
 
-  // Voice activity analyser for speaking indicator
-  const setupAudioAnalyser = (stream, isLocal = false) => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new AudioCtx();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const checkVolume = () => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-        const speaking = average > 18; // Threshold for voice activity
-        if (isLocal) {
-          setLocalSpeaking(speaking);
-        } else {
-          setRemoteSpeaking(speaking);
-        }
-      };
-
-      if (!analyserIntervalRef.current) {
-        analyserIntervalRef.current = setInterval(checkVolume, 120);
-      }
-    } catch (e) {
-      console.debug('Audio analyser setup note:', e);
-    }
-  };
-
-  // Helper to play remote stream
-  const playRemoteStream = (stream) => {
-    remoteStreamRef.current = stream;
-    if (remoteAudioElRef.current) {
-      remoteAudioElRef.current.srcObject = stream;
-      remoteAudioElRef.current.muted = isDeafened;
-      remoteAudioElRef.current.play().catch(err => {
-        console.debug('Autoplay remote stream note:', err);
-      });
-    }
-    setupAudioAnalyser(stream, false);
-  };
-
   // 1. INITIATE CALL (Caller)
   const initiateCall = async (targetUser) => {
     if (!currentUser || !targetUser) return;
@@ -359,17 +580,7 @@ export function CallProvider({ children }) {
     }
 
     try {
-      // Audio only - strictly NO video or screensharing
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video: false
-      });
-      localStreamRef.current = stream;
-      setupAudioAnalyser(stream, true);
+      const streamToSend = await setupLocalAudioPipeline(selectedMicId);
 
       const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const callerSafe = currentUser.email.replace(/\./g, ',');
@@ -379,8 +590,7 @@ export function CallProvider({ children }) {
       pcRef.current = pc;
       iceCandidatesQueue.current = [];
 
-      // Add audio track to peer connection
-      stream.getAudioTracks().forEach(track => pc.addTrack(track, stream));
+      streamToSend.getAudioTracks().forEach(track => pc.addTrack(track, streamToSend));
 
       pc.ontrack = (event) => {
         if (event.streams && event.streams[0]) {
@@ -422,7 +632,6 @@ export function CallProvider({ children }) {
         receiverDeafened: false
       };
 
-      // Register call in DB and setup presence disconnect
       await set(ref(db, `calls/${callId}`), callData);
       onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
 
@@ -449,10 +658,8 @@ export function CallProvider({ children }) {
       setIsMuted(false);
       setIsDeafened(false);
 
-      // Play calling sound on loop while waiting for recipient to answer
       playOutgoingCallingSound();
 
-      // Set timeout of 45 seconds if no answer
       callTimeoutRef.current = setTimeout(() => {
         if (callStatus === 'calling') {
           update(ref(db, `calls/${callId}`), { status: 'ended', endedAt: Date.now() });
@@ -464,7 +671,7 @@ export function CallProvider({ children }) {
 
     } catch (err) {
       console.error('Failed to initiate call:', err);
-      alert('Could not access your microphone. Please enable microphone permissions in your browser to make voice calls.');
+      alert('Could not access your microphone. Please enable microphone permissions in your browser.');
       cleanupCall();
     }
   };
@@ -477,23 +684,13 @@ export function CallProvider({ children }) {
     const receiverSafe = currentUser.email.replace(/\./g, ',');
 
     try {
-      // Audio only - strictly NO video or screensharing
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video: false
-      });
-      localStreamRef.current = stream;
-      setupAudioAnalyser(stream, true);
+      const streamToSend = await setupLocalAudioPipeline(selectedMicId);
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       pcRef.current = pc;
       iceCandidatesQueue.current = [];
 
-      stream.getAudioTracks().forEach(track => pc.addTrack(track, stream));
+      streamToSend.getAudioTracks().forEach(track => pc.addTrack(track, streamToSend));
 
       pc.ontrack = (event) => {
         if (event.streams && event.streams[0]) {
@@ -507,10 +704,8 @@ export function CallProvider({ children }) {
         }
       };
 
-      // Set remote offer
       await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
 
-      // Flush queued candidates
       while (iceCandidatesQueue.current.length > 0) {
         const candidate = iceCandidatesQueue.current.shift();
         try {
@@ -520,7 +715,6 @@ export function CallProvider({ children }) {
         }
       }
 
-      // Create Answer
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -547,7 +741,7 @@ export function CallProvider({ children }) {
       }
     } catch (err) {
       console.error('Failed to answer call:', err);
-      alert('Could not access your microphone. Please enable microphone permissions in your browser to join the call.');
+      alert('Could not access your microphone. Please enable microphone permissions in your browser.');
       declineCall();
     }
   };
@@ -598,9 +792,8 @@ export function CallProvider({ children }) {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
 
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach(track => {
-        // If user is currently deafened, track must remain muted (disabled)
+    if (rawLocalStreamRef.current) {
+      rawLocalStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = isDeafened ? false : !nextMuted;
       });
     }
@@ -616,14 +809,15 @@ export function CallProvider({ children }) {
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
 
-    // Silence remote incoming audio
+    if (remoteGainNodeRef.current) {
+      remoteGainNodeRef.current.gain.value = nextDeafened ? 0 : peerVolume / 100;
+    }
     if (remoteAudioElRef.current) {
       remoteAudioElRef.current.muted = nextDeafened;
     }
 
-    // Mute microphone when deafened (Discord standard); restore when undeafened
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach(track => {
+    if (rawLocalStreamRef.current) {
+      rawLocalStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = nextDeafened ? false : !isMuted;
       });
     }
@@ -648,6 +842,17 @@ export function CallProvider({ children }) {
         localSpeaking,
         isMinimized,
         setIsMinimized,
+        // Audio Device & Volume Controls
+        selectedMicId,
+        availableMics,
+        micVolume,
+        peerVolume,
+        micInputLevel,
+        changeMicrophone,
+        setMicVolume,
+        setPeerVolume,
+        refreshAudioDevices,
+        // Call Actions
         initiateCall,
         answerCall,
         declineCall,

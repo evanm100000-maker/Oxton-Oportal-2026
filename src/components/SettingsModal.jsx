@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { X, Moon, Sun, Save, User, Image as ImageIcon, Upload, Clock, Battery, ToggleLeft, ToggleRight, Calendar } from 'lucide-react';
+import { useCall } from '../context/CallContext';
+import { X, Moon, Sun, Save, User, Image as ImageIcon, Upload, Clock, Battery, ToggleLeft, ToggleRight, Calendar, Mic, Volume2 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from '../utils/cropImage';
 import { compressImage } from '../utils/compressImage';
 
 export default function SettingsModal({ isOpen, onClose }) {
   const { currentUser, updateUserProfile, theme, toggleTheme, showClockBattery, setShowClockBattery, use24HourClock, setUse24HourClock, useLongDateFormat, setUseLongDateFormat } = useApp();
+  const { selectedMicId, availableMics, micVolume, peerVolume, changeMicrophone, setMicVolume, setPeerVolume, refreshAudioDevices } = useCall();
   
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -242,6 +244,67 @@ export default function SettingsModal({ isOpen, onClose }) {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* Voice & Audio Settings */}
+          <div style={{ ...styles.themeToggleContainer, marginTop: '16px', flexDirection: 'column', alignItems: 'flex-start', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Mic size={18} color="#10b981" />
+              <span style={{ ...styles.label, marginBottom: 0, fontWeight: '700', fontSize: '0.95rem' }}>Audio & Voice Calling</span>
+            </div>
+
+            {/* Microphone Selector */}
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: '500' }}>Microphone Device</label>
+              <select
+                value={selectedMicId}
+                onChange={(e) => changeMicrophone(e.target.value)}
+                onClick={refreshAudioDevices}
+                className="input-field"
+                style={{ width: '100%', padding: '8px 12px', background: 'rgba(0,0,0,0.3)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                <option value="">Default Microphone</option>
+                {availableMics.map(mic => (
+                  <option key={mic.deviceId} value={mic.deviceId}>
+                    {mic.label || `Microphone (${mic.deviceId.slice(0, 8)})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* My Mic Volume (Outgoing) */}
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: '500' }}>My Mic Volume (Input Gain)</label>
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '6px' }}>{micVolume}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                step="1"
+                value={micVolume}
+                onChange={(e) => setMicVolume(e.target.value)}
+                style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
+              />
+            </div>
+
+            {/* Peer Volume (Incoming) */}
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.8rem', color: '#9ca3af', fontWeight: '500' }}>Incoming Voice Volume (Other User)</label>
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#60a5fa', background: 'rgba(59, 130, 246, 0.15)', padding: '2px 8px', borderRadius: '6px' }}>{peerVolume}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                step="1"
+                value={peerVolume}
+                onChange={(e) => setPeerVolume(e.target.value)}
+                style={{ width: '100%', accentColor: '#3b82f6', cursor: 'pointer' }}
+              />
             </div>
           </div>
 

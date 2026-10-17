@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCall } from '../context/CallContext';
 import { useApp } from '../context/AppContext';
@@ -11,10 +11,14 @@ import {
   MicOff, 
   Headphones, 
   Volume2, 
+  Volume1,
   VolumeX, 
   User, 
   Minimize2, 
-  Maximize2 
+  Maximize2,
+  Sliders,
+  Settings,
+  ChevronDown
 } from 'lucide-react';
 
 export default function VoiceCallOverlay() {
@@ -30,6 +34,17 @@ export default function VoiceCallOverlay() {
     localSpeaking,
     isMinimized, 
     setIsMinimized,
+    // Device & Volume Controls
+    selectedMicId,
+    availableMics,
+    micVolume,
+    peerVolume,
+    micInputLevel,
+    changeMicrophone,
+    setMicVolume,
+    setPeerVolume,
+    refreshAudioDevices,
+    // Call Actions
     answerCall, 
     declineCall, 
     endCall, 
@@ -37,6 +52,8 @@ export default function VoiceCallOverlay() {
     toggleDeafen 
   } = useCall();
   const { currentUser } = useApp();
+
+  const [showSettings, setShowSettings] = useState(false);
 
   const formatDuration = (totalSeconds) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -140,7 +157,7 @@ export default function VoiceCallOverlay() {
             }}
             className="glass-panel"
           >
-            {/* Header / Minimize bar */}
+            {/* Header / Minimize / Settings bar */}
             <div style={styles.dockHeader}>
               <div style={styles.statusIndicator}>
                 <span 
@@ -156,13 +173,30 @@ export default function VoiceCallOverlay() {
                    callStatus === 'ended' ? 'Call Ended' : 'Connecting...'}
                 </span>
               </div>
-              <button 
-                onClick={() => setIsMinimized(!isMinimized)} 
-                style={styles.iconMiniBtn}
-                title={isMinimized ? "Expand" : "Minimize"}
-              >
-                {isMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
-              </button>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <button 
+                  onClick={() => {
+                    setShowSettings(!showSettings);
+                    refreshAudioDevices();
+                  }}
+                  style={{
+                    ...styles.iconMiniBtn,
+                    color: showSettings ? '#10b981' : '#9ca3af',
+                    background: showSettings ? 'rgba(16, 185, 129, 0.15)' : 'transparent'
+                  }}
+                  title="Audio & Microphone Settings"
+                >
+                  <Sliders size={14} />
+                </button>
+                <button 
+                  onClick={() => setIsMinimized(!isMinimized)} 
+                  style={styles.iconMiniBtn}
+                  title={isMinimized ? "Expand" : "Minimize"}
+                >
+                  {isMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                </button>
+              </div>
             </div>
 
             {/* Minimized View */}
@@ -201,7 +235,7 @@ export default function VoiceCallOverlay() {
             ) : (
               /* Expanded View */
               <div style={styles.expandedContent}>
-                {/* Peer Card */}
+                {/* Peer Card with live speaking halo */}
                 <div style={styles.peerSection}>
                   <div 
                     style={{
@@ -245,6 +279,97 @@ export default function VoiceCallOverlay() {
                     </div>
                   </div>
                 </div>
+
+                {/* AUDIO SETTINGS DRAWER */}
+                <AnimatePresence>
+                  {showSettings && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={styles.settingsDrawer}
+                    >
+                      {/* 1. Microphone Selector */}
+                      <div style={styles.settingGroup}>
+                        <div style={styles.settingLabelRow}>
+                          <label style={styles.settingLabel}>
+                            <Mic size={13} color="#34d399" />
+                            <span>Microphone Device</span>
+                          </label>
+                        </div>
+                        <select
+                          value={selectedMicId}
+                          onChange={(e) => changeMicrophone(e.target.value)}
+                          style={styles.deviceSelect}
+                        >
+                          <option value="">Default Microphone</option>
+                          {availableMics.map(mic => (
+                            <option key={mic.deviceId} value={mic.deviceId}>
+                              {mic.label || `Microphone (${mic.deviceId.slice(0, 8)})`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. My Mic Volume (Input Gain) */}
+                      <div style={styles.settingGroup}>
+                        <div style={styles.settingLabelRow}>
+                          <label style={styles.settingLabel}>
+                            <Mic size={13} color="#60a5fa" />
+                            <span>My Mic Loudness</span>
+                          </label>
+                          <span style={styles.volumeValueBadge}>{micVolume}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="200"
+                          step="1"
+                          value={micVolume}
+                          onChange={(e) => setMicVolume(e.target.value)}
+                          style={styles.rangeSlider}
+                        />
+                        {/* Live Mic Level Test Meter */}
+                        <div style={styles.meterContainer} title="Live Microphone Test Meter">
+                          <div 
+                            style={{
+                              ...styles.meterFill,
+                              width: `${micInputLevel}%`,
+                              backgroundColor: micInputLevel > 75 ? '#f59e0b' : '#10b981'
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* 3. Peer Volume (Turn other person up or down) */}
+                      <div style={styles.settingGroup}>
+                        <div style={styles.settingLabelRow}>
+                          <label style={styles.settingLabel}>
+                            {peerVolume === 0 ? (
+                              <VolumeX size={13} color="#ef4444" />
+                            ) : peerVolume < 80 ? (
+                              <Volume1 size={13} color="#34d399" />
+                            ) : (
+                              <Volume2 size={13} color="#34d399" />
+                            )}
+                            <span>{peerInfo.name}'s Volume</span>
+                          </label>
+                          <span style={styles.volumeValueBadge}>{peerVolume}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="200"
+                          step="1"
+                          value={peerVolume}
+                          onChange={(e) => setPeerVolume(e.target.value)}
+                          style={styles.rangeSlider}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Call Control Buttons */}
                 <div style={styles.callControlsRow}>
@@ -448,7 +573,7 @@ const styles = {
     bottom: '24px',
     right: '24px',
     zIndex: 99990,
-    background: 'rgba(15, 23, 42, 0.92)',
+    background: 'rgba(15, 23, 42, 0.94)',
     backdropFilter: 'blur(16px)',
     border: '1px solid rgba(255, 255, 255, 0.12)',
     borderRadius: '20px',
@@ -457,7 +582,7 @@ const styles = {
     transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
   },
   dockExpanded: {
-    width: '320px',
+    width: '330px',
     padding: '16px'
   },
   dockMinimized: {
@@ -491,11 +616,12 @@ const styles = {
     border: 'none',
     color: '#9ca3af',
     cursor: 'pointer',
-    padding: '4px',
+    padding: '5px',
     borderRadius: '6px',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    transition: 'all 0.15s ease'
   },
 
   // Minimized Content
@@ -554,7 +680,7 @@ const styles = {
   expandedContent: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px'
+    gap: '14px'
   },
   peerSection: {
     display: 'flex',
@@ -623,6 +749,74 @@ const styles = {
     marginTop: '2px'
   },
 
+  // Settings Drawer
+  settingsDrawer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    padding: '12px',
+    borderRadius: '12px',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden'
+  },
+  settingGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px'
+  },
+  settingLabelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  settingLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+    color: '#d1d5db'
+  },
+  volumeValueBadge: {
+    fontSize: '0.75rem',
+    fontWeight: '700',
+    color: '#34d399',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    padding: '1px 6px',
+    borderRadius: '6px'
+  },
+  deviceSelect: {
+    width: '100%',
+    padding: '6px 8px',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(30, 41, 59, 0.8)',
+    color: '#f3f4f6',
+    fontSize: '0.78rem',
+    outline: 'none',
+    cursor: 'pointer'
+  },
+  rangeSlider: {
+    width: '100%',
+    cursor: 'pointer',
+    accentColor: '#10b981',
+    height: '4px'
+  },
+  meterContainer: {
+    width: '100%',
+    height: '4px',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '2px',
+    overflow: 'hidden',
+    marginTop: '2px'
+  },
+  meterFill: {
+    height: '100%',
+    transition: 'width 0.08s ease-out'
+  },
+
+  // Controls Row
   callControlsRow: {
     display: 'flex',
     gap: '10px',
