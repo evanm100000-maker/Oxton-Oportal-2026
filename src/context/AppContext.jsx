@@ -2623,6 +2623,11 @@ useEffect(() => {
     );
   };
 
+  const deleteMeeting = (meetingId) => {
+    setMeetings(prev => prev.filter(m => m.id !== meetingId));
+    logAction('meeting_deleted', `Deleted meeting: ${meetingId}`);
+  };
+
   const createGroupChat = async (name, memberEmails = []) => {
     if (!currentUser) return null;
     const db = getDatabase(firebaseApp);
