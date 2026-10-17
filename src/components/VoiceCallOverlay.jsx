@@ -90,7 +90,7 @@ export default function VoiceCallOverlay() {
     <>
       {/* 1. INCOMING CALL POPUP (Recipient) */}
       <AnimatePresence>
-        {incomingCall && !activeCall && (
+        {incomingCall && (!activeCall || activeCall.status !== 'connected') && (
           <div style={styles.modalBackdrop}>
             <motion.div
               initial={{ scale: 0.85, opacity: 0, y: -20 }}

@@ -23,6 +23,11 @@ const ICE_SERVERS = {
   iceCandidatePoolSize: 10
 };
 
+export const toSafeEmail = (email) => {
+  if (!email || typeof email !== 'string') return '';
+  return email.trim().toLowerCase().replace(/\./g, ',');
+};
+
 export function CallProvider({ children }) {
   const { currentUser } = useApp();
   
@@ -427,7 +432,7 @@ export function CallProvider({ children }) {
 
     // Clear busy presence status for current user
     if (currentUser?.email) {
-      const mySafe = currentUser.email.replace(/\./g, ',');
+      const mySafe = toSafeEmail(currentUser.email);
       try {
         onDisconnect(ref(db, `busyUsers/${mySafe}`)).cancel();
       } catch {}
@@ -450,31 +455,42 @@ export function CallProvider({ children }) {
   useEffect(() => {
     if (!currentUser?.email) return;
 
-    const safeEmail = currentUser.email.replace(/\./g, ',');
-    const userCallRef = ref(db, `userCalls/${safeEmail}`);
+    const myEmail = (currentUser.email || '').trim().toLowerCase();
+    const safeEmail = toSafeEmail(myEmail);
+    const rawSafeEmail = (currentUser.email || '').trim().replace(/\./g, ',');
 
-    const unsubscribe = onValue(userCallRef, (snapshot) => {
+    let activeCallListenerUnsub = null;
+
+    const handleUserCallSnapshot = (snapshot) => {
       const data = snapshot.val();
-      if (!data || !data.callId) {
-        setIncomingCall(prev => {
-          if (prev) stopIncomingRingtone();
-          return null;
-        });
+      if (!data || !data.callId || data.status === 'ended' || data.status === 'declined') {
+        if (activeCallListenerUnsub) {
+          activeCallListenerUnsub();
+          activeCallListenerUnsub = null;
+        }
+        setIncomingCall(null);
+        stopIncomingRingtone();
         return;
       }
 
-      // Fetch the full call object
+      // Fetch and listen to the full call object
       const callDataRef = ref(db, `calls/${data.callId}`);
-      onValue(callDataRef, (callSnap) => {
+      if (activeCallListenerUnsub) {
+        activeCallListenerUnsub();
+      }
+
+      activeCallListenerUnsub = onValue(callDataRef, (callSnap) => {
         const callObj = callSnap.val();
-        if (!callObj) return;
+        if (!callObj) {
+          setIncomingCall(null);
+          stopIncomingRingtone();
+          return;
+        }
 
         // If call was ended or declined
         if (callObj.status === 'ended' || callObj.status === 'declined') {
-          if (incomingCall && incomingCall.id === callObj.id) {
-            stopIncomingRingtone();
-            setIncomingCall(null);
-          }
+          setIncomingCall(null);
+          stopIncomingRingtone();
           if (activeCall && activeCall.id === callObj.id) {
             setCallStatus(callObj.status);
             playCallEndSound();
@@ -483,25 +499,41 @@ export function CallProvider({ children }) {
           return;
         }
 
-        // Check if this is an incoming call to me and I'm not the caller
-        const isTargetOfCall = (callObj.receiverEmail === currentUser.email) ||
-          (callObj.type === 'group' && Array.isArray(callObj.members) && callObj.members.includes(currentUser.email));
+        const callReceiver = (callObj.receiverEmail || '').trim().toLowerCase();
+        const callCaller = (callObj.callerEmail || '').trim().toLowerCase();
+        const callMembers = Array.isArray(callObj.members)
+          ? callObj.members.map(m => (m || '').trim().toLowerCase())
+          : [];
 
-        if (isTargetOfCall && callObj.callerEmail !== currentUser.email && callObj.status === 'calling') {
+        const isTargetOfCall = (callReceiver === myEmail) ||
+          (callObj.type === 'group' && callMembers.includes(myEmail));
+
+        if (isTargetOfCall && callCaller !== myEmail && callObj.status === 'calling') {
           if (activeCall && activeCall.id !== callObj.id && callStatus === 'connected') {
-            update(ref(db, `calls/${callObj.id}`), { status: 'busy', endedAt: Date.now() });
-            remove(userCallRef);
+            update(ref(db, `calls/${callObj.id}`), { status: 'busy', endedAt: Date.now() }).catch(() => {});
+            remove(ref(db, `userCalls/${safeEmail}`)).catch(() => {});
             return;
           }
 
-          setIncomingCall(callObj);
+          setIncomingCall({ ...data, ...callObj, id: data.callId });
           playIncomingRingtone();
         }
-      }, { onlyOnce: false });
-    });
+      });
+    };
+
+    const userCallRef = ref(db, `userCalls/${safeEmail}`);
+    const unsubPrimary = onValue(userCallRef, handleUserCallSnapshot);
+
+    let unsubSecondary = null;
+    if (rawSafeEmail && rawSafeEmail !== safeEmail) {
+      const rawUserCallRef = ref(db, `userCalls/${rawSafeEmail}`);
+      unsubSecondary = onValue(rawUserCallRef, handleUserCallSnapshot);
+    }
 
     return () => {
-      unsubscribe();
+      unsubPrimary();
+      if (unsubSecondary) unsubSecondary();
+      if (activeCallListenerUnsub) activeCallListenerUnsub();
     };
   }, [currentUser?.email, activeCall?.id, callStatus]);
 
@@ -621,8 +653,10 @@ export function CallProvider({ children }) {
       const streamToSend = await setupLocalAudioPipeline(selectedMicId);
 
       const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const callerSafe = currentUser.email.replace(/\./g, ',');
-      const receiverSafe = targetUser.email.replace(/\./g, ',');
+      const callerSafe = toSafeEmail(currentUser.email);
+      const receiverSafe = toSafeEmail(targetUser.email);
+      const rawReceiverSafe = (targetUser.email || '').trim().replace(/\./g, ',');
+      const rawCallerSafe = (currentUser.email || '').trim().replace(/\./g, ',');
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       pcRef.current = pc;
@@ -674,21 +708,33 @@ export function CallProvider({ children }) {
       await set(ref(db, `calls/${callId}`), callData);
       onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
 
-      await set(ref(db, `userCalls/${receiverSafe}`), {
+      const userCallPayload = {
         callId,
         status: 'calling',
         timestamp: Date.now(),
         callerEmail: currentUser.email,
         callerName: callData.callerName,
-        callerPfp: callData.callerPfp
-      });
-      onDisconnect(ref(db, `userCalls/${receiverSafe}`)).remove();
+        callerPfp: callData.callerPfp,
+        receiverEmail: targetUser.email
+      };
+
+      await set(ref(db, `userCalls/${receiverSafe}`), userCallPayload);
+      if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
+        await set(ref(db, `userCalls/${rawReceiverSafe}`), userCallPayload).catch(() => {});
+      }
 
       await set(ref(db, `userCalls/${callerSafe}`), {
         callId,
         status: 'calling',
         timestamp: Date.now()
       });
+      if (rawCallerSafe && rawCallerSafe !== callerSafe) {
+        await set(ref(db, `userCalls/${rawCallerSafe}`), {
+          callId,
+          status: 'calling',
+          timestamp: Date.now()
+        }).catch(() => {});
+      }
       onDisconnect(ref(db, `userCalls/${callerSafe}`)).remove();
 
       // Mark caller as busy (yellow dot)
@@ -728,7 +774,8 @@ export function CallProvider({ children }) {
     if (!incomingCall) return;
     stopIncomingRingtone();
     const callId = incomingCall.id;
-    const receiverSafe = currentUser.email.replace(/\./g, ',');
+    const receiverSafe = toSafeEmail(currentUser.email);
+    const rawReceiverSafe = (currentUser.email || '').trim().replace(/\./g, ',');
 
     try {
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -776,7 +823,10 @@ export function CallProvider({ children }) {
       });
       onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
 
-      await update(ref(db, `userCalls/${receiverSafe}`), { status: 'connected' });
+      await update(ref(db, `userCalls/${receiverSafe}`), { status: 'connected' }).catch(() => {});
+      if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
+        await update(ref(db, `userCalls/${rawReceiverSafe}`), { status: 'connected' }).catch(() => {});
+      }
 
       // Mark receiver as busy (yellow dot)
       await set(ref(db, `busyUsers/${receiverSafe}`), {
@@ -810,14 +860,18 @@ export function CallProvider({ children }) {
     stopIncomingRingtone();
     if (!incomingCall) return;
     const callId = incomingCall.id;
-    const receiverSafe = currentUser.email.replace(/\./g, ',');
+    const receiverSafe = toSafeEmail(currentUser.email);
+    const rawReceiverSafe = (currentUser.email || '').trim().replace(/\./g, ',');
 
     try {
       await update(ref(db, `calls/${callId}`), {
         status: 'declined',
         endedAt: Date.now()
       });
-      await remove(ref(db, `userCalls/${receiverSafe}`));
+      await remove(ref(db, `userCalls/${receiverSafe}`)).catch(() => {});
+      if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
+        await remove(ref(db, `userCalls/${rawReceiverSafe}`)).catch(() => {});
+      }
     } catch {}
 
     setIncomingCall(null);
@@ -830,8 +884,10 @@ export function CallProvider({ children }) {
 
     if (activeCall) {
       const callId = activeCall.id;
-      const callerSafe = (activeCall.callerEmail || '').replace(/\./g, ',');
-      const receiverSafe = (activeCall.receiverEmail || '').replace(/\./g, ',');
+      const callerSafe = toSafeEmail(activeCall.callerEmail);
+      const receiverSafe = toSafeEmail(activeCall.receiverEmail);
+      const rawCallerSafe = (activeCall.callerEmail || '').trim().replace(/\./g, ',');
+      const rawReceiverSafe = (activeCall.receiverEmail || '').trim().replace(/\./g, ',');
 
       try {
         await update(ref(db, `calls/${callId}`), {
@@ -842,9 +898,15 @@ export function CallProvider({ children }) {
           remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
           remove(ref(db, `busyUsers/${callerSafe}`)).catch(() => {});
         }
+        if (rawCallerSafe && rawCallerSafe !== callerSafe) {
+          remove(ref(db, `userCalls/${rawCallerSafe}`)).catch(() => {});
+        }
         if (receiverSafe) {
           remove(ref(db, `userCalls/${receiverSafe}`)).catch(() => {});
           remove(ref(db, `busyUsers/${receiverSafe}`)).catch(() => {});
+        }
+        if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
+          remove(ref(db, `userCalls/${rawReceiverSafe}`)).catch(() => {});
         }
       } catch {}
     }
@@ -871,7 +933,8 @@ export function CallProvider({ children }) {
       }
       const streamToSend = await setupLocalAudioPipeline(selectedMicId);
       const callId = `call_grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const callerSafe = currentUser.email.replace(/\./g, ',');
+      const callerSafe = toSafeEmail(currentUser.email);
+      const rawCallerSafe = (currentUser.email || '').trim().replace(/\./g, ',');
       const callerName = `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername;
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -899,7 +962,13 @@ export function CallProvider({ children }) {
       });
       await pc.setLocalDescription(offer);
 
-      const targetSafes = cleanEmails.map(e => e.replace(/\./g, ','));
+      const targetSafes = [];
+      cleanEmails.forEach(e => {
+        const sLower = toSafeEmail(e);
+        const sRaw = (e || '').trim().replace(/\./g, ',');
+        if (sLower && !targetSafes.includes(sLower)) targetSafes.push(sLower);
+        if (sRaw && !targetSafes.includes(sRaw)) targetSafes.push(sRaw);
+      });
 
       const callData = {
         id: callId,
@@ -950,6 +1019,15 @@ export function CallProvider({ children }) {
         status: 'calling',
         timestamp: Date.now()
       });
+      if (rawCallerSafe && rawCallerSafe !== callerSafe) {
+        await set(ref(db, `userCalls/${rawCallerSafe}`), {
+          callId,
+          type: 'group',
+          groupTitle: callData.groupTitle,
+          status: 'calling',
+          timestamp: Date.now()
+        }).catch(() => {});
+      }
       onDisconnect(ref(db, `userCalls/${callerSafe}`)).remove();
 
       // Mark caller as busy
@@ -973,6 +1051,9 @@ export function CallProvider({ children }) {
           update(ref(db, `calls/${callId}`), { status: 'ended', endedAt: Date.now() });
           targetSafes.forEach(s => remove(ref(db, `userCalls/${s}`)).catch(() => {}));
           remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
+          if (rawCallerSafe && rawCallerSafe !== callerSafe) {
+            remove(ref(db, `userCalls/${rawCallerSafe}`)).catch(() => {});
+          }
           cleanupCall(true);
         }
       }, 45000);

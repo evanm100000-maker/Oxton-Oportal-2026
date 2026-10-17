@@ -82,7 +82,6 @@ function MainApp() {
       <NotificationOverlay />
       <BypassOverlay />
       <EmergencyAlertOverlay />
-      <VoiceCallOverlay />
     </>
   );
 }
@@ -92,6 +91,7 @@ export default function App() {
     <AppProvider>
       <CallProvider>
         <MainApp />
+        <VoiceCallOverlay />
         <UpdateNotifier />
       </CallProvider>
     </AppProvider>
