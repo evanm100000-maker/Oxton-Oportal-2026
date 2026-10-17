@@ -122,6 +122,13 @@ const initialMeetings = [];
 
 const EMPTY_ARRAY = [];
 
+const initialHomeworkConfig = {
+  classroomUrl: 'https://classroom.google.com/',
+  classCode: '',
+  title: 'Oxton Staff Training & Homework',
+  description: 'Access Google Classroom to view assigned training coursework, revision materials, and staff homework tasks.'
+};
+
 const initialPageConfig = {
   allocation: true,
   calendar: true,
@@ -136,6 +143,8 @@ const initialPageConfig = {
   leaderboard: true,
   performance: true,
   tasks: true,
+  homework: true,
+  homwork: true,
   loa: true,
   tickets: true,
   infractions: true,
@@ -404,6 +413,7 @@ export const AppProvider = ({ children }) => {
   const [bypassConfig, setBypassConfig] = useFirebaseObject('bypassConfig', initialBypassConfig);
   const [emergencyAlertConfig, setEmergencyAlertConfig] = useFirebaseObject('emergencyAlert', initialEmergencyAlertConfig);
   const [quotaConfig, setQuotaConfig] = useFirebaseObject('quotaConfig', { lastResetDate: null, resetBy: null, resetByName: null });
+  const [homeworkConfig, setHomeworkConfig] = useFirebaseObject('homeworkConfig', initialHomeworkConfig);
 
   const [informalSanctions, setInformalSanctions] = useFirebaseArray('informalSanctions', EMPTY_ARRAY, isLoggedIn, 50);
   const [pointLogs, setPointLogs] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isLoggedIn, 500);
@@ -2605,6 +2615,14 @@ useEffect(() => {
         setIsDnd,
         toggleDnd,
         broadcastNotification,
+        homeworkConfig,
+        setHomeworkConfig,
+        updateHomeworkConfig: (newConfig) => {
+          setHomeworkConfig(prev => ({ ...(prev || {}), ...newConfig }));
+          const db = getDatabase(firebaseApp);
+          update(ref(db, 'homeworkConfig'), newConfig).catch(err => console.error('Failed to sync homeworkConfig to Firebase:', err));
+          logAction('homework_config_updated', 'Updated Google Classroom homework configuration', newConfig);
+        },
         pageConfig,
         updatePageConfig: (key, value) => {
           setPageConfig(prev => {
@@ -2616,6 +2634,8 @@ useEffect(() => {
             if (key === 'admin') updated.adminPanel = value;
             if (key === 'flightQuotas') updated.flight_quotas = value;
             if (key === 'flight_quotas') updated.flightQuotas = value;
+            if (key === 'homework') updated.homwork = value;
+            if (key === 'homwork') updated.homework = value;
             return updated;
           });
           logAction('page_config_updated', `Updated page config: ${key} to ${value}`);

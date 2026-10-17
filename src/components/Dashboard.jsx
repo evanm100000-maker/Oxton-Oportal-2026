@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plane, ClipboardList, Calendar, FileText, 
   AlertTriangle, Slash, Settings, LogOut, ArrowLeft, User, Trophy, Medal, Award, MessageSquare, Eye,
-  Activity, CheckSquare, LifeBuoy, BarChart2, Megaphone, Bell, BellOff, Battery, BatteryCharging, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Clock
+  Activity, CheckSquare, LifeBuoy, BarChart2, Megaphone, Bell, BellOff, Battery, BatteryCharging, BatteryFull, BatteryMedium, BatteryLow, BatteryWarning, Clock,
+  GraduationCap
 } from 'lucide-react';
 
 // Subcomponents (we will create these next)
@@ -12,6 +13,7 @@ import Announcements from './Announcements';
 import AllocationRequests from './AllocationRequests';
 import Performance from './Performance';
 import Tasks from './Tasks';
+import Homework from './Homework';
 import SupportTickets from './SupportTickets';
 import Analytics from './Analytics';
 import LeaveOfAbsence from './LeaveOfAbsence';
@@ -38,6 +40,8 @@ const tabToPath = {
   meetings: '/meetings',
   performance: '/performance',
   tasks: '/tasks',
+  homework: '/homework',
+  homwork: '/homework',
   tickets: '/tickets',
   staffChat: '/staff-chat',
   leaderboard: '/leaderboard',
@@ -384,6 +388,15 @@ export default function Dashboard() {
           badgeCount: pendingTasksCount
         },
         {
+          id: 'homework',
+          alias: 'homwork',
+          title: 'Homework',
+          description: 'Access Google Classroom training assignments and homework modules.',
+          icon: GraduationCap,
+          color: '#10b981',
+          component: Homework
+        },
+        {
           id: 'loa',
           title: 'Leave of Absence Requests',
           description: 'Request time off and monitor administrative replies.',
@@ -518,7 +531,7 @@ export default function Dashboard() {
       }
       return <FlightRegister />;
     }
-    const item = navItems.find(i => i.id === activeTab);
+    const item = navItems.find(i => i.id === activeTab || i.alias === activeTab);
     if (item) {
       const isItemDisabled = pageConfig && (
         pageConfig[item.id] === false || 

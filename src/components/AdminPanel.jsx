@@ -30,6 +30,7 @@ const PAGE_TOGGLES_DEF = [
   // Staff Duties & Workspace
   { key: 'performance', label: 'My Performance', group: 'Duties & Workspace' },
   { key: 'tasks', label: 'Tasks & Assignments', group: 'Duties & Workspace' },
+  { key: 'homework', label: 'Homework / Google Classroom', alias: 'homwork', group: 'Duties & Workspace' },
   { key: 'loa', label: 'Leave of Absence (LOA)', group: 'Duties & Workspace' },
   { key: 'tickets', label: 'Support Tickets', group: 'Duties & Workspace' },
   { key: 'infractions', label: 'Staff Consequences', group: 'Duties & Workspace' },
