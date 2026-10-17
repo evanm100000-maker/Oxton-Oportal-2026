@@ -67,6 +67,7 @@ export default function StaffChat() {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [groupMemberSearch, setGroupMemberSearch] = useState('');
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [memberToAdd, setMemberToAdd] = useState('');
   const messagesEndRef = useRef(null);
@@ -162,10 +163,17 @@ export default function StaffChat() {
 
 
 
+  const getGroupMembers = (g) => {
+    if (!g || !g.members) return [];
+    if (Array.isArray(g.members)) return g.members.filter(Boolean);
+    if (typeof g.members === 'object') return Object.values(g.members).filter(Boolean);
+    return [];
+  };
+
   const myEmail = (currentUser?.email || '').toLowerCase().trim();
   const myGroups = (groupChats || []).filter(g => {
-    if (!g || !g.members) return false;
-    const members = g.members.map(e => (e || '').toLowerCase().trim());
+    if (!g) return false;
+    const members = getGroupMembers(g).map(e => (e || '').toLowerCase().trim());
     return members.includes(myEmail) || !!currentUser?.isAdmin;
   });
 
@@ -192,12 +200,13 @@ export default function StaffChat() {
       setShowCreateGroupModal(false);
       setNewGroupName('');
       setSelectedGroupMembers([]);
+      setGroupMemberSearch('');
     }
   };
 
   const handleCallCurrentGroup = () => {
     if (!currentGroup) return;
-    const otherMembers = (currentGroup.members || []).filter(e => e.toLowerCase() !== myEmail);
+    const otherMembers = getGroupMembers(currentGroup).filter(e => (e || '').toLowerCase().trim() !== myEmail);
     if (otherMembers.length === 0) {
       alert("There are no other members in this group to call.");
       return;
@@ -285,24 +294,28 @@ export default function StaffChat() {
         ) : (
           myGroups.map(group => {
             const isGroupActive = activeChannel === `group_${group.id}`;
-            const memberCount = (group.members || []).length;
+            const memberCount = getGroupMembers(group).length;
             return (
               <button
                 key={group.id}
                 onClick={() => setActiveChannel(`group_${group.id}`)}
                 style={{
                   ...styles.channelBtn,
-                  background: isGroupActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
-                  borderColor: isGroupActive ? '#8b5cf6' : 'transparent',
+                  width: '100%',
+                  background: isGroupActive ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.02)',
+                  borderColor: isGroupActive ? '#8b5cf6' : 'rgba(255, 255, 255, 0.06)',
                   color: isGroupActive ? 'var(--color-text-main)' : '#9ca3af',
-                  justifyContent: 'space-between'
+                  justifyContent: 'space-between',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  boxShadow: isGroupActive ? '0 2px 10px rgba(139, 92, 246, 0.25)' : 'none',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <Users size={15} color={isGroupActive ? '#a78bfa' : '#9ca3af'} />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{group.name}</span>
                 </div>
-                <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: 'rgba(255,255,255,0.08)', color: '#9ca3af' }}>
+                <span style={{ fontSize: '0.7rem', padding: '2px 7px', borderRadius: '10px', background: isGroupActive ? 'rgba(139, 92, 246, 0.35)' : 'rgba(255,255,255,0.08)', color: isGroupActive ? '#e9d5ff' : '#9ca3af', fontWeight: '600' }}>
                   {memberCount}
                 </span>
               </button>
@@ -389,6 +402,30 @@ export default function StaffChat() {
               >
                 <LogOut size={15} />
               </button>
+
+              {(currentUser?.isAdmin || (currentGroup.createdBy && currentGroup.createdBy.toLowerCase() === myEmail)) && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Delete group "${currentGroup.name}" permanently for everyone?`)) {
+                      deleteGroupChat(currentGroup.id);
+                      setActiveChannel('Staff Chat');
+                    }
+                  }}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fca5a5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                  title="Delete Group (Admin / Creator)"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -676,47 +713,114 @@ export default function StaffChat() {
                 required
               />
 
-              <label style={{ fontSize: '0.85rem', color: '#9ca3af', fontWeight: '600', marginBottom: '8px', display: 'block' }}>
-                Select Staff Members ({selectedGroupMembers.length} selected)
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <label style={{ fontSize: '0.85rem', color: '#9ca3af', fontWeight: '600' }}>
+                  Select Staff Members ({selectedGroupMembers.length} selected)
+                </label>
+                {selectedGroupMembers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGroupMembers([])}
+                    style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '0.75rem', cursor: 'pointer', fontWeight: '600' }}
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              <input
+                type="text"
+                placeholder="Search staff by name or Roblox..."
+                value={groupMemberSearch}
+                onChange={e => setGroupMemberSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                  color: '#fff',
+                  fontSize: '0.85rem',
+                  marginBottom: '10px'
+                }}
+              />
               
-              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.2)' }}>
+              <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.25)' }}>
                 {(users || [])
                   .filter(u => u && u.approved && u.email !== currentUser?.email && u.role !== 'passenger')
+                  .filter(u => {
+                    if (!groupMemberSearch.trim()) return true;
+                    const q = groupMemberSearch.toLowerCase().trim();
+                    const name = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+                    const roblox = (u.robloxUsername || '').toLowerCase();
+                    return name.includes(q) || roblox.includes(q);
+                  })
                   .map(user => {
                     const isSelected = selectedGroupMembers.includes(user.email);
+                    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.robloxUsername || 'Staff';
                     return (
                       <label 
                         key={user.email} 
                         style={{
                           display: 'flex',
                           alignItems: 'center',
+                          justifyContent: 'space-between',
                           gap: '10px',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          background: isSelected ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          background: isSelected ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                          border: isSelected ? '1px solid rgba(139, 92, 246, 0.5)' : '1px solid rgba(255, 255, 255, 0.05)',
                           cursor: 'pointer',
-                          fontSize: '0.9rem'
+                          transition: 'all 0.15s ease'
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedGroupMembers(prev => [...prev, user.email]);
-                            } else {
-                              setSelectedGroupMembers(prev => prev.filter(em => em !== user.email));
-                            }
-                          }}
-                          style={{ accentColor: '#8b5cf6' }}
-                        />
-                        <span style={{ fontWeight: '600', color: '#f3f4f6' }}>
-                          {user.firstName} {user.lastName}
-                        </span>
-                        <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
-                          @{user.robloxUsername || 'staff'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedGroupMembers(prev => [...prev, user.email]);
+                              } else {
+                                setSelectedGroupMembers(prev => prev.filter(em => em !== user.email));
+                              }
+                            }}
+                            style={{ accentColor: '#8b5cf6', width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+                          <div style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            background: user.profilePicture ? 'transparent' : '#8b5cf6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            fontSize: '0.8rem',
+                            fontWeight: '700',
+                            color: '#fff'
+                          }}>
+                            {user.profilePicture ? (
+                              <img src={user.profilePicture} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              fullName.charAt(0)
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: '600', color: '#f3f4f6', fontSize: '0.9rem' }}>
+                              {fullName}
+                            </span>
+                            <span style={{ color: '#9ca3af', fontSize: '0.75rem' }}>
+                              @{user.robloxUsername || 'staff'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {user.role && (
+                          <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)', color: '#d1d5db', textTransform: 'capitalize' }}>
+                            {user.role.replace('_', ' ')}
+                          </span>
+                        )}
                       </label>
                     );
                   })}

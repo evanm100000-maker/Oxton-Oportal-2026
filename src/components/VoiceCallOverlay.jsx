@@ -14,11 +14,17 @@ import {
   Volume1,
   VolumeX, 
   User, 
+  UserPlus,
   Minimize2, 
   Maximize2,
   Sliders,
   Settings,
-  ChevronDown
+  Pause,
+  Play,
+  X,
+  AlertTriangle,
+  Search,
+  Check
 } from 'lucide-react';
 
 export default function VoiceCallOverlay() {
@@ -27,6 +33,9 @@ export default function VoiceCallOverlay() {
     callRole, 
     callStatus, 
     incomingCall, 
+    heldCall,
+    adminMutedBanner,
+    clearAdminMutedBanner,
     isMuted, 
     isDeafened, 
     callDuration, 
@@ -49,11 +58,21 @@ export default function VoiceCallOverlay() {
     declineCall, 
     endCall, 
     toggleMute, 
-    toggleDeafen 
+    toggleDeafen,
+    // Merging, Admin Mute & Multi-Call Hold
+    mergeIntoCall,
+    adminMuteParticipant,
+    answerAndEndCurrent,
+    answerAndHoldCurrent,
+    resumeHeldCall,
+    declineWaitingCall
   } = useCall();
-  const { currentUser } = useApp();
+  const { currentUser, users = [] } = useApp();
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeSearch, setMergeSearch] = useState('');
+  const [justMerged, setJustMerged] = useState({});
 
   const formatDuration = (totalSeconds) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -63,7 +82,7 @@ export default function VoiceCallOverlay() {
 
   // Determine other user's info for active call
   const peerInfo = React.useMemo(() => {
-    if (!activeCall) return { name: 'Staff Member', pfp: '', roblox: '', muted: false, deafened: false };
+    if (!activeCall) return { name: 'Staff Member', pfp: '', roblox: '', muted: false, deafened: false, email: '' };
     if (activeCall.type === 'group') {
       const isCaller = callRole === 'caller';
       return {
@@ -71,6 +90,7 @@ export default function VoiceCallOverlay() {
         subTitle: isCaller ? `${activeCall.members?.length || 0} Members in Call` : (activeCall.groupTitle || 'Group Voice Call'),
         pfp: isCaller ? '' : activeCall.callerPfp,
         roblox: isCaller ? '' : activeCall.callerRoblox,
+        email: isCaller ? activeCall.receiverEmail : activeCall.callerEmail,
         muted: isCaller ? activeCall.receiverMuted : activeCall.callerMuted,
         deafened: isCaller ? activeCall.receiverDeafened : activeCall.callerDeafened
       };
@@ -81,14 +101,177 @@ export default function VoiceCallOverlay() {
       subTitle: isCaller ? (activeCall.receiverRoblox ? `@${activeCall.receiverRoblox}` : '') : (activeCall.callerRoblox ? `@${activeCall.callerRoblox}` : ''),
       pfp: isCaller ? activeCall.receiverPfp : activeCall.callerPfp,
       roblox: isCaller ? activeCall.receiverRoblox : activeCall.callerRoblox,
+      email: isCaller ? activeCall.receiverEmail : activeCall.callerEmail,
       muted: isCaller ? activeCall.receiverMuted : activeCall.callerMuted,
       deafened: isCaller ? activeCall.receiverDeafened : activeCall.callerDeafened
     };
   }, [activeCall, callRole]);
 
+  // List of active call member emails for merge filtering
+  const activeMembersSet = React.useMemo(() => {
+    const setOfMembers = new Set();
+    if (currentUser?.email) setOfMembers.add(currentUser.email.toLowerCase().trim());
+    if (activeCall) {
+      if (activeCall.callerEmail) setOfMembers.add(activeCall.callerEmail.toLowerCase().trim());
+      if (activeCall.receiverEmail) setOfMembers.add(activeCall.receiverEmail.toLowerCase().trim());
+      if (Array.isArray(activeCall.members)) {
+        activeCall.members.forEach(m => m && setOfMembers.add(m.toLowerCase().trim()));
+      }
+    }
+    return setOfMembers;
+  }, [currentUser, activeCall]);
+
+  const eligibleMergeStaff = (users || []).filter(u => {
+    if (!u || !u.approved || u.role === 'passenger') return false;
+    const email = (u.email || '').toLowerCase().trim();
+    if (activeMembersSet.has(email)) return false;
+    if (!mergeSearch.trim()) return true;
+    const q = mergeSearch.toLowerCase().trim();
+    const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+    const roblox = (u.robloxUsername || '').toLowerCase();
+    return fullName.includes(q) || roblox.includes(q) || email.includes(q);
+  });
+
+  const handleMergeUser = async (targetUser) => {
+    const name = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.robloxUsername;
+    await mergeIntoCall(targetUser.email, name);
+    setJustMerged(prev => ({ ...prev, [targetUser.email]: true }));
+    setTimeout(() => {
+      setJustMerged(prev => {
+        const next = { ...prev };
+        delete next[targetUser.email];
+        return next;
+      });
+    }, 2000);
+  };
+
+  const isCallWaitingActive = incomingCall && activeCall && callStatus === 'connected';
+
   return (
     <>
-      {/* 1. INCOMING CALL POPUP (Recipient) */}
+      {/* 1. CALL WAITING MODAL (When already on a call and someone else rings) */}
+      <AnimatePresence>
+        {isCallWaitingActive && (
+          <div style={styles.modalBackdrop}>
+            <motion.div
+              initial={{ scale: 0.88, opacity: 0, y: -20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.88, opacity: 0, y: -20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              style={{ ...styles.incomingModal, maxWidth: '420px', border: '1px solid rgba(245, 158, 11, 0.45)' }}
+              className="glass-panel"
+            >
+              {/* Call Waiting Radar */}
+              <div style={styles.avatarWrapper}>
+                <div style={{ ...styles.radarPulse, borderColor: 'rgba(245, 158, 11, 0.6)' }}></div>
+                <div style={{ ...styles.avatarContainer, borderColor: '#f59e0b' }}>
+                  {incomingCall.callerPfp ? (
+                    <img 
+                      src={incomingCall.callerPfp} 
+                      alt={incomingCall.callerName} 
+                      style={styles.avatarImg}
+                    />
+                  ) : (
+                    <div style={styles.avatarFallback}>
+                      <User size={38} color="#9ca3af" />
+                    </div>
+                  )}
+                </div>
+                <div style={{ ...styles.incomingBadge, backgroundColor: '#78350f', borderColor: '#f59e0b' }}>
+                  <PhoneIncoming size={16} color="#fbbf24" />
+                </div>
+              </div>
+
+              {/* Call Waiting Details */}
+              <div style={styles.callerDetails}>
+                <span style={{ ...styles.callTypeLabel, color: '#f59e0b' }}>
+                  Incoming Call Waiting
+                </span>
+                <h3 style={styles.callerName}>{incomingCall.callerName || 'Staff Member'}</h3>
+                {incomingCall.callerRoblox && (
+                  <span style={styles.callerRoblox}>@{incomingCall.callerRoblox}</span>
+                )}
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: '#9ca3af', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '8px' }}>
+                  Active Call: <strong style={{ color: '#fff' }}>{peerInfo.name}</strong>
+                </div>
+              </div>
+
+              {/* 3 Call Waiting Actions */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '6px' }}>
+                <button
+                  onClick={answerAndHoldCurrent}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    color: '#fff',
+                    fontWeight: '600',
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.35)'
+                  }}
+                  title="Put current call on hold and answer incoming call"
+                >
+                  <Pause size={17} />
+                  <span>Hold Current & Answer</span>
+                </button>
+
+                <button
+                  onClick={answerAndEndCurrent}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#fff',
+                    fontWeight: '600',
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)'
+                  }}
+                  title="End current call and answer incoming call"
+                >
+                  <PhoneCall size={17} />
+                  <span>End Current & Answer</span>
+                </button>
+
+                <button
+                  onClick={declineWaitingCall}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '10px 16px',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#f87171',
+                    fontWeight: '600',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer'
+                  }}
+                  title="Decline incoming call and continue current call"
+                >
+                  <PhoneOff size={16} />
+                  <span>Decline Incoming</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 2. STANDARD INCOMING CALL POPUP (Recipient - when not on an active call) */}
       <AnimatePresence>
         {incomingCall && (!activeCall || activeCall.status !== 'connected') && (
           <div style={styles.modalBackdrop}>
@@ -146,7 +329,7 @@ export default function VoiceCallOverlay() {
                 </button>
 
                 <button 
-                  onClick={answerCall}
+                  onClick={() => answerCall(incomingCall)}
                   style={styles.answerBtn}
                   title="Answer Call"
                 >
@@ -159,7 +342,7 @@ export default function VoiceCallOverlay() {
         )}
       </AnimatePresence>
 
-      {/* 2. ACTIVE CALL / OUTGOING CALL FLOATING DOCK */}
+      {/* 3. ACTIVE CALL / OUTGOING CALL FLOATING DOCK */}
       <AnimatePresence>
         {activeCall && (
           <motion.div
@@ -173,7 +356,72 @@ export default function VoiceCallOverlay() {
             }}
             className="glass-panel"
           >
-            {/* Header / Minimize / Settings bar */}
+            {/* CALL ON HOLD NOTIFICATION STRIP */}
+            {heldCall && (
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                borderBottom: '1px solid rgba(59, 130, 246, 0.3)',
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                borderRadius: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: '#93c5fd' }}>
+                  <Pause size={13} color="#60a5fa" />
+                  <span>Call on hold: <strong>{heldCall.callerName || heldCall.receiverName || 'Held Call'}</strong></span>
+                </div>
+                <button
+                  onClick={resumeHeldCall}
+                  style={{
+                    background: '#2563eb',
+                    border: 'none',
+                    color: '#fff',
+                    borderRadius: '6px',
+                    padding: '2px 8px',
+                    fontSize: '0.72rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Swap back to held call"
+                >
+                  <Play size={11} /> Swap
+                </button>
+              </div>
+            )}
+
+            {/* ADMIN MUTED ALERT BANNER */}
+            {adminMutedBanner && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                padding: '6px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                color: '#fca5a5'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertTriangle size={14} color="#ef4444" />
+                  <span>You were muted by an administrator.</span>
+                </div>
+                <button
+                  onClick={clearAdminMutedBanner}
+                  style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '2px' }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+
+            {/* Header / Minimize / Merge / Settings bar */}
             <div style={styles.dockHeader}>
               <div style={styles.statusIndicator}>
                 <span 
@@ -191,6 +439,21 @@ export default function VoiceCallOverlay() {
               </div>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {/* Merge / Add Staff Button */}
+                {callStatus === 'connected' && (
+                  <button 
+                    onClick={() => setShowMergeModal(true)}
+                    style={{
+                      ...styles.iconMiniBtn,
+                      color: '#a78bfa',
+                      background: 'rgba(139, 92, 246, 0.15)'
+                    }}
+                    title="Merge Staff into Call"
+                  >
+                    <UserPlus size={14} />
+                  </button>
+                )}
+
                 <button 
                   onClick={() => {
                     setShowSettings(!showSettings);
@@ -279,13 +542,45 @@ export default function VoiceCallOverlay() {
                     )}
                   </div>
 
-                  <div style={styles.peerDetails}>
-                    <h4 style={styles.peerName}>{peerInfo.name}</h4>
+                  <div style={{ ...styles.peerDetails, flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                      <h4 style={styles.peerName}>{peerInfo.name}</h4>
+                      
+                      {/* ADMIN REMOTE MUTE BUTTON */}
+                      {currentUser?.isAdmin && peerInfo.email && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Admin Mute ${peerInfo.name}?`)) {
+                              adminMuteParticipant(peerInfo.email);
+                            }
+                          }}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            color: '#f87171',
+                            borderRadius: '6px',
+                            padding: '2px 6px',
+                            fontSize: '0.68rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            flexShrink: 0
+                          }}
+                          title="Admin Mute this user"
+                        >
+                          <MicOff size={11} /> Mute
+                        </button>
+                      )}
+                    </div>
+
                     {peerInfo.roblox ? (
                       <span style={styles.peerRoblox}>@{peerInfo.roblox}</span>
                     ) : peerInfo.subTitle ? (
                       <span style={styles.peerRoblox}>{peerInfo.subTitle}</span>
                     ) : null}
+                    
                     <div style={styles.peerSubStatus}>
                       {remoteSpeaking ? (
                         <span style={{ color: '#10b981', fontSize: '0.78rem', fontWeight: 600 }}>Speaking...</span>
@@ -436,6 +731,138 @@ export default function VoiceCallOverlay() {
               </div>
             )}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 4. MERGE STAFF MODAL */}
+      <AnimatePresence>
+        {showMergeModal && (
+          <div style={styles.modalBackdrop} onClick={() => setShowMergeModal(false)}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: -20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: -20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              style={{ ...styles.incomingModal, maxWidth: '440px', textAlign: 'left', padding: '24px' }}
+              className="glass-panel"
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: '14px' }}>
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', color: '#f3f4f6' }}>
+                  <UserPlus size={18} color="#a78bfa" /> Merge Staff into Call
+                </h3>
+                <button
+                  onClick={() => setShowMergeModal(false)}
+                  style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div style={{ position: 'relative', width: '100%', marginBottom: '12px' }}>
+                <Search size={14} color="#9ca3af" style={{ position: 'absolute', left: '10px', top: '10px' }} />
+                <input
+                  type="text"
+                  placeholder="Search staff by name or Roblox..."
+                  value={mergeSearch}
+                  onChange={(e) => setMergeSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px 8px 32px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Staff List */}
+              <div style={{ maxHeight: '240px', overflowY: 'auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {eligibleMergeStaff.length === 0 ? (
+                  <div style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: '0.85rem', padding: '16px 0', textAlign: 'center' }}>
+                    No available staff found to add.
+                  </div>
+                ) : (
+                  eligibleMergeStaff.map(staff => {
+                    const isAdded = !!justMerged[staff.email];
+                    const fullName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.robloxUsername;
+                    return (
+                      <div
+                        key={staff.email}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          border: '1px solid rgba(255, 255, 255, 0.06)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '50%',
+                            background: staff.profilePicture ? 'transparent' : '#8b5cf6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            fontSize: '0.85rem',
+                            fontWeight: '700',
+                            color: '#fff'
+                          }}>
+                            {staff.profilePicture ? (
+                              <img src={staff.profilePicture} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              fullName.charAt(0)
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.88rem', fontWeight: '600', color: '#f3f4f6' }}>{fullName}</span>
+                            <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>@{staff.robloxUsername || 'staff'}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleMergeUser(staff)}
+                          disabled={isAdded}
+                          style={{
+                            background: isAdded ? '#10b981' : 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+                            border: 'none',
+                            color: '#fff',
+                            borderRadius: '6px',
+                            padding: '6px 12px',
+                            fontSize: '0.78rem',
+                            fontWeight: '600',
+                            cursor: isAdded ? 'default' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          {isAdded ? (
+                            <>
+                              <Check size={12} /> Calling...
+                            </>
+                          ) : (
+                            <>
+                              <UserPlus size={12} /> Merge
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </>

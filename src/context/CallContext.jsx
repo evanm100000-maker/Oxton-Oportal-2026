@@ -7,7 +7,13 @@ import {
   stopIncomingRingtone, 
   playOutgoingCallingSound, 
   stopOutgoingCallingSound, 
-  playCallEndSound 
+  playCallEndSound,
+  playMuteSound,
+  playUnmuteSound,
+  playDeafenSound,
+  playUndeafenSound,
+  playCallWaitingBeep,
+  playAdminMutedSound
 } from '../utils/callSounds';
 
 const CallContext = createContext(null);
@@ -36,6 +42,8 @@ export function CallProvider({ children }) {
   const [callRole, setCallRole] = useState(null); // 'caller' | 'receiver' | null
   const [callStatus, setCallStatus] = useState('idle'); // 'idle' | 'calling' | 'connected' | 'declined' | 'ended'
   const [incomingCall, setIncomingCall] = useState(null);
+  const [heldCall, setHeldCall] = useState(null); // Call put on hold
+  const [adminMutedBanner, setAdminMutedBanner] = useState(false);
   
   // Basic Audio Controls
   const [isMuted, setIsMuted] = useState(false);
@@ -81,6 +89,8 @@ export function CallProvider({ children }) {
   const iceCandidatesQueue = useRef([]);
   const durationTimerRef = useRef(null);
   const callTimeoutRef = useRef(null);
+  const callStartTimeRef = useRef(0);
+  const isMutedRef = useRef(false);
   
   // Web Audio Nodes & Sources
   const audioContextRef = useRef(null);
@@ -89,6 +99,11 @@ export function CallProvider({ children }) {
   const localAnalyserRef = useRef(null);
   const remoteAnalyserRef = useRef(null);
   const meterIntervalRef = useRef(null);
+
+  // Keep isMutedRef synced
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   // Clean up remote audio element on unmount
   useEffect(() => {
@@ -123,6 +138,17 @@ export function CallProvider({ children }) {
       };
     }
   }, []);
+
+  // Periodic Call Waiting chime if another person is calling while user is in active call
+  useEffect(() => {
+    if (incomingCall && activeCall && callStatus === 'connected') {
+      playCallWaitingBeep();
+      const interval = setInterval(() => {
+        playCallWaitingBeep();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [incomingCall, activeCall, callStatus]);
 
   // Update Peer Volume
   const setPeerVolume = (vol) => {
@@ -203,9 +229,8 @@ export function CallProvider({ children }) {
     }
   };
 
-  // Setup Web Audio graph for local microphone with volume gain
+  // Setup Web Audio graph for local microphone
   const setupLocalAudioPipeline = async (deviceIdToUse) => {
-    // Stop any existing tracks before acquiring new ones
     if (rawLocalStreamRef.current) {
       try { rawLocalStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
     }
@@ -225,12 +250,10 @@ export function CallProvider({ children }) {
     rawLocalStreamRef.current = rawStream;
     localStreamRef.current = rawStream;
 
-    // Apply initial mute/deafen states to track
     rawStream.getAudioTracks().forEach(track => {
       track.enabled = isDeafened ? false : !isMuted;
     });
 
-    // Refresh devices list since permissions are now granted
     refreshAudioDevices();
 
     try {
@@ -261,7 +284,6 @@ export function CallProvider({ children }) {
       console.debug('Web Audio local analyser setup fallback:', err);
     }
 
-    // Always send the direct hardware stream through RTCPeerConnection for reliable two-way audio
     return rawStream;
   };
 
@@ -269,7 +291,6 @@ export function CallProvider({ children }) {
   const playRemoteStream = (stream) => {
     remoteStreamRef.current = stream;
 
-    // 1. Rock-solid playback via HTMLAudioElement attached to DOM
     if (remoteAudioElRef.current) {
       remoteAudioElRef.current.srcObject = stream;
       remoteAudioElRef.current.volume = Math.min(1, Math.max(0, peerVolume / 100));
@@ -278,7 +299,6 @@ export function CallProvider({ children }) {
       if (playPromise !== undefined) {
         playPromise.catch(err => {
           console.debug('Autoplay remote stream note:', err);
-          // Unlock autoplay on user click or keypress if browser blocked it
           const unlock = () => {
             if (remoteAudioElRef.current) {
               remoteAudioElRef.current.play().catch(() => {});
@@ -292,7 +312,6 @@ export function CallProvider({ children }) {
       }
     }
 
-    // 2. Setup Web Audio AnalyserNode purely for visual meters & speaking indicator
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
@@ -430,8 +449,8 @@ export function CallProvider({ children }) {
     remoteStreamRef.current = null;
     iceCandidatesQueue.current = [];
 
-    // Clear busy presence status for current user
-    if (currentUser?.email) {
+    // Clear busy presence status for current user if no held call
+    if (currentUser?.email && !heldCall) {
       const mySafe = toSafeEmail(currentUser.email);
       try {
         onDisconnect(ref(db, `busyUsers/${mySafe}`)).cancel();
@@ -449,6 +468,7 @@ export function CallProvider({ children }) {
     setRemoteSpeaking(false);
     setLocalSpeaking(false);
     setMicInputLevel(0);
+    setAdminMutedBanner(false);
   };
 
   // Listen for incoming calls targeted to currentUser
@@ -503,19 +523,19 @@ export function CallProvider({ children }) {
         const callCaller = (callObj.callerEmail || '').trim().toLowerCase();
         const callMembers = Array.isArray(callObj.members)
           ? callObj.members.map(m => (m || '').trim().toLowerCase())
-          : [];
+          : (callObj.members && typeof callObj.members === 'object' ? Object.values(callObj.members).map(m => (m || '').trim().toLowerCase()) : []);
 
         const isTargetOfCall = (callReceiver === myEmail) ||
           (callObj.type === 'group' && callMembers.includes(myEmail));
 
         if (isTargetOfCall && callCaller !== myEmail && callObj.status === 'calling') {
-          if (activeCall && activeCall.id !== callObj.id && callStatus === 'connected') {
-            update(ref(db, `calls/${callObj.id}`), { status: 'busy', endedAt: Date.now() }).catch(() => {});
-            remove(ref(db, `userCalls/${safeEmail}`)).catch(() => {});
+          // If already in a call: show call waiting UI without rejecting the incoming caller!
+          if (activeCall && activeCall.id !== callObj.id) {
+            setIncomingCall({ ...data, ...callObj, id: data.callId, isWaiting: true });
             return;
           }
 
-          setIncomingCall({ ...data, ...callObj, id: data.callId });
+          setIncomingCall({ ...data, ...callObj, id: data.callId, isWaiting: false });
           playIncomingRingtone();
         }
       });
@@ -537,7 +557,7 @@ export function CallProvider({ children }) {
     };
   }, [currentUser?.email, activeCall?.id, callStatus]);
 
-  // Synchronize active call updates (remote mute, deafen, answer, end)
+  // Synchronize active call updates (remote mute, deafen, answer, end, admin mute)
   useEffect(() => {
     if (!activeCall?.id || !currentUser?.email) return;
 
@@ -545,6 +565,24 @@ export function CallProvider({ children }) {
     const unsubscribe = onValue(callRef, async (snapshot) => {
       const data = snapshot.val();
       if (!data) return;
+
+      // Check Admin Mute on current user
+      if (data.adminMuted) {
+        const mySafe = toSafeEmail(currentUser.email);
+        const myMutedTimestamp = data.adminMuted[mySafe];
+        if (myMutedTimestamp && myMutedTimestamp > (callStartTimeRef.current || 0) && !isMutedRef.current) {
+          setIsMuted(true);
+          isMutedRef.current = true;
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+          }
+          if (rawLocalStreamRef.current) {
+            rawLocalStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+          }
+          playAdminMutedSound();
+          setAdminMutedBanner(true);
+        }
+      }
 
       // Handle call ended or declined remotely
       if (data.status === 'ended' || data.status === 'declined') {
@@ -583,6 +621,7 @@ export function CallProvider({ children }) {
         stopOutgoingCallingSound();
         stopIncomingRingtone();
         setCallStatus('connected');
+        callStartTimeRef.current = Date.now();
         if (!durationTimerRef.current) {
           durationTimerRef.current = setInterval(() => {
             setCallDuration(d => d + 1);
@@ -686,11 +725,11 @@ export function CallProvider({ children }) {
       const callData = {
         id: callId,
         callerEmail: currentUser.email,
-        callerName: `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername,
+        callerName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername,
         callerPfp: currentUser.profilePicture || '',
         callerRoblox: currentUser.robloxUsername || '',
         receiverEmail: targetUser.email,
-        receiverName: `${targetUser.firstName} ${targetUser.lastName || ''}`.trim() || targetUser.robloxUsername,
+        receiverName: `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.robloxUsername,
         receiverPfp: targetUser.profilePicture || '',
         receiverRoblox: targetUser.robloxUsername || '',
         status: 'calling',
@@ -702,7 +741,8 @@ export function CallProvider({ children }) {
         callerMuted: false,
         receiverMuted: false,
         callerDeafened: false,
-        receiverDeafened: false
+        receiverDeafened: false,
+        adminMuted: {}
       };
 
       await set(ref(db, `calls/${callId}`), callData);
@@ -770,10 +810,11 @@ export function CallProvider({ children }) {
   };
 
   // 2. ANSWER CALL (Recipient)
-  const answerCall = async () => {
-    if (!incomingCall) return;
+  const answerCall = async (customCallToAnswer = null) => {
+    const targetIncoming = customCallToAnswer || incomingCall;
+    if (!targetIncoming) return;
     stopIncomingRingtone();
-    const callId = incomingCall.id;
+    const callId = targetIncoming.id;
     const receiverSafe = toSafeEmail(currentUser.email);
     const rawReceiverSafe = (currentUser.email || '').trim().replace(/\./g, ',');
 
@@ -802,7 +843,7 @@ export function CallProvider({ children }) {
         }
       };
 
-      await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
+      await pc.setRemoteDescription(new RTCSessionDescription(targetIncoming.offer));
 
       while (iceCandidatesQueue.current.length > 0) {
         const candidate = iceCandidatesQueue.current.shift();
@@ -836,7 +877,8 @@ export function CallProvider({ children }) {
       });
       onDisconnect(ref(db, `busyUsers/${receiverSafe}`)).remove();
 
-      setActiveCall({ ...incomingCall, status: 'connected' });
+      callStartTimeRef.current = Date.now();
+      setActiveCall({ ...targetIncoming, status: 'connected' });
       setIncomingCall(null);
       setCallRole('receiver');
       setCallStatus('connected');
@@ -935,7 +977,7 @@ export function CallProvider({ children }) {
       const callId = `call_grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const callerSafe = toSafeEmail(currentUser.email);
       const rawCallerSafe = (currentUser.email || '').trim().replace(/\./g, ',');
-      const callerName = `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername;
+      const callerName = `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername;
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
       pcRef.current = pc;
@@ -979,7 +1021,7 @@ export function CallProvider({ children }) {
         callerName,
         callerPfp: currentUser.profilePicture || '',
         callerRoblox: currentUser.robloxUsername || '',
-        receiverEmail: cleanEmails[0], // primary for WebRTC fallback
+        receiverEmail: cleanEmails[0],
         receiverName: `${cleanEmails.length} Staff Member${cleanEmails.length > 1 ? 's' : ''}`,
         members: [currentUser.email, ...cleanEmails],
         status: 'calling',
@@ -991,7 +1033,8 @@ export function CallProvider({ children }) {
         callerMuted: false,
         receiverMuted: false,
         callerDeafened: false,
-        receiverDeafened: false
+        receiverDeafened: false,
+        adminMuted: {}
       };
 
       await set(ref(db, `calls/${callId}`), callData);
@@ -1065,10 +1108,16 @@ export function CallProvider({ children }) {
     }
   };
 
-  // 5. MUTE / UNMUTE TOGGLE
+  // 5. MUTE / UNMUTE TOGGLE WITH SOUND
   const toggleMute = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
+
+    if (nextMuted) {
+      playMuteSound();
+    } else {
+      playUnmuteSound();
+    }
 
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach(track => {
@@ -1087,10 +1136,16 @@ export function CallProvider({ children }) {
     }
   };
 
-  // 6. DEAFEN / UNDEAFEN TOGGLE
+  // 6. DEAFEN / UNDEAFEN TOGGLE WITH SOUND
   const toggleDeafen = () => {
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
+
+    if (nextDeafened) {
+      playDeafenSound();
+    } else {
+      playUndeafenSound();
+    }
 
     if (remoteAudioElRef.current) {
       remoteAudioElRef.current.muted = nextDeafened;
@@ -1113,6 +1168,184 @@ export function CallProvider({ children }) {
     }
   };
 
+  // 7. MERGE / ADD PARTICIPANT INTO ACTIVE CALL
+  const mergeIntoCall = async (targetEmail, targetName) => {
+    if (!activeCall?.id || !targetEmail) return;
+    const cleanTargetEmail = targetEmail.trim().toLowerCase();
+    const targetSafe = toSafeEmail(cleanTargetEmail);
+    const rawTargetSafe = cleanTargetEmail.replace(/\./g, ',');
+
+    let existingMembers = [];
+    if (Array.isArray(activeCall.members)) {
+      existingMembers = activeCall.members;
+    } else if (activeCall.members && typeof activeCall.members === 'object') {
+      existingMembers = Object.values(activeCall.members);
+    } else {
+      existingMembers = [activeCall.callerEmail, activeCall.receiverEmail].filter(Boolean);
+    }
+
+    const updatedMembers = Array.from(new Set([...existingMembers, cleanTargetEmail]));
+    const currentTitle = activeCall.groupTitle || 
+      `Group Call • ${activeCall.callerName || 'Staff'} & ${activeCall.receiverName || 'Staff'}`;
+
+    try {
+      await update(ref(db, `calls/${activeCall.id}`), {
+        type: 'group',
+        groupTitle: currentTitle,
+        members: updatedMembers
+      });
+
+      const userCallPayload = {
+        callId: activeCall.id,
+        type: 'group',
+        groupTitle: currentTitle,
+        status: 'calling',
+        timestamp: Date.now(),
+        callerEmail: currentUser.email,
+        callerName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername || 'Staff',
+        callerPfp: currentUser.profilePicture || ''
+      };
+
+      await set(ref(db, `userCalls/${targetSafe}`), userCallPayload);
+      if (rawTargetSafe && rawTargetSafe !== targetSafe) {
+        await set(ref(db, `userCalls/${rawTargetSafe}`), userCallPayload).catch(() => {});
+      }
+
+      setActiveCall(prev => ({
+        ...prev,
+        type: 'group',
+        groupTitle: currentTitle,
+        members: updatedMembers
+      }));
+    } catch (err) {
+      console.error('Failed to merge user into call:', err);
+      alert('Could not merge staff member into the ongoing call.');
+    }
+  };
+
+  // 8. ADMIN REMOTE MUTE PARTICIPANT
+  const adminMuteParticipant = async (targetEmail) => {
+    if (!currentUser?.isAdmin || !activeCall?.id || !targetEmail) return;
+    const targetSafe = toSafeEmail(targetEmail);
+    const updates = {
+      [`adminMuted/${targetSafe}`]: Date.now()
+    };
+    if (activeCall.callerEmail && activeCall.callerEmail.toLowerCase() === targetEmail.toLowerCase()) {
+      updates.callerMuted = true;
+    }
+    if (activeCall.receiverEmail && activeCall.receiverEmail.toLowerCase() === targetEmail.toLowerCase()) {
+      updates.receiverMuted = true;
+    }
+    try {
+      await update(ref(db, `calls/${activeCall.id}`), updates);
+    } catch (err) {
+      console.error('Failed to admin mute participant:', err);
+    }
+  };
+
+  // 9. CALL WAITING: ANSWER & END CURRENT
+  const answerAndEndCurrent = async () => {
+    const pendingCall = incomingCall;
+    if (!pendingCall) return;
+    await endCall();
+    setTimeout(() => {
+      answerCall(pendingCall);
+    }, 250);
+  };
+
+  // 10. CALL WAITING: ANSWER & PUT CURRENT ON HOLD
+  const answerAndHoldCurrent = async () => {
+    const pendingCall = incomingCall;
+    if (!pendingCall || !activeCall) return;
+
+    // Capture current call as heldCall
+    const currentSnapshot = {
+      ...activeCall,
+      heldRole: callRole,
+      heldDuration: callDuration
+    };
+    setHeldCall(currentSnapshot);
+
+    // Notify Firebase of on-hold status
+    const mySafe = toSafeEmail(currentUser.email);
+    update(ref(db, `calls/${activeCall.id}/onHold/${mySafe}`), Date.now()).catch(() => {});
+
+    // Mute hardware mic and pause remote audio from the held call
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+    }
+    if (rawLocalStreamRef.current) {
+      rawLocalStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+    }
+    if (remoteAudioElRef.current) {
+      remoteAudioElRef.current.pause();
+    }
+    if (pcRef.current) {
+      try {
+        pcRef.current.ontrack = null;
+        pcRef.current.onicecandidate = null;
+        pcRef.current.close();
+      } catch {}
+      pcRef.current = null;
+    }
+
+    // Now answer the pending call
+    setTimeout(() => {
+      answerCall(pendingCall);
+    }, 250);
+  };
+
+  // 11. RESUME HELD CALL / SWAP BACK
+  const resumeHeldCall = async () => {
+    if (!heldCall) return;
+    const targetHeld = heldCall;
+    setHeldCall(null);
+
+    // Clean up current active call
+    if (activeCall) {
+      await endCall();
+    }
+
+    const mySafe = toSafeEmail(currentUser.email);
+    remove(ref(db, `calls/${targetHeld.id}/onHold/${mySafe}`)).catch(() => {});
+
+    // Re-connect to the held call
+    setTimeout(() => {
+      if (targetHeld.callerEmail === currentUser.email) {
+        initiateCall({
+          email: targetHeld.receiverEmail,
+          firstName: targetHeld.receiverName,
+          robloxUsername: targetHeld.receiverRoblox
+        });
+      } else {
+        initiateCall({
+          email: targetHeld.callerEmail,
+          firstName: targetHeld.callerName,
+          robloxUsername: targetHeld.callerRoblox
+        });
+      }
+    }, 300);
+  };
+
+  // 12. DECLINE WAITING CALL
+  const declineWaitingCall = async () => {
+    if (!incomingCall) return;
+    const callId = incomingCall.id;
+    const receiverSafe = toSafeEmail(currentUser.email);
+    const rawReceiverSafe = (currentUser.email || '').trim().replace(/\./g, ',');
+    try {
+      await update(ref(db, `calls/${callId}`), {
+        status: 'declined',
+        endedAt: Date.now()
+      });
+      await remove(ref(db, `userCalls/${receiverSafe}`)).catch(() => {});
+      if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
+        await remove(ref(db, `userCalls/${rawReceiverSafe}`)).catch(() => {});
+      }
+    } catch {}
+    setIncomingCall(null);
+  };
+
   return (
     <CallContext.Provider
       value={{
@@ -1120,6 +1353,9 @@ export function CallProvider({ children }) {
         callRole,
         callStatus,
         incomingCall,
+        heldCall,
+        adminMutedBanner,
+        clearAdminMutedBanner: () => setAdminMutedBanner(false),
         isMuted,
         isDeafened,
         callDuration,
@@ -1144,7 +1380,14 @@ export function CallProvider({ children }) {
         declineCall,
         endCall,
         toggleMute,
-        toggleDeafen
+        toggleDeafen,
+        // Merging, Admin Mute & Multi-Call Hold
+        mergeIntoCall,
+        adminMuteParticipant,
+        answerAndEndCurrent,
+        answerAndHoldCurrent,
+        resumeHeldCall,
+        declineWaitingCall
       }}
     >
       {children}

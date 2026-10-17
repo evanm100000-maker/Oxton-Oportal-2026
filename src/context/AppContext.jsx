@@ -663,7 +663,12 @@ export const AppProvider = ({ children }) => {
         const groupId = m.channel.replace('group_', '');
         const targetGroup = (groupChats || []).find(g => g.id === groupId);
         if (!targetGroup) return false;
-        const members = (targetGroup.members || []).map(e => (e || '').toLowerCase().trim());
+        let members = [];
+        if (Array.isArray(targetGroup.members)) {
+          members = targetGroup.members.map(e => (e || '').toLowerCase().trim());
+        } else if (targetGroup.members && typeof targetGroup.members === 'object') {
+          members = Object.values(targetGroup.members).map(e => (e || '').toLowerCase().trim());
+        }
         return members.includes(myEmail) || !!currentUser.isAdmin;
       }
       return true;
@@ -938,10 +943,20 @@ export const AppProvider = ({ children }) => {
     const groupChatsRef = ref(db, 'groupChats');
     const unsubscribeGroupChats = onValue(groupChatsRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const groupsArray = Object.keys(data).map(key => ({
-        id: key,
-        ...data[key]
-      }));
+      const groupsArray = Object.keys(data).map(key => {
+        const item = data[key] || {};
+        let members = [];
+        if (Array.isArray(item.members)) {
+          members = item.members.filter(Boolean);
+        } else if (item.members && typeof item.members === 'object') {
+          members = Object.values(item.members).filter(Boolean);
+        }
+        return {
+          id: key,
+          ...item,
+          members
+        };
+      });
       setGroupChats(groupsArray);
     });
 
@@ -2632,14 +2647,15 @@ useEffect(() => {
     if (!currentUser) return null;
     const db = getDatabase(firebaseApp);
     const groupId = 'grp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-    const membersSet = new Set([currentUser.email, ...memberEmails]);
+    const cleanMembers = (memberEmails || []).filter(e => e && typeof e === 'string' && e.trim());
+    const membersSet = new Set([currentUser.email, ...cleanMembers]);
     const members = Array.from(membersSet).filter(Boolean);
 
     const newGroup = {
       id: groupId,
       name: name.trim() || 'New Group',
       createdBy: currentUser.email,
-      createdByName: `${currentUser.firstName} ${currentUser.lastName}`.trim() || currentUser.robloxUsername,
+      createdByName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername || 'Staff',
       createdAt: Date.now(),
       members
     };
@@ -2659,7 +2675,10 @@ useEffect(() => {
     const db = getDatabase(firebaseApp);
     const group = (groupChats || []).find(g => g.id === groupId);
     if (!group) return;
-    const members = Array.from(new Set([...(group.members || []), email]));
+    const existing = Array.isArray(group.members)
+      ? group.members
+      : (group.members && typeof group.members === 'object' ? Object.values(group.members) : []);
+    const members = Array.from(new Set([...existing, email])).filter(Boolean);
     try {
       await update(ref(db, `groupChats/${groupId}`), { members });
       logAction('group_member_added', `Added ${email} to group ${group.name}`, { groupId, email });
@@ -2673,7 +2692,10 @@ useEffect(() => {
     const db = getDatabase(firebaseApp);
     const group = (groupChats || []).find(g => g.id === groupId);
     if (!group) return;
-    const remaining = (group.members || []).filter(e => e.toLowerCase() !== currentUser.email.toLowerCase());
+    const existing = Array.isArray(group.members)
+      ? group.members
+      : (group.members && typeof group.members === 'object' ? Object.values(group.members) : []);
+    const remaining = existing.filter(e => (e || '').toLowerCase().trim() !== currentUser.email.toLowerCase().trim());
     try {
       if (remaining.length === 0) {
         await remove(ref(db, `groupChats/${groupId}`));
