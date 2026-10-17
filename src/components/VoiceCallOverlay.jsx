@@ -34,6 +34,8 @@ export default function VoiceCallOverlay() {
     callStatus, 
     incomingCall, 
     heldCall,
+    isOnHold,
+    peerOnHold,
     adminMutedBanner,
     clearAdminMutedBanner,
     isMuted, 
@@ -59,6 +61,7 @@ export default function VoiceCallOverlay() {
     endCall, 
     toggleMute, 
     toggleDeafen,
+    toggleHold,
     // Merging, Admin Mute & Multi-Call Hold
     mergeIntoCall,
     adminMuteParticipant,
@@ -366,7 +369,7 @@ export default function VoiceCallOverlay() {
             }}
             className="glass-panel"
           >
-            {/* CALL ON HOLD NOTIFICATION STRIP */}
+            {/* CALL ON HOLD NOTIFICATION STRIP (MULTI-CALL) */}
             {heldCall && (
               <div style={{
                 background: 'rgba(59, 130, 246, 0.2)',
@@ -401,6 +404,64 @@ export default function VoiceCallOverlay() {
                 >
                   <Play size={11} /> Swap
                 </button>
+              </div>
+            )}
+
+            {/* CALL ON HOLD STATUS BANNER (MANUAL HOLD ON CURRENT CALL) */}
+            {isOnHold && (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.2)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                color: '#fef3c7'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Pause size={13} color="#f59e0b" />
+                  <span>Call is on hold (you are muted)</span>
+                </div>
+                <button
+                  onClick={toggleHold}
+                  style={{
+                    background: '#f59e0b',
+                    border: 'none',
+                    color: '#111827',
+                    borderRadius: '6px',
+                    padding: '2px 8px',
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Resume call from hold"
+                >
+                  <Play size={11} /> Resume
+                </button>
+              </div>
+            )}
+
+            {peerOnHold && !isOnHold && (
+              <div style={{
+                background: 'rgba(107, 114, 128, 0.2)',
+                border: '1px solid rgba(107, 114, 128, 0.4)',
+                padding: '6px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '10px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                color: '#d1d5db'
+              }}>
+                <Pause size={13} color="#9ca3af" />
+                <span>The other party has placed this call on hold.</span>
               </div>
             )}
 
@@ -502,6 +563,16 @@ export default function VoiceCallOverlay() {
                   <span style={styles.miniName}>{peerInfo.name}</span>
                 </div>
                 <div style={styles.miniControls}>
+                  <button 
+                    onClick={toggleHold}
+                    style={{
+                      ...styles.miniControlBtn,
+                      backgroundColor: isOnHold ? '#f59e0b' : 'rgba(255,255,255,0.1)'
+                    }}
+                    title={isOnHold ? "Resume Call" : "Hold Call"}
+                  >
+                    {isOnHold ? <Play size={13} color="#111827" /> : <Pause size={13} />}
+                  </button>
                   <button 
                     onClick={toggleMute} 
                     style={{
@@ -726,6 +797,21 @@ export default function VoiceCallOverlay() {
                   >
                     {isDeafened ? <VolumeX size={18} /> : <Headphones size={18} />}
                     <span style={styles.btnLabel}>{isDeafened ? 'Undeafen' : 'Deafen'}</span>
+                  </button>
+
+                  {/* HOLD BUTTON */}
+                  <button
+                    onClick={toggleHold}
+                    style={{
+                      ...styles.controlBtn,
+                      backgroundColor: isOnHold ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                      borderColor: isOnHold ? '#f59e0b' : 'rgba(255, 255, 255, 0.15)',
+                      color: isOnHold ? '#fbbf24' : '#f3f4f6'
+                    }}
+                    title={isOnHold ? "Resume Call" : "Hold Call"}
+                  >
+                    {isOnHold ? <Play size={18} /> : <Pause size={18} />}
+                    <span style={styles.btnLabel}>{isOnHold ? 'Resume' : 'Hold'}</span>
                   </button>
 
                   {/* END CALL BUTTON */}

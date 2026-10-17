@@ -44,6 +44,9 @@ export function CallProvider({ children }) {
   const [incomingCall, setIncomingCall] = useState(null);
   const [heldCall, setHeldCall] = useState(null); // Call put on hold
   const [adminMutedBanner, setAdminMutedBanner] = useState(false);
+  const [isOnHold, setIsOnHold] = useState(false);
+  const [peerOnHold, setPeerOnHold] = useState(false);
+  const [activeGroupCalls, setActiveGroupCalls] = useState([]);
   
   // Basic Audio Controls
   const [isMuted, setIsMuted] = useState(false);
@@ -137,6 +140,19 @@ export function CallProvider({ children }) {
         navigator.mediaDevices.removeEventListener('devicechange', refreshAudioDevices);
       };
     }
+  }, []);
+
+  // Listen to all active calls in Firebase (for Join Call button on flights & groups)
+  useEffect(() => {
+    const callsRef = ref(db, 'calls');
+    const unsub = onValue(callsRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const active = Object.values(data).filter(c => 
+        c && c.id && (c.status === 'calling' || c.status === 'connected')
+      );
+      setActiveGroupCalls(active);
+    });
+    return () => unsub();
   }, []);
 
   // Periodic Call Waiting chime if another person is calling while user is in active call
@@ -469,6 +485,8 @@ export function CallProvider({ children }) {
     setLocalSpeaking(false);
     setMicInputLevel(0);
     setAdminMutedBanner(false);
+    setIsOnHold(false);
+    setPeerOnHold(false);
   };
 
   // Listen for incoming calls targeted to currentUser
@@ -627,6 +645,20 @@ export function CallProvider({ children }) {
             setCallDuration(d => d + 1);
           }, 1000);
         }
+      }
+
+      // Check On-Hold status for current user and remote peer(s)
+      if (data.onHold && typeof data.onHold === 'object') {
+        const mySafe = toSafeEmail(currentUser.email);
+        const myHeld = Boolean(data.onHold[mySafe]);
+        setIsOnHold(myHeld);
+
+        // Remote peer is on hold if any safeEmail other than current user has an entry
+        const otherHeld = Object.keys(data.onHold).some(k => k !== mySafe && Boolean(data.onHold[k]));
+        setPeerOnHold(otherHeld);
+      } else {
+        setIsOnHold(false);
+        setPeerOnHold(false);
       }
 
       setActiveCall(prev => ({
@@ -957,7 +989,7 @@ export function CallProvider({ children }) {
   };
 
   // 4b. INITIATE GROUP / FLIGHT CALL
-  const initiateGroupCall = async (callTitle, targetEmails = [], flightCode = null) => {
+  const initiateGroupCall = async (callTitle, targetEmails = [], flightCode = null, groupId = null) => {
     if (!currentUser) return;
     if (activeCall) {
       alert("You are already in an active call.");
@@ -1015,6 +1047,7 @@ export function CallProvider({ children }) {
       const callData = {
         id: callId,
         type: 'group',
+        groupId: groupId || null,
         groupTitle: callTitle || (flightCode ? `Flight Call • ${flightCode}` : 'Group Voice Call'),
         flightCode: flightCode || null,
         callerEmail: currentUser.email,
@@ -1346,6 +1379,95 @@ export function CallProvider({ children }) {
     setIncomingCall(null);
   };
 
+  // 13. TOGGLE HOLD ON CURRENT ACTIVE CALL
+  const toggleHold = async () => {
+    if (!activeCall?.id || !currentUser?.email) return;
+    const nextHold = !isOnHold;
+    setIsOnHold(nextHold);
+    const mySafe = toSafeEmail(currentUser.email);
+
+    try {
+      if (nextHold) {
+        // Put on hold: mark in Firebase, mute local audio tracks, pause remote audio
+        await update(ref(db, `calls/${activeCall.id}/onHold`), { [mySafe]: Date.now() });
+        if (localStreamRef.current) {
+          localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+        }
+        if (rawLocalStreamRef.current) {
+          rawLocalStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
+        }
+        if (remoteAudioElRef.current) {
+          remoteAudioElRef.current.pause();
+        }
+      } else {
+        // Resume from hold: remove from Firebase, restore local tracks according to isMuted, resume remote audio
+        await remove(ref(db, `calls/${activeCall.id}/onHold/${mySafe}`));
+        if (localStreamRef.current) {
+          localStreamRef.current.getAudioTracks().forEach(t => {
+            t.enabled = isDeafened ? false : !isMuted;
+          });
+        }
+        if (rawLocalStreamRef.current && rawLocalStreamRef.current !== localStreamRef.current) {
+          rawLocalStreamRef.current.getAudioTracks().forEach(t => {
+            t.enabled = isDeafened ? false : !isMuted;
+          });
+        }
+        if (remoteAudioElRef.current && !isDeafened) {
+          remoteAudioElRef.current.play().catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle hold:', err);
+    }
+  };
+
+  // 14. JOIN ACTIVE CALL (Flight or Group)
+  const joinCall = async (targetCall) => {
+    if (!targetCall || !currentUser) return;
+    if (activeCall) {
+      alert("You are already in an active call. Please end your current call first.");
+      return;
+    }
+    const myEmail = currentUser.email.toLowerCase().trim();
+    const mySafe = toSafeEmail(currentUser.email);
+    const rawMySafe = (currentUser.email || '').trim().replace(/\./g, ',');
+
+    try {
+      // Add currentUser to call members in Firebase if not already there
+      let existingMembers = [];
+      if (Array.isArray(targetCall.members)) {
+        existingMembers = targetCall.members;
+      } else if (targetCall.members && typeof targetCall.members === 'object') {
+        existingMembers = Object.values(targetCall.members);
+      }
+      if (!existingMembers.map(m => (m || '').toLowerCase().trim()).includes(myEmail)) {
+        const updatedMembers = [...existingMembers, currentUser.email];
+        await update(ref(db, `calls/${targetCall.id}`), {
+          members: updatedMembers
+        });
+      }
+
+      // Mark user's userCalls so they are linked
+      const userCallPayload = {
+        callId: targetCall.id,
+        type: targetCall.type || 'group',
+        groupTitle: targetCall.groupTitle || 'Active Call',
+        status: 'calling',
+        timestamp: Date.now()
+      };
+      await set(ref(db, `userCalls/${mySafe}`), userCallPayload);
+      if (rawMySafe && rawMySafe !== mySafe) {
+        await set(ref(db, `userCalls/${rawMySafe}`), userCallPayload).catch(() => {});
+      }
+
+      // Now answer the call directly
+      await answerCall(targetCall);
+    } catch (err) {
+      console.error('Failed to join active call:', err);
+      alert('Could not join the ongoing call.');
+    }
+  };
+
   return (
     <CallContext.Provider
       value={{
@@ -1354,6 +1476,9 @@ export function CallProvider({ children }) {
         callStatus,
         incomingCall,
         heldCall,
+        isOnHold,
+        peerOnHold,
+        activeGroupCalls,
         adminMutedBanner,
         clearAdminMutedBanner: () => setAdminMutedBanner(false),
         isMuted,
@@ -1381,6 +1506,8 @@ export function CallProvider({ children }) {
         endCall,
         toggleMute,
         toggleDeafen,
+        toggleHold,
+        joinCall,
         // Merging, Admin Mute & Multi-Call Hold
         mergeIntoCall,
         adminMuteParticipant,

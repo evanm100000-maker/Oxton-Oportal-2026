@@ -19,12 +19,17 @@ export default function AllocationRequests() {
     users,
     activeUsers,
     toggleFlightLock,
-    editFlight,
-    submitFlightRegister
+    editFlight
   } = useApp();
-  const { initiateGroupCall } = useCall();
+  const { initiateGroupCall, activeGroupCalls, joinCall } = useCall();
 
-  const [activeRegisterFlight, setActiveRegisterFlight] = useState(null);
+  const isModOrAbove = Boolean(
+    currentUser?.isAdmin ||
+    currentUser?.siteRole === 'Admin' ||
+    currentUser?.siteRole === 'Owner' ||
+    currentUser?.siteRole === 'Moderator'
+  );
+
   const [directAssignEmail, setDirectAssignEmail] = useState({});
   const [selectedStatuses, setSelectedStatuses] = useState({});
   const [copiedId, setCopiedId] = useState(null);
@@ -480,56 +485,79 @@ export default function AllocationRequests() {
                   })()}
                 </div>
 
-                {/* Admin / Host Call Attending Staff Button & Attendance Register Button */}
-                {(currentUser.isAdmin || currentUser.email === flight.host) && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', marginBottom: '12px' }}>
-                    <button 
-                      type="button" 
-                      onClick={() => setActiveRegisterFlight(flight)} 
-                      className="btn-primary" 
-                      style={{
-                        flex: 1, 
-                        background: 'rgba(16, 185, 129, 0.15)', 
-                        color: '#10b981', 
-                        borderColor: 'rgba(16, 185, 129, 0.3)', 
-                        padding: '10px', 
-                        borderRadius: '8px', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        fontSize: '0.85rem'
-                      }}
-                    >
-                      <Users size={16} style={{marginRight: '6px'}} />
-                      Register
-                    </button>
+                {/* Flight Voice Call Actions: Join Call if already active, or Call Attending Staff (Moderators & above only) */}
+                {(() => {
+                  const activeFlightCall = (activeGroupCalls || []).find(c => 
+                    c.flightCode && flight.flightCode && 
+                    c.flightCode.trim().toLowerCase() === flight.flightCode.trim().toLowerCase()
+                  );
 
-                    <button
-                      type="button"
-                      onClick={() => handleCallFlightAttendingStaff(flight)}
-                      className="btn-success"
-                      style={{
-                        flex: 1.3,
-                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '0.85rem',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
-                      }}
-                      title="Call all staff who marked Attending"
-                    >
-                      <PhoneCall size={16} style={{marginRight: '6px'}} />
-                      Call Attending Staff ({getStaffList(flight, 'Attending').filter(email => activeUsers.some(user => user.email === email)).length})
-                    </button>
-                  </div>
-                )}
+                  if (activeFlightCall) {
+                    return (
+                      <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+                        <button
+                          type="button"
+                          onClick={() => joinCall(activeFlightCall)}
+                          className="btn-success"
+                          style={{
+                            width: '100%',
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '11px 16px',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.9rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 0 15px rgba(16, 185, 129, 0.5)',
+                            animation: 'pulse 2s infinite'
+                          }}
+                          title="Join ongoing flight voice call"
+                        >
+                          <PhoneCall size={16} style={{ marginRight: '8px' }} />
+                          Join Flight Call ({activeFlightCall.members ? (Array.isArray(activeFlightCall.members) ? activeFlightCall.members.length : Object.keys(activeFlightCall.members).length) : 1} in call)
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  if (isModOrAbove) {
+                    const attendingStaffCount = getStaffList(flight, 'Attending').filter(email => activeUsers.some(user => user.email === email)).length;
+                    return (
+                      <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleCallFlightAttendingStaff(flight)}
+                          className="btn-success"
+                          style={{
+                            width: '100%',
+                            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                            color: '#fff',
+                            border: 'none',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.85rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                          }}
+                          title="Call all staff who marked Attending (Moderator and above)"
+                        >
+                          <PhoneCall size={16} style={{ marginRight: '6px' }} />
+                          Call Attending Staff ({attendingStaffCount})
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()}
 
                 <div style={styles.actionContainer}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1.3 }}>

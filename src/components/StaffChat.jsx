@@ -54,7 +54,7 @@ export default function StaffChat() {
     leaveGroupChat,
     deleteGroupChat
   } = useApp();
-  const { initiateCall, initiateGroupCall } = useCall();
+  const { initiateCall, initiateGroupCall, activeGroupCalls, joinCall } = useCall();
   const [activeChannel, setActiveChannel] = useState('Staff Chat');
   const [inputText, setInputText] = useState('');
   const [rolePromptTarget, setRolePromptTarget] = useState(null);
@@ -211,7 +211,7 @@ export default function StaffChat() {
       alert("There are no other members in this group to call.");
       return;
     }
-    initiateGroupCall(`Group Call • ${currentGroup.name}`, otherMembers);
+    initiateGroupCall(`Group Call • ${currentGroup.name}`, otherMembers, null, currentGroup.id);
   };
 
   const handleAddMemberToCurrentGroup = async (e) => {
@@ -340,28 +340,65 @@ export default function StaffChat() {
           {/* Group Call & Actions Header if current channel is a Group */}
           {currentGroup && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={handleCallCurrentGroup}
-                className="btn-success"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  fontSize: '0.85rem',
-                  fontWeight: '600',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                }}
-                title="Call all group members"
-              >
-                <PhoneCall size={15} />
-                <span>Call Group</span>
-              </button>
+              {(() => {
+                const activeGroupCall = (activeGroupCalls || []).find(c => 
+                  c.groupId === currentGroup.id || 
+                  (c.groupTitle && currentGroup.name && c.groupTitle.toLowerCase().includes(currentGroup.name.toLowerCase()))
+                );
+
+                if (activeGroupCall) {
+                  return (
+                    <button
+                      onClick={() => joinCall(activeGroupCall)}
+                      className="btn-success"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        fontSize: '0.85rem',
+                        fontWeight: '600',
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
+                        boxShadow: '0 0 15px rgba(16, 185, 129, 0.5)',
+                        animation: 'pulse 2s infinite'
+                      }}
+                      title="Join ongoing group call"
+                    >
+                      <PhoneCall size={15} />
+                      <span>Join Call</span>
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    onClick={handleCallCurrentGroup}
+                    className="btn-success"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                    }}
+                    title="Call all group members"
+                  >
+                    <PhoneCall size={15} />
+                    <span>Call Group</span>
+                  </button>
+                );
+              })()}
 
               <button
                 onClick={() => setShowAddMemberModal(true)}
