@@ -923,6 +923,13 @@ export const AppProvider = ({ children }) => {
         const status = isPresenceOnline(data[userKey]);
         if (status) {
           nextState[userKey] = status;
+          nextState[userKey.toLowerCase()] = status;
+          const dotKey = userKey.replace(/,/g, '.');
+          nextState[dotKey] = status;
+          nextState[dotKey.toLowerCase()] = status;
+          const commaKey = userKey.replace(/\./g, ',');
+          nextState[commaKey] = status;
+          nextState[commaKey.toLowerCase()] = status;
         }
       });
       setOnlineUsers(nextState);
@@ -978,7 +985,9 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     if (!currentUser?.email) return;
     const db = getDatabase(firebaseApp);
-    const safeEmail = currentUser.email.replace(/\./g, ',');
+    const rawEmail = currentUser.email || '';
+    const safeEmail = rawEmail.replace(/\./g, ',');
+    const lowerSafeEmail = rawEmail.toLowerCase().trim().replace(/\./g, ',');
     
     // Stable tab session id across page reloads
     let tabId = '';
@@ -993,6 +1002,7 @@ export const AppProvider = ({ children }) => {
     }
 
     const myTabRef = ref(db, `onlinePresence/${safeEmail}/${tabId}`);
+    const lowerTabRef = lowerSafeEmail !== safeEmail ? ref(db, `onlinePresence/${lowerSafeEmail}/${tabId}`) : null;
     const userPresenceRootRef = ref(db, `onlinePresence/${safeEmail}`);
     const connectedRef = ref(db, '.info/connected');
 
@@ -1008,6 +1018,9 @@ export const AppProvider = ({ children }) => {
         tabId
       };
       set(myTabRef, payload).catch(() => {});
+      if (lowerTabRef) {
+        set(lowerTabRef, payload).catch(() => {});
+      }
     };
 
     // User interaction events: mouse, keys, clicks, touch
@@ -1050,6 +1063,7 @@ export const AppProvider = ({ children }) => {
     const cleanRemove = () => {
       try {
         remove(myTabRef);
+        if (lowerTabRef) remove(lowerTabRef);
       } catch {}
     };
 
@@ -1066,6 +1080,9 @@ export const AppProvider = ({ children }) => {
       if (snap.val() === true) {
         // Automatically remove this tab entry on Firebase server disconnect
         onDisconnect(myTabRef).remove().catch(() => {});
+        if (lowerTabRef) {
+          onDisconnect(lowerTabRef).remove().catch(() => {});
+        }
         writePresence(currentPresenceState);
 
         // Also sweep any stale orphaned tabs under this user's email (>40s old)
@@ -1078,6 +1095,9 @@ export const AppProvider = ({ children }) => {
                 const item = val[k];
                 if (item === true || !item || !item.lastSeen || (now - item.lastSeen > 40000)) {
                   remove(ref(db, `onlinePresence/${safeEmail}/${k}`)).catch(() => {});
+                  if (lowerSafeEmail !== safeEmail) {
+                    remove(ref(db, `onlinePresence/${lowerSafeEmail}/${k}`)).catch(() => {});
+                  }
                 }
               }
             });

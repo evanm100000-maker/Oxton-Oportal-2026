@@ -35,7 +35,7 @@ export const toSafeEmail = (email) => {
 };
 
 export function CallProvider({ children }) {
-  const { currentUser } = useApp();
+  const { currentUser, sendNotificationToUser } = useApp();
   
   // Call States
   const [activeCall, setActiveCall] = useState(null);
@@ -94,6 +94,7 @@ export function CallProvider({ children }) {
   const callTimeoutRef = useRef(null);
   const callStartTimeRef = useRef(0);
   const isMutedRef = useRef(false);
+  const lastCallAudioEventsRef = useRef({});
   
   // Web Audio Nodes & Sources
   const audioContextRef = useRef(null);
@@ -487,6 +488,7 @@ export function CallProvider({ children }) {
     setAdminMutedBanner(false);
     setIsOnHold(false);
     setPeerOnHold(false);
+    lastCallAudioEventsRef.current = {};
   };
 
   // Listen for incoming calls targeted to currentUser
@@ -661,6 +663,29 @@ export function CallProvider({ children }) {
         setPeerOnHold(false);
       }
 
+      // Play audio cues for remote mute/unmute/deafen/undeafen events in this call
+      if (data.audioEvents && typeof data.audioEvents === 'object') {
+        const mySafe = toSafeEmail(currentUser.email);
+        const lastEvents = lastCallAudioEventsRef.current || {};
+        
+        Object.keys(data.audioEvents).forEach(eventKey => {
+          const ev = data.audioEvents[eventKey];
+          if (!ev || !ev.type || !ev.timestamp) return;
+          // Don't play duplicate sound if current user triggered it (they already heard local feedback)
+          if (ev.userSafe === mySafe) return;
+          // Check if this event was already played
+          const prevTs = lastEvents[eventKey];
+          if (!prevTs || ev.timestamp > prevTs) {
+            lastEvents[eventKey] = ev.timestamp;
+            if (ev.type === 'mute') playMuteSound();
+            else if (ev.type === 'unmute') playUnmuteSound();
+            else if (ev.type === 'deafen') playDeafenSound();
+            else if (ev.type === 'undeafen') playUndeafenSound();
+          }
+        });
+        lastCallAudioEventsRef.current = lastEvents;
+      }
+
       setActiveCall(prev => ({
         ...prev,
         ...data
@@ -830,6 +855,25 @@ export function CallProvider({ children }) {
           update(ref(db, `calls/${callId}`), { status: 'ended', endedAt: Date.now() });
           remove(ref(db, `userCalls/${receiverSafe}`));
           remove(ref(db, `userCalls/${callerSafe}`));
+          if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
+            remove(ref(db, `userCalls/${rawReceiverSafe}`)).catch(() => {});
+          }
+          if (rawCallerSafe && rawCallerSafe !== callerSafe) {
+            remove(ref(db, `userCalls/${rawCallerSafe}`)).catch(() => {});
+          }
+
+          // Send missed call notification to recipient
+          const callerDispName = callerName || currentUser.email;
+          if (typeof sendNotificationToUser === 'function') {
+            sendNotificationToUser(
+              targetUser.email,
+              `Missed call from: ${callerDispName}`,
+              `You missed a voice call from ${callerDispName}.`,
+              'warning',
+              'general'
+            );
+          }
+
           cleanupCall(true);
         }
       }, 45000);
@@ -1130,6 +1174,21 @@ export function CallProvider({ children }) {
           if (rawCallerSafe && rawCallerSafe !== callerSafe) {
             remove(ref(db, `userCalls/${rawCallerSafe}`)).catch(() => {});
           }
+
+          // Send missed call notification to each group recipient
+          const callerDispName = callerName || currentUser.email;
+          if (typeof sendNotificationToUser === 'function') {
+            cleanEmails.forEach(recipientEmail => {
+              sendNotificationToUser(
+                recipientEmail,
+                `Missed call from: ${callerDispName}`,
+                `You missed a group voice call (${callData.groupTitle}) from ${callerDispName}.`,
+                'warning',
+                'general'
+              );
+            });
+          }
+
           cleanupCall(true);
         }
       }, 45000);
@@ -1163,9 +1222,18 @@ export function CallProvider({ children }) {
       });
     }
 
-    if (activeCall?.id) {
+    if (activeCall?.id && currentUser?.email) {
       const field = callRole === 'caller' ? 'callerMuted' : 'receiverMuted';
-      update(ref(db, `calls/${activeCall.id}`), { [field]: nextMuted }).catch(() => {});
+      const mySafe = toSafeEmail(currentUser.email);
+      const updates = {
+        [field]: nextMuted,
+        [`audioEvents/${mySafe}`]: {
+          type: nextMuted ? 'mute' : 'unmute',
+          timestamp: Date.now(),
+          userSafe: mySafe
+        }
+      };
+      update(ref(db, `calls/${activeCall.id}`), updates).catch(() => {});
     }
   };
 
@@ -1195,9 +1263,18 @@ export function CallProvider({ children }) {
       });
     }
 
-    if (activeCall?.id) {
+    if (activeCall?.id && currentUser?.email) {
       const field = callRole === 'caller' ? 'callerDeafened' : 'receiverDeafened';
-      update(ref(db, `calls/${activeCall.id}`), { [field]: nextDeafened }).catch(() => {});
+      const mySafe = toSafeEmail(currentUser.email);
+      const updates = {
+        [field]: nextDeafened,
+        [`audioEvents/${mySafe}`]: {
+          type: nextDeafened ? 'deafen' : 'undeafen',
+          timestamp: Date.now(),
+          userSafe: mySafe
+        }
+      };
+      update(ref(db, `calls/${activeCall.id}`), updates).catch(() => {});
     }
   };
 
