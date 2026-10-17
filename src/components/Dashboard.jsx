@@ -59,7 +59,20 @@ const tabToPath = {
 const pathToTab = Object.fromEntries(Object.entries(tabToPath).map(([k, v]) => [v, k]));
 
 export default function Dashboard() {
-  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [], quotaConfig, isDnd, toggleDnd } = useApp();
+  const { currentUser, logout, chatMessages, infractions, flights, flightLogs = [], pageConfig, superAdminEmail, tasks, announcements, documents, reports, showClockBattery, use24HourClock, useLongDateFormat, userNotifications = [], unseenNotificationsCount = 0, markNotificationsAsSeen, quotaConfig, isDnd, toggleDnd } = useApp();
+
+  const [navTitleToggle, setNavTitleToggle] = React.useState(false);
+
+  React.useEffect(() => {
+    if (unseenNotificationsCount <= 0) {
+      setNavTitleToggle(false);
+      return;
+    }
+    const interval = setInterval(() => {
+      setNavTitleToggle(prev => !prev);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [unseenNotificationsCount]);
 
   // Compute flight quota progress: 3 completed flights needed to be full (100%)
   // Either verified 'Present' on submitted flight register OR approved flight log in the current quota period
@@ -556,9 +569,28 @@ export default function Dashboard() {
     <div style={styles.appWrapper}>
       {/* Navbar */}
       <nav className="glass-panel dashboard-navbar" style={styles.navbar}>
-        <div className="dashboard-nav-brand" style={styles.navBrand} onClick={() => setActiveTab('home')}>
+        <div 
+          className="dashboard-nav-brand" 
+          style={styles.navBrand} 
+          onClick={() => {
+            if (navTitleToggle && unseenNotificationsCount > 0) {
+              setIsNotificationsOpen(true);
+              if (markNotificationsAsSeen) markNotificationsAsSeen();
+            } else {
+              setActiveTab('home');
+            }
+          }}
+          title={unseenNotificationsCount > 0 ? `${unseenNotificationsCount} new notification(s) - click to view` : 'Go to Home'}
+        >
           <img src="./logo.png" alt="Oxton Logo" style={styles.navLogo} />
-          <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
+          {navTitleToggle && unseenNotificationsCount > 0 ? (
+            <span style={{ ...styles.navBrandText, color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#38bdf8', boxShadow: '0 0 8px #38bdf8' }} />
+              {unseenNotificationsCount} New Notification{unseenNotificationsCount > 1 ? 's' : ''}
+            </span>
+          ) : (
+            <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
+          )}
         </div>
 
         {/* Flight Quota Progress Indicator */}
@@ -616,7 +648,10 @@ export default function Dashboard() {
           </div>
 
           <button 
-            onClick={() => setIsNotificationsOpen(true)} 
+            onClick={() => {
+              setIsNotificationsOpen(true);
+              if (markNotificationsAsSeen) markNotificationsAsSeen();
+            }} 
             className="btn-secondary" 
             style={{
               ...styles.logoutBtn, 
@@ -628,7 +663,7 @@ export default function Dashboard() {
             title={isDnd ? "Notifications (Do Not Disturb ON)" : "Notifications"}
           >
             {isDnd ? <BellOff size={16} color="#f87171" /> : <Bell size={16} />}
-            {userNotifications && userNotifications.length > 0 && (
+            {unseenNotificationsCount > 0 ? (
               <span style={{
                 position: 'absolute',
                 top: '-4px',
@@ -646,9 +681,28 @@ export default function Dashboard() {
                 padding: '0 4px',
                 boxShadow: isDnd ? 'none' : '0 0 6px rgba(239, 68, 68, 0.6)'
               }}>
+                {unseenNotificationsCount > 9 ? '9+' : unseenNotificationsCount}
+              </span>
+            ) : (userNotifications && userNotifications.length > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-4px',
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: '#94a3b8',
+                fontSize: '10px',
+                fontWeight: '700',
+                borderRadius: '10px',
+                minWidth: '16px',
+                height: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 4px'
+              }}>
                 {userNotifications.length > 9 ? '9+' : userNotifications.length}
               </span>
-            )}
+            ))}
           </button>
 
           <button onClick={() => setIsSettingsOpen(true)} className="btn-secondary" style={{...styles.logoutBtn, color: 'var(--color-text-main)'}}>

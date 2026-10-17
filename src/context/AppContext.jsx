@@ -193,7 +193,7 @@ const isActiveStaff = (user) => (
   user?.approved && user?.role !== 'passenger' && (!user.suspendedUntil || new Date(user.suspendedUntil).getTime() <= Date.now())
 );
 
-const escapeEmail = (email) => email ? email.replace(/\./g, ',') : '';
+const escapeEmail = (email) => email ? email.toLowerCase().trim().replace(/\./g, ',') : '';
 const unescapeEmail = (email) => email ? email.replace(/,/g, '.') : '';
 
 const makeId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -424,6 +424,57 @@ export const AppProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState({});
   const [siteVersion, setSiteVersion] = useState(null);
+  const POPPED_NOTIFS_KEY = 'oxton_popped_notifs_v1';
+  const DELETED_NOTIFS_KEY = 'oxton_deleted_notifs_v1';
+
+  const getPoppedNotificationKeys = () => {
+    try {
+      const raw = localStorage.getItem(POPPED_NOTIFS_KEY);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+
+  const markNotificationAsPopped = (key) => {
+    if (!key) return;
+    try {
+      const set = getPoppedNotificationKeys();
+      set.add(key);
+      const arr = Array.from(set).slice(-300);
+      localStorage.setItem(POPPED_NOTIFS_KEY, JSON.stringify(arr));
+    } catch {}
+  };
+
+  const isNotificationPopped = (key) => {
+    if (!key) return false;
+    try {
+      const set = getPoppedNotificationKeys();
+      return set.has(key);
+    } catch {
+      return false;
+    }
+  };
+
+  const getDeletedNotificationIds = () => {
+    try {
+      const raw = localStorage.getItem(DELETED_NOTIFS_KEY);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+
+  const addDeletedNotificationId = (id) => {
+    if (!id) return;
+    try {
+      const set = getDeletedNotificationIds();
+      set.add(String(id));
+      const arr = Array.from(set).slice(-400);
+      localStorage.setItem(DELETED_NOTIFS_KEY, JSON.stringify(arr));
+    } catch {}
+  };
+
   const [userNotifications, setUserNotifications] = useState([]);
 
   useEffect(() => {
@@ -432,15 +483,45 @@ export const AppProvider = ({ children }) => {
       return;
     }
     const db = getDatabase(firebaseApp);
-    const safeEmail = currentUser.email.replace(/\./g, ',');
-    const notifRef = query(ref(db, `userNotifications/${safeEmail}`), limitToLast(30));
+    const rawEmail = currentUser.email || '';
+    const safeEmail = rawEmail.toLowerCase().trim().replace(/\./g, ',');
+    const notifRef = query(ref(db, `userNotifications/${safeEmail}`), limitToLast(40));
     
     const unsub = onValue(notifRef, snap => {
       const data = snap.val();
+      const clearedAtStr = localStorage.getItem(`oxton_cleared_notifs_${safeEmail}`);
+      const clearedAt = clearedAtStr ? parseInt(clearedAtStr, 10) : 0;
+      const deletedIds = getDeletedNotificationIds();
+
       if (data) {
         let arr = Object.keys(data).map(k => ({...data[k], _firebaseKey: k}));
+        const staleKeys = [];
+        // Filter out notifications that were cleared or deleted
+        arr = arr.filter(n => {
+          if (!n) return false;
+          const notifId = n.id || n._firebaseKey;
+          if (notifId && deletedIds.has(String(notifId))) {
+            staleKeys.push(n._firebaseKey || notifId);
+            return false;
+          }
+          const time = n.timestamp ? (typeof n.timestamp === 'number' ? n.timestamp : new Date(n.timestamp).getTime()) : 0;
+          if (clearedAt > 0 && time > 0 && time <= clearedAt) {
+            staleKeys.push(n._firebaseKey || notifId);
+            return false;
+          }
+          return true;
+        });
         arr.sort((a,b) => b.timestamp - a.timestamp);
         setUserNotifications(arr);
+
+        // Delete stale/cleared notifications from Firebase RTDB so they are gone for good
+        if (staleKeys.length > 0) {
+          const cleanup = {};
+          staleKeys.forEach(k => {
+            if (k) cleanup[k] = null;
+          });
+          update(ref(db, `userNotifications/${safeEmail}`), cleanup).catch(() => {});
+        }
       } else {
         setUserNotifications([]);
       }
@@ -450,12 +531,122 @@ export const AppProvider = ({ children }) => {
 
   const clearUserNotifications = () => {
     if (!currentUser) return;
+    const rawEmail = currentUser.email || '';
+    const safeEmail = rawEmail.toLowerCase().trim().replace(/\./g, ',');
+    const legacySafeEmail = rawEmail.replace(/\./g, ',');
+    const now = Date.now();
+
+    try {
+      localStorage.setItem(`oxton_cleared_notifs_${safeEmail}`, now.toString());
+      if (legacySafeEmail !== safeEmail) {
+        localStorage.setItem(`oxton_cleared_notifs_${legacySafeEmail}`, now.toString());
+      }
+      (userNotifications || []).forEach(n => {
+        if (n.id) addDeletedNotificationId(n.id);
+        if (n._firebaseKey) addDeletedNotificationId(n._firebaseKey);
+      });
+    } catch {}
+
+    setLastSeenNotificationTime(now);
     setUserNotifications([]);
     setNotifications([]);
+
     const db = getDatabase(firebaseApp);
-    const safeEmail = currentUser.email.replace(/\./g, ',');
-    set(ref(db, `userNotifications/${safeEmail}`), null);
+    set(ref(db, `userNotifications/${safeEmail}`), null).catch(() => {});
+    if (legacySafeEmail !== safeEmail) {
+      set(ref(db, `userNotifications/${legacySafeEmail}`), null).catch(() => {});
+    }
   };
+
+  const removeUserNotification = (notifId) => {
+    if (!currentUser || !notifId) return;
+    const rawEmail = currentUser.email || '';
+    const safeEmail = rawEmail.toLowerCase().trim().replace(/\./g, ',');
+    const legacySafeEmail = rawEmail.replace(/\./g, ',');
+
+    addDeletedNotificationId(notifId);
+
+    setUserNotifications(prev => (prev || []).filter(n => n.id !== notifId && n._firebaseKey !== notifId));
+    setNotifications(prev => (prev || []).filter(n => n.id !== notifId));
+
+    const db = getDatabase(firebaseApp);
+    set(ref(db, `userNotifications/${safeEmail}/${notifId}`), null).catch(() => {});
+    if (legacySafeEmail !== safeEmail) {
+      set(ref(db, `userNotifications/${legacySafeEmail}/${notifId}`), null).catch(() => {});
+    }
+  };
+
+  const [lastSeenNotificationTime, setLastSeenNotificationTime] = useState(() => {
+    try {
+      const rawUser = sessionStorage.getItem(STORAGE_KEYS.currentUser) || localStorage.getItem(STORAGE_KEYS.currentUser);
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u?.email) {
+          const safe = u.email.toLowerCase().trim().replace(/\./g, ',');
+          const saved = localStorage.getItem(`oxton_last_seen_notif_${safe}`);
+          return saved ? parseInt(saved, 10) : 0;
+        }
+      }
+    } catch {}
+    return 0;
+  });
+
+  useEffect(() => {
+    if (!currentUser?.email) {
+      setLastSeenNotificationTime(0);
+      return;
+    }
+    const safeEmail = escapeEmail(currentUser.email);
+    try {
+      const saved = localStorage.getItem(`oxton_last_seen_notif_${safeEmail}`);
+      setLastSeenNotificationTime(saved ? parseInt(saved, 10) : 0);
+    } catch {}
+  }, [currentUser]);
+
+  const markNotificationsAsSeen = () => {
+    const now = Date.now();
+    setLastSeenNotificationTime(now);
+    if (currentUser?.email) {
+      const safeEmail = escapeEmail(currentUser.email);
+      try {
+        localStorage.setItem(`oxton_last_seen_notif_${safeEmail}`, now.toString());
+      } catch {}
+    }
+  };
+
+  const unseenNotificationsCount = useMemo(() => {
+    if (!userNotifications || userNotifications.length === 0) return 0;
+    if (!lastSeenNotificationTime || lastSeenNotificationTime === 0) {
+      return userNotifications.length;
+    }
+    return userNotifications.filter(n => {
+      const t = n.timestamp ? (typeof n.timestamp === 'number' ? n.timestamp : new Date(n.timestamp).getTime()) : 0;
+      return t > lastSeenNotificationTime;
+    }).length;
+  }, [userNotifications, lastSeenNotificationTime]);
+
+  // Dynamic Browser Tab Title: Switch between "X New Notification(s)" and "Oxton Oportal | Staff Portal" when unseen notifications exist
+  useEffect(() => {
+    const defaultTitle = 'Oxton Oportal | Staff Portal';
+    if (unseenNotificationsCount <= 0) {
+      document.title = defaultTitle;
+      return;
+    }
+
+    const notifTitle = `${unseenNotificationsCount} New Notification${unseenNotificationsCount > 1 ? 's' : ''}`;
+    let showNotif = true;
+    document.title = notifTitle;
+
+    const interval = setInterval(() => {
+      showNotif = !showNotif;
+      document.title = showNotif ? notifTitle : defaultTitle;
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+      document.title = defaultTitle;
+    };
+  }, [unseenNotificationsCount]);
 
   const visibleChatMessages = useMemo(() => {
     if (!currentUser) return [];
@@ -521,8 +712,18 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  const addNotification = (title, message, type = 'info', soundType = null) => {
-    const id = makeId('notif');
+  const addNotification = (title, message, type = 'info', soundType = null, customId = null) => {
+    if (!title && !message) return;
+    const id = customId || makeId('notif');
+    const contentKey = `${title || ''}__${message || ''}`.trim();
+
+    // Prevent duplicate toast popups or audio for notifications that have already popped or been deleted
+    if (isNotificationPopped(id) || isNotificationPopped(contentKey) || getDeletedNotificationIds().has(id)) {
+      return;
+    }
+    markNotificationAsPopped(id);
+    markNotificationAsPopped(contentKey);
+
     const isPoints = type === 'points' || 
                      soundType === 'points' || 
                      (title && title.toLowerCase().includes('point')) || 
@@ -543,9 +744,9 @@ export const AppProvider = ({ children }) => {
       removeNotification(id);
     }, 5000);
     
-    if (currentUser) {
+    if (currentUser && currentUser.email) {
        const db = getDatabase(firebaseApp);
-       const safeEmail = currentUser.email.replace(/\./g, ',');
+       const safeEmail = escapeEmail(currentUser.email);
        const updates = {};
        updates[id] = newNotif;
        update(ref(db, `userNotifications/${safeEmail}`), updates).catch(err => console.error('Failed to save notification:', err));
@@ -578,7 +779,7 @@ export const AppProvider = ({ children }) => {
       }
     });
 
-    addNotification(title, message, type, effectiveSoundType);
+    addNotification(title, message, type, effectiveSoundType, id);
   };
 
   const removeNotification = (id) => {
@@ -824,13 +1025,16 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [setLoaRequests, setAnnouncements]);
 
-  const mountTimeRef = useRef(Date.now());
+  const mountTimeRef = useRef(Date.now() + 5000);
   const prevDataRef = useRef({ chatMessages: null, infractions: null, loaRequests: null, tickets: null, tasks: null });
-  const initialUserPointsSyncedRef = useRef(false);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (prevDataRef.current.chatMessages !== null && visibleChatMessages.length > prevDataRef.current.chatMessages.length) {
+    if (prevDataRef.current.chatMessages === null) {
+      prevDataRef.current.chatMessages = visibleChatMessages;
+      return;
+    }
+    if (visibleChatMessages.length > prevDataRef.current.chatMessages.length) {
       const newMsg = visibleChatMessages.find(m => !prevDataRef.current.chatMessages.some(pm => pm.id === m.id));
       if (newMsg && newMsg.senderEmail !== currentUser.email) {
         const msgTime = new Date(newMsg.timestamp || 0).getTime();
@@ -845,7 +1049,11 @@ export const AppProvider = ({ children }) => {
 
   useEffect(() => {
     if (!currentUser) return;
-    if (prevDataRef.current.infractions !== null && infractions.length > prevDataRef.current.infractions.length) {
+    if (prevDataRef.current.infractions === null) {
+      prevDataRef.current.infractions = infractions;
+      return;
+    }
+    if (infractions.length > prevDataRef.current.infractions.length) {
       const newInf = infractions.find(i => !prevDataRef.current.infractions.some(pi => pi.id === i.id));
       if (newInf && newInf.staffEmail === currentUser.email) {
         const infTime = new Date(newInf.timestamp || newInf.createdAt || 0).getTime();
@@ -859,44 +1067,52 @@ export const AppProvider = ({ children }) => {
 
   useEffect(() => {
     if (!currentUser) return;
-    if (prevDataRef.current.loaRequests !== null) {
-      loaRequests.forEach(loa => {
-        const prevLoa = prevDataRef.current.loaRequests.find(p => p.id === loa.id);
-        if (prevLoa && prevLoa.status !== loa.status && loa.userEmail === currentUser.email) {
-          const updateTime = new Date(loa.reviewedAt || loa.updatedAt || Date.now()).getTime();
-          if (updateTime > mountTimeRef.current) {
-            addNotification(`LOA Status Updated`, `Your LOA request is now ${loa.status}`, 'info');
-          }
-        }
-      });
+    if (prevDataRef.current.loaRequests === null) {
+      prevDataRef.current.loaRequests = loaRequests;
+      return;
     }
+    loaRequests.forEach(loa => {
+      const prevLoa = prevDataRef.current.loaRequests.find(p => p.id === loa.id);
+      if (prevLoa && prevLoa.status !== loa.status && loa.userEmail === currentUser.email) {
+        const updateTime = new Date(loa.reviewedAt || loa.updatedAt || Date.now()).getTime();
+        if (updateTime > mountTimeRef.current) {
+          addNotification(`LOA Status Updated`, `Your LOA request is now ${loa.status}`, 'info');
+        }
+      }
+    });
     prevDataRef.current.loaRequests = loaRequests;
   }, [loaRequests, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (prevDataRef.current.tickets !== null) {
-      tickets.forEach(ticket => {
-        const prevTicket = prevDataRef.current.tickets.find(p => p.id === ticket.id);
-        if (prevTicket && ticket.comments && (!prevTicket.comments || ticket.comments.length > prevTicket.comments.length)) {
-          if (ticket.authorEmail === currentUser.email || currentUser.isAdmin) {
-             const newComment = ticket.comments[ticket.comments.length - 1];
-             if (newComment && newComment.authorEmail !== currentUser.email) {
-               const commTime = new Date(newComment.timestamp || 0).getTime();
-               if (commTime > mountTimeRef.current) {
-                 addNotification(`New Response on Support Ticket`, newComment.text.length > 40 ? newComment.text.substring(0, 40) + '...' : newComment.text, 'info');
-               }
-             }
-          }
-        }
-      });
+    if (prevDataRef.current.tickets === null) {
+      prevDataRef.current.tickets = tickets;
+      return;
     }
+    tickets.forEach(ticket => {
+      const prevTicket = prevDataRef.current.tickets.find(p => p.id === ticket.id);
+      if (prevTicket && ticket.comments && (!prevTicket.comments || ticket.comments.length > prevTicket.comments.length)) {
+        if (ticket.authorEmail === currentUser.email || currentUser.isAdmin) {
+           const newComment = ticket.comments[ticket.comments.length - 1];
+           if (newComment && newComment.authorEmail !== currentUser.email) {
+             const commTime = new Date(newComment.timestamp || 0).getTime();
+             if (commTime > mountTimeRef.current) {
+               addNotification(`New Response on Support Ticket`, newComment.text.length > 40 ? newComment.text.substring(0, 40) + '...' : newComment.text, 'info');
+             }
+           }
+        }
+      }
+    });
     prevDataRef.current.tickets = tickets;
   }, [tickets, currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    if (prevDataRef.current.tasks !== null && tasks.length > prevDataRef.current.tasks.length) {
+    if (prevDataRef.current.tasks === null) {
+      prevDataRef.current.tasks = tasks;
+      return;
+    }
+    if (tasks.length > prevDataRef.current.tasks.length) {
       const newTask = tasks.find(t => !prevDataRef.current.tasks.some(pt => pt.id === t.id));
       if (newTask && newTask.assignedToEmail === currentUser.email) {
         const taskTime = new Date(newTask.timestamp || 0).getTime();
@@ -910,22 +1126,9 @@ export const AppProvider = ({ children }) => {
 
   useEffect(() => {
     if (currentUser && users && users.length > 0) {
-      const dbUser = users.find(u => u.email === currentUser.email);
+      const dbUser = users.find(u => u.email?.toLowerCase().trim() === currentUser.email?.toLowerCase().trim());
       if (dbUser && JSON.stringify(dbUser) !== JSON.stringify(currentUser)) {
-        if (initialUserPointsSyncedRef.current) {
-          if (currentUser.points !== undefined && dbUser.points !== currentUser.points) {
-            if (dbUser.points > currentUser.points) {
-              addNotification(`Points Earned!`, `You received ${dbUser.points - currentUser.points} points.`, 'info');
-            } else {
-              addNotification(`Points Deducted`, `You lost ${currentUser.points - dbUser.points} points.`, 'danger');
-            }
-          }
-        } else {
-          initialUserPointsSyncedRef.current = true;
-        }
         setCurrentUser(dbUser);
-      } else if (dbUser && !initialUserPointsSyncedRef.current) {
-        initialUserPointsSyncedRef.current = true;
       }
     }
   }, [users, currentUser]);
@@ -1546,11 +1749,17 @@ export const AppProvider = ({ children }) => {
     const db = getDatabase(firebaseApp);
     const safeEmail = escapeEmail(targetEmail);
     update(ref(db, `userNotifications/${safeEmail}`), { [id]: newNotif }).catch(err => console.error(err));
-    if (currentUser?.email === targetEmail) {
-      setNotifications(prev => [...prev, newNotif]);
-      setTimeout(() => removeNotification(id), 5000);
-      if (!isDnd) {
-        playNotificationSound(effectiveSoundType);
+    const isTargetCurrentUser = currentUser?.email && currentUser.email.toLowerCase().trim() === targetEmail.toLowerCase().trim();
+    if (isTargetCurrentUser) {
+      const contentKey = `${title || ''}__${message || ''}`.trim();
+      if (!isNotificationPopped(id) && !isNotificationPopped(contentKey) && !getDeletedNotificationIds().has(id)) {
+        markNotificationAsPopped(id);
+        markNotificationAsPopped(contentKey);
+        setNotifications(prev => [...prev, newNotif]);
+        setTimeout(() => removeNotification(id), 5000);
+        if (!isDnd) {
+          playNotificationSound(effectiveSoundType);
+        }
       }
     }
   };
@@ -2517,6 +2726,9 @@ useEffect(() => {
         removeNotification,
         userNotifications, 
         clearUserNotifications,
+        removeUserNotification,
+        unseenNotificationsCount,
+        markNotificationsAsSeen,
         addDocument,
         deleteDocument,
         submitReport,

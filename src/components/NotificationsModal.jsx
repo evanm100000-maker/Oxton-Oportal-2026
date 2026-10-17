@@ -4,7 +4,13 @@ import { X, Bell, BellOff, Info, ShieldAlert, CheckCircle, Trash2, Award, Megaph
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function NotificationsModal({ isOpen, onClose }) {
-  const { userNotifications, clearUserNotifications, isDnd, toggleDnd } = useApp();
+  const { userNotifications, clearUserNotifications, removeUserNotification, markNotificationsAsSeen, isDnd, toggleDnd } = useApp();
+
+  React.useEffect(() => {
+    if (isOpen && markNotificationsAsSeen) {
+      markNotificationsAsSeen();
+    }
+  }, [isOpen, markNotificationsAsSeen]);
 
   if (!isOpen) return null;
 
@@ -140,11 +146,25 @@ export default function NotificationsModal({ isOpen, onClose }) {
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <h4 style={styles.notifTitle}>{notif.title}</h4>
-                          {notif.soundType === 'points' && (
-                            <span style={{ fontSize: '0.72rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: '700' }}>
-                              +Points
-                            </span>
-                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {notif.soundType === 'points' && (
+                              <span style={{ fontSize: '0.72rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: '700' }}>
+                                +Points
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeUserNotification(notif.id || notif._firebaseKey);
+                              }}
+                              style={styles.deleteItemBtn}
+                              title="Delete notification"
+                              aria-label="Delete notification"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         </div>
                         <p style={styles.notifMessage}>{notif.message}</p>
                         <span style={styles.notifTime}>{new Date(notif.timestamp).toLocaleString()}</span>
@@ -261,5 +281,17 @@ const styles = {
   notifTime: {
     fontSize: '0.75rem',
     color: '#64748b'
+  },
+  deleteItemBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#64748b',
+    padding: '3px',
+    borderRadius: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.15s ease'
   }
 };
