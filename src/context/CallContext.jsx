@@ -77,22 +77,16 @@ export function CallProvider({ children }) {
   const durationTimerRef = useRef(null);
   const callTimeoutRef = useRef(null);
   
-  // Web Audio Nodes
+  // Web Audio Nodes & Sources
   const audioContextRef = useRef(null);
-  const micGainNodeRef = useRef(null);
-  const remoteGainNodeRef = useRef(null);
+  const localSourceNodeRef = useRef(null);
+  const remoteSourceNodeRef = useRef(null);
   const localAnalyserRef = useRef(null);
   const remoteAnalyserRef = useRef(null);
   const meterIntervalRef = useRef(null);
 
-  // Initialize hidden remote audio element
+  // Clean up remote audio element on unmount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const audio = new Audio();
-      audio.autoplay = true;
-      audio.playsInline = true;
-      remoteAudioElRef.current = audio;
-    }
     return () => {
       if (remoteAudioElRef.current) {
         try {
@@ -131,23 +125,17 @@ export function CallProvider({ children }) {
     setPeerVolumeState(num);
     try { localStorage.setItem('oxton_peer_volume', num.toString()); } catch {}
 
-    if (remoteGainNodeRef.current) {
-      remoteGainNodeRef.current.gain.value = isDeafened ? 0 : num / 100;
-    }
     if (remoteAudioElRef.current) {
-      remoteAudioElRef.current.volume = Math.min(1, num / 100);
+      remoteAudioElRef.current.volume = Math.min(1, Math.max(0, num / 100));
+      remoteAudioElRef.current.muted = isDeafened;
     }
   };
 
-  // Update Mic Volume (Input Gain)
+  // Update Mic Volume (Input Gain display scaling)
   const setMicVolume = (vol) => {
     const num = Math.max(0, Math.min(200, Number(vol)));
     setMicVolumeState(num);
     try { localStorage.setItem('oxton_mic_volume', num.toString()); } catch {}
-
-    if (micGainNodeRef.current) {
-      micGainNodeRef.current.gain.value = num / 100;
-    }
   };
 
   // Change Microphone Device
@@ -156,7 +144,7 @@ export function CallProvider({ children }) {
     try { localStorage.setItem('oxton_selected_mic', deviceId); } catch {}
 
     // If currently in a call, switch microphone track live!
-    if (rawLocalStreamRef.current && pcRef.current) {
+    if (localStreamRef.current && pcRef.current) {
       try {
         const newStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -169,32 +157,39 @@ export function CallProvider({ children }) {
         });
 
         // Stop old hardware tracks
-        rawLocalStreamRef.current.getTracks().forEach(t => t.stop());
+        if (rawLocalStreamRef.current) {
+          rawLocalStreamRef.current.getTracks().forEach(t => t.stop());
+        }
+        if (localStreamRef.current && localStreamRef.current !== rawLocalStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(t => t.stop());
+        }
+
         rawLocalStreamRef.current = newStream;
+        localStreamRef.current = newStream;
 
         const newRawTrack = newStream.getAudioTracks()[0];
         if (newRawTrack) {
           newRawTrack.enabled = isDeafened ? false : !isMuted;
-        }
-
-        // Reconnect into Web Audio gain node if active
-        if (audioContextRef.current && micGainNodeRef.current) {
-          try {
-            const ctx = audioContextRef.current;
-            const newSource = ctx.createMediaStreamSource(newStream);
-            newSource.connect(micGainNodeRef.current);
-          } catch (e) {
-            console.debug('Failed to reconnect Web Audio source on device change:', e);
+          const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'audio');
+          if (sender) {
+            await sender.replaceTrack(newRawTrack);
           }
         }
 
-        // Replace track on WebRTC RTCRtpSender
-        const sender = pcRef.current.getSenders().find(s => s.track && s.track.kind === 'audio');
-        if (sender) {
-          // If using Web Audio destination stream, replace with destination track or raw track
-          const trackToSend = localStreamRef.current?.getAudioTracks()[0] || newRawTrack;
-          if (trackToSend) {
-            await sender.replaceTrack(trackToSend);
+        // Reconnect into Web Audio analyser if active
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          try {
+            if (localSourceNodeRef.current) {
+              localSourceNodeRef.current.disconnect();
+            }
+            const ctx = audioContextRef.current;
+            const newSource = ctx.createMediaStreamSource(newStream);
+            localSourceNodeRef.current = newSource;
+            if (localAnalyserRef.current) {
+              newSource.connect(localAnalyserRef.current);
+            }
+          } catch (e) {
+            console.debug('Failed to reconnect Web Audio source on device change:', e);
           }
         }
       } catch (err) {
@@ -205,6 +200,14 @@ export function CallProvider({ children }) {
 
   // Setup Web Audio graph for local microphone with volume gain
   const setupLocalAudioPipeline = async (deviceIdToUse) => {
+    // Stop any existing tracks before acquiring new ones
+    if (rawLocalStreamRef.current) {
+      try { rawLocalStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+    }
+    if (localStreamRef.current && localStreamRef.current !== rawLocalStreamRef.current) {
+      try { localStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+    }
+
     const rawStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: deviceIdToUse ? { exact: deviceIdToUse } : undefined,
@@ -215,6 +218,12 @@ export function CallProvider({ children }) {
       video: false
     });
     rawLocalStreamRef.current = rawStream;
+    localStreamRef.current = rawStream;
+
+    // Apply initial mute/deafen states to track
+    rawStream.getAudioTracks().forEach(track => {
+      track.enabled = isDeafened ? false : !isMuted;
+    });
 
     // Refresh devices list since permissions are now granted
     refreshAudioDevices();
@@ -230,38 +239,55 @@ export function CallProvider({ children }) {
           ctx.resume().catch(() => {});
         }
 
+        if (localSourceNodeRef.current) {
+          try { localSourceNodeRef.current.disconnect(); } catch {}
+        }
         const source = ctx.createMediaStreamSource(rawStream);
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = micVolume / 100;
-        micGainNodeRef.current = gainNode;
-
-        const dest = ctx.createMediaStreamDestination();
-        source.connect(gainNode);
-        gainNode.connect(dest);
+        localSourceNodeRef.current = source;
 
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 256;
-        gainNode.connect(analyser);
+        source.connect(analyser);
         localAnalyserRef.current = analyser;
 
         startMeters();
-
-        // Use the gain-controlled stream for WebRTC transmission
-        localStreamRef.current = dest.stream;
-        return dest.stream;
       }
     } catch (err) {
-      console.debug('Web Audio local pipeline setup fallback to raw stream:', err);
+      console.debug('Web Audio local analyser setup fallback:', err);
     }
 
-    localStreamRef.current = rawStream;
+    // Always send the direct hardware stream through RTCPeerConnection for reliable two-way audio
     return rawStream;
   };
 
-  // Setup Web Audio graph for remote peer with volume gain
+  // Setup remote stream playback & audio analysis
   const playRemoteStream = (stream) => {
     remoteStreamRef.current = stream;
 
+    // 1. Rock-solid playback via HTMLAudioElement attached to DOM
+    if (remoteAudioElRef.current) {
+      remoteAudioElRef.current.srcObject = stream;
+      remoteAudioElRef.current.volume = Math.min(1, Math.max(0, peerVolume / 100));
+      remoteAudioElRef.current.muted = isDeafened;
+      const playPromise = remoteAudioElRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.debug('Autoplay remote stream note:', err);
+          // Unlock autoplay on user click or keypress if browser blocked it
+          const unlock = () => {
+            if (remoteAudioElRef.current) {
+              remoteAudioElRef.current.play().catch(() => {});
+            }
+            window.removeEventListener('click', unlock);
+            window.removeEventListener('keydown', unlock);
+          };
+          window.addEventListener('click', unlock, { once: true });
+          window.addEventListener('keydown', unlock, { once: true });
+        });
+      }
+    }
+
+    // 2. Setup Web Audio AnalyserNode purely for visual meters & speaking indicator
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
@@ -273,33 +299,21 @@ export function CallProvider({ children }) {
           ctx.resume().catch(() => {});
         }
 
+        if (remoteSourceNodeRef.current) {
+          try { remoteSourceNodeRef.current.disconnect(); } catch {}
+        }
         const remoteSource = ctx.createMediaStreamSource(stream);
-        const remoteGain = ctx.createGain();
-        remoteGain.gain.value = isDeafened ? 0 : peerVolume / 100;
-        remoteGainNodeRef.current = remoteGain;
-
-        remoteGain.connect(ctx.destination);
+        remoteSourceNodeRef.current = remoteSource;
 
         const remoteAnalyser = ctx.createAnalyser();
         remoteAnalyser.fftSize = 256;
-        remoteGain.connect(remoteAnalyser);
+        remoteSource.connect(remoteAnalyser);
         remoteAnalyserRef.current = remoteAnalyser;
 
         startMeters();
-        return;
       }
     } catch (err) {
-      console.debug('Web Audio remote pipeline fallback:', err);
-    }
-
-    // Fallback to HTMLAudioElement
-    if (remoteAudioElRef.current) {
-      remoteAudioElRef.current.srcObject = stream;
-      remoteAudioElRef.current.volume = Math.min(1, peerVolume / 100);
-      remoteAudioElRef.current.muted = isDeafened;
-      remoteAudioElRef.current.play().catch(err => {
-        console.debug('Autoplay remote stream note:', err);
-      });
+      console.debug('Web Audio remote analyser setup note:', err);
     }
   };
 
@@ -317,7 +331,8 @@ export function CallProvider({ children }) {
         let sum = 0;
         for (let i = 0; i < 128; i++) sum += dataArrayLocal[i];
         const avg = sum / 128;
-        const level = Math.min(100, Math.round((avg / 128) * 100));
+        const scaledAvg = avg * (micVolume / 100);
+        const level = Math.min(100, Math.round((scaledAvg / 128) * 100));
         setMicInputLevel(level);
         setLocalSpeaking(level > 12);
       } else {
@@ -363,8 +378,15 @@ export function CallProvider({ children }) {
       audioContextRef.current = null;
     }
 
-    micGainNodeRef.current = null;
-    remoteGainNodeRef.current = null;
+    if (localSourceNodeRef.current) {
+      try { localSourceNodeRef.current.disconnect(); } catch {}
+      localSourceNodeRef.current = null;
+    }
+    if (remoteSourceNodeRef.current) {
+      try { remoteSourceNodeRef.current.disconnect(); } catch {}
+      remoteSourceNodeRef.current = null;
+    }
+
     localAnalyserRef.current = null;
     remoteAnalyserRef.current = null;
 
@@ -376,7 +398,7 @@ export function CallProvider({ children }) {
       rawLocalStreamRef.current = null;
     }
 
-    if (localStreamRef.current) {
+    if (localStreamRef.current && localStreamRef.current !== rawLocalStreamRef.current) {
       try {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       } catch {}
@@ -396,6 +418,7 @@ export function CallProvider({ children }) {
     if (remoteAudioElRef.current) {
       try {
         remoteAudioElRef.current.srcObject = null;
+        remoteAudioElRef.current.pause();
       } catch {}
     }
 
@@ -592,6 +615,9 @@ export function CallProvider({ children }) {
     }
 
     try {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
       const streamToSend = await setupLocalAudioPipeline(selectedMicId);
 
       const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -605,9 +631,10 @@ export function CallProvider({ children }) {
       streamToSend.getAudioTracks().forEach(track => pc.addTrack(track, streamToSend));
 
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          playRemoteStream(event.streams[0]);
-        }
+        const stream = (event.streams && event.streams[0])
+          ? event.streams[0]
+          : new MediaStream([event.track]);
+        playRemoteStream(stream);
       };
 
       pc.onicecandidate = (event) => {
@@ -704,6 +731,9 @@ export function CallProvider({ children }) {
     const receiverSafe = currentUser.email.replace(/\./g, ',');
 
     try {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
       const streamToSend = await setupLocalAudioPipeline(selectedMicId);
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
@@ -713,9 +743,10 @@ export function CallProvider({ children }) {
       streamToSend.getAudioTracks().forEach(track => pc.addTrack(track, streamToSend));
 
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          playRemoteStream(event.streams[0]);
-        }
+        const stream = (event.streams && event.streams[0])
+          ? event.streams[0]
+          : new MediaStream([event.track]);
+        playRemoteStream(stream);
       };
 
       pc.onicecandidate = (event) => {
@@ -835,6 +866,9 @@ export function CallProvider({ children }) {
     }
 
     try {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
       const streamToSend = await setupLocalAudioPipeline(selectedMicId);
       const callId = `call_grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const callerSafe = currentUser.email.replace(/\./g, ',');
@@ -847,9 +881,10 @@ export function CallProvider({ children }) {
       streamToSend.getAudioTracks().forEach(track => pc.addTrack(track, streamToSend));
 
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          playRemoteStream(event.streams[0]);
-        }
+        const stream = (event.streams && event.streams[0])
+          ? event.streams[0]
+          : new MediaStream([event.track]);
+        playRemoteStream(stream);
       };
 
       pc.onicecandidate = (event) => {
@@ -954,7 +989,12 @@ export function CallProvider({ children }) {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
 
-    if (rawLocalStreamRef.current) {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = isDeafened ? false : !nextMuted;
+      });
+    }
+    if (rawLocalStreamRef.current && rawLocalStreamRef.current !== localStreamRef.current) {
       rawLocalStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = isDeafened ? false : !nextMuted;
       });
@@ -971,14 +1011,16 @@ export function CallProvider({ children }) {
     const nextDeafened = !isDeafened;
     setIsDeafened(nextDeafened);
 
-    if (remoteGainNodeRef.current) {
-      remoteGainNodeRef.current.gain.value = nextDeafened ? 0 : peerVolume / 100;
-    }
     if (remoteAudioElRef.current) {
       remoteAudioElRef.current.muted = nextDeafened;
     }
 
-    if (rawLocalStreamRef.current) {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
+        track.enabled = nextDeafened ? false : !isMuted;
+      });
+    }
+    if (rawLocalStreamRef.current && rawLocalStreamRef.current !== localStreamRef.current) {
       rawLocalStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = nextDeafened ? false : !isMuted;
       });
@@ -1025,6 +1067,7 @@ export function CallProvider({ children }) {
       }}
     >
       {children}
+      <audio ref={remoteAudioElRef} autoPlay playsInline style={{ display: 'none' }} />
     </CallContext.Provider>
   );
 }
