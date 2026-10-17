@@ -94,7 +94,9 @@ export default function AllStaff() {
       <div style={styles.grid}>
         {displayUsers.filter(user => `${user.firstName} ${user.lastName} ${user.robloxUsername}`.toLowerCase().includes(searchQuery.toLowerCase())).map(user => {
           const safeEmail = user.email ? user.email.replace(/\./g, ',') : '';
-          const isOnline = !!(safeEmail && onlineUsers[safeEmail]);
+          const presence = safeEmail ? onlineUsers[safeEmail] : null;
+          const isOnline = !!presence;
+          const isIdle = presence && typeof presence === 'object' && presence.state === 'idle';
           const isBusy = !!(safeEmail && busyUsers && busyUsers[safeEmail]);
           const badge = calculateBadge(user.email);
           const goldMedals = user.goldMedals || 0;
@@ -121,12 +123,17 @@ export default function AllStaff() {
                   )}
                   {isOnline && (
                     <div 
+                      className={isBusy ? 'presence-dot-busy' : isIdle ? 'presence-dot-idle' : 'presence-dot-active'}
                       style={{
                         ...styles.onlineDot,
                         backgroundColor: isBusy ? '#f59e0b' : '#10b981',
-                        boxShadow: isBusy ? '0 0 8px rgba(245, 158, 11, 0.7)' : '0 0 8px rgba(16, 185, 129, 0.6)'
+                        boxShadow: isBusy 
+                          ? '0 0 8px rgba(245, 158, 11, 0.7)' 
+                          : isIdle 
+                            ? '0 0 10px rgba(16, 185, 129, 0.85)' 
+                            : '0 0 8px rgba(16, 185, 129, 0.6)'
                       }} 
-                      title={isBusy ? "Busy (In Call)" : "Online"}
+                      title={isBusy ? "Busy (In Call)" : isIdle ? "Away / Idle" : "Online (Active)"}
                     />
                   )}
                 </div>

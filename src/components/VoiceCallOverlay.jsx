@@ -67,7 +67,7 @@ export default function VoiceCallOverlay() {
     resumeHeldCall,
     declineWaitingCall
   } = useCall();
-  const { currentUser, users = [] } = useApp();
+  const { currentUser, users = [], onlineUsers = {}, busyUsers = {} } = useApp();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -121,16 +121,26 @@ export default function VoiceCallOverlay() {
     return setOfMembers;
   }, [currentUser, activeCall]);
 
-  const eligibleMergeStaff = (users || []).filter(u => {
-    if (!u || !u.approved || u.role === 'passenger') return false;
-    const email = (u.email || '').toLowerCase().trim();
-    if (activeMembersSet.has(email)) return false;
-    if (!mergeSearch.trim()) return true;
-    const q = mergeSearch.toLowerCase().trim();
-    const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
-    const roblox = (u.robloxUsername || '').toLowerCase();
-    return fullName.includes(q) || roblox.includes(q) || email.includes(q);
-  });
+  const eligibleMergeStaff = (users || [])
+    .filter(u => {
+      if (!u || !u.approved || u.role === 'passenger') return false;
+      const email = (u.email || '').toLowerCase().trim();
+      if (activeMembersSet.has(email)) return false;
+      if (!mergeSearch.trim()) return true;
+      const q = mergeSearch.toLowerCase().trim();
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+      const roblox = (u.robloxUsername || '').toLowerCase();
+      return fullName.includes(q) || roblox.includes(q) || email.includes(q);
+    })
+    .sort((a, b) => {
+      const aSafe = (a.email || '').replace(/\./g, ',');
+      const bSafe = (b.email || '').replace(/\./g, ',');
+      const aOnline = !!onlineUsers[aSafe];
+      const bOnline = !!onlineUsers[bSafe];
+      if (aOnline && !bOnline) return -1;
+      if (!aOnline && bOnline) return 1;
+      return (a.firstName || '').localeCompare(b.firstName || '');
+    });
 
   const handleMergeUser = async (targetUser) => {
     const name = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.robloxUsername;
@@ -790,6 +800,12 @@ export default function VoiceCallOverlay() {
                   eligibleMergeStaff.map(staff => {
                     const isAdded = !!justMerged[staff.email];
                     const fullName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || staff.robloxUsername;
+                    const safeEmail = (staff.email || '').replace(/\./g, ',');
+                    const presence = safeEmail ? onlineUsers[safeEmail] : null;
+                    const isOnline = !!presence;
+                    const isIdle = presence && typeof presence === 'object' && presence.state === 'idle';
+                    const isBusy = !!(busyUsers && busyUsers[safeEmail]);
+
                     return (
                       <div
                         key={staff.email}
@@ -803,24 +819,47 @@ export default function VoiceCallOverlay() {
                           border: '1px solid rgba(255, 255, 255, 0.06)'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            background: staff.profilePicture ? 'transparent' : '#8b5cf6',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            overflow: 'hidden',
-                            fontSize: '0.85rem',
-                            fontWeight: '700',
-                            color: '#fff'
-                          }}>
-                            {staff.profilePicture ? (
-                              <img src={staff.profilePicture} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              fullName.charAt(0)
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ position: 'relative' }}>
+                            <div style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              background: staff.profilePicture ? 'transparent' : '#8b5cf6',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              overflow: 'hidden',
+                              fontSize: '0.85rem',
+                              fontWeight: '700',
+                              color: '#fff'
+                            }}>
+                              {staff.profilePicture ? (
+                                <img src={staff.profilePicture} alt={fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : (
+                                fullName.charAt(0)
+                              )}
+                            </div>
+                            {isOnline && (
+                              <span 
+                                className={isBusy ? 'presence-dot-busy' : isIdle ? 'presence-dot-idle' : 'presence-dot-active'}
+                                style={{
+                                  position: 'absolute',
+                                  bottom: '-1px',
+                                  right: '-1px',
+                                  width: '9px',
+                                  height: '9px',
+                                  borderRadius: '50%',
+                                  backgroundColor: isBusy ? '#f59e0b' : '#10b981',
+                                  border: '2px solid #0f172a',
+                                  boxShadow: isBusy 
+                                    ? '0 0 6px rgba(245, 158, 11, 0.7)' 
+                                    : isIdle 
+                                      ? '0 0 8px rgba(16, 185, 129, 0.85)' 
+                                      : '0 0 6px rgba(16, 185, 129, 0.6)'
+                                }}
+                                title={isBusy ? "Busy (In Call)" : isIdle ? "Away / Idle" : "Online (Active)"}
+                              />
                             )}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>

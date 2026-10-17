@@ -870,69 +870,75 @@ export const AppProvider = ({ children }) => {
     });
 
     const isPresenceOnline = (val) => {
-      if (!val) return false;
-      if (val === true) return true;
+      if (!val) return null;
+      const now = Date.now();
+      const STALE_THRESHOLD_MS = 40000; // 40 seconds heartbeat expiry threshold
+
+      if (val === true) return { isOnline: true, state: 'active', lastSeen: now };
+
       if (typeof val === 'object') {
-        return Object.values(val).some(v => v === true);
+        const entries = Object.values(val).filter(Boolean);
+        if (entries.length === 0) return null;
+
+        let hasActive = false;
+        let hasIdle = false;
+        let maxLastSeen = 0;
+
+        for (const entry of entries) {
+          if (entry === true) {
+            hasActive = true;
+            maxLastSeen = now;
+            break;
+          }
+          if (typeof entry === 'object') {
+            const ls = Number(entry.lastSeen) || 0;
+            // Only count if heartbeat is fresh (within 40 seconds)
+            if (ls > 0 && (now - ls < STALE_THRESHOLD_MS)) {
+              if (ls > maxLastSeen) maxLastSeen = ls;
+              if (entry.state === 'idle') {
+                hasIdle = true;
+              } else {
+                hasActive = true;
+              }
+            }
+          }
+        }
+
+        if (hasActive) {
+          return { isOnline: true, state: 'active', lastSeen: maxLastSeen };
+        }
+        if (hasIdle) {
+          return { isOnline: true, state: 'idle', lastSeen: maxLastSeen };
+        }
       }
-      return false;
+      return null;
     };
 
     const onlinePresenceRef = ref(db, 'onlinePresence');
-    const offlineDebounceTimers = {};
+    let latestPresenceSnapshot = {};
+
+    const recomputeOnlineUsers = (data) => {
+      const nextState = {};
+      Object.keys(data).forEach(userKey => {
+        const status = isPresenceOnline(data[userKey]);
+        if (status) {
+          nextState[userKey] = status;
+        }
+      });
+      setOnlineUsers(nextState);
+    };
 
     const unsubscribeOnline = onValue(onlinePresenceRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      
-      setOnlineUsers(prevOnline => {
-        const nextState = { ...prevOnline };
-
-        // Process incoming entries
-        Object.keys(data).forEach(userKey => {
-          const isOnline = isPresenceOnline(data[userKey]);
-          if (isOnline) {
-            // Cancel any pending removal timer
-            if (offlineDebounceTimers[userKey]) {
-              clearTimeout(offlineDebounceTimers[userKey]);
-              delete offlineDebounceTimers[userKey];
-            }
-            nextState[userKey] = true;
-          } else {
-            // If currently online, delay switching to offline by 5 seconds (grace period for page refresh)
-            if (nextState[userKey] && !offlineDebounceTimers[userKey]) {
-              offlineDebounceTimers[userKey] = setTimeout(() => {
-                setOnlineUsers(current => {
-                  const updated = { ...current };
-                  delete updated[userKey];
-                  return updated;
-                });
-                delete offlineDebounceTimers[userKey];
-              }, 5000);
-            } else if (!nextState[userKey]) {
-              delete nextState[userKey];
-            }
-          }
-        });
-
-        // Any keys in prevOnline that are completely missing in data
-        Object.keys(nextState).forEach(userKey => {
-          if (data[userKey] === undefined) {
-            if (!offlineDebounceTimers[userKey]) {
-              offlineDebounceTimers[userKey] = setTimeout(() => {
-                setOnlineUsers(current => {
-                  const updated = { ...current };
-                  delete updated[userKey];
-                  return updated;
-                });
-                delete offlineDebounceTimers[userKey];
-              }, 5000);
-            }
-          }
-        });
-
-        return nextState;
-      });
+      latestPresenceSnapshot = snapshot.val() || {};
+      recomputeOnlineUsers(latestPresenceSnapshot);
     });
+
+    // Check periodically so closed tabs/dead heartbeats expire within seconds automatically
+    const heartbeatScanInterval = setInterval(() => {
+      if (latestPresenceSnapshot) {
+        recomputeOnlineUsers(latestPresenceSnapshot);
+      }
+    }, 10000);
 
     const busyUsersRef = ref(db, 'busyUsers');
     const unsubscribeBusy = onValue(busyUsersRef, (snapshot) => {
@@ -965,7 +971,7 @@ export const AppProvider = ({ children }) => {
       if (typeof unsubscribeOnline === 'function') unsubscribeOnline();
       if (typeof unsubscribeBusy === 'function') unsubscribeBusy();
       if (typeof unsubscribeGroupChats === 'function') unsubscribeGroupChats();
-      Object.keys(offlineDebounceTimers).forEach(k => clearTimeout(offlineDebounceTimers[k]));
+      clearInterval(heartbeatScanInterval);
     };
   }, []);
 
@@ -987,22 +993,112 @@ export const AppProvider = ({ children }) => {
     }
 
     const myTabRef = ref(db, `onlinePresence/${safeEmail}/${tabId}`);
+    const userPresenceRootRef = ref(db, `onlinePresence/${safeEmail}`);
     const connectedRef = ref(db, '.info/connected');
+
+    let currentPresenceState = document.hidden ? 'idle' : 'active';
+    let lastActivityTime = Date.now();
+    let heartbeatTimer = null;
+    let idleCheckTimer = null;
+
+    const writePresence = (stateToWrite) => {
+      const payload = {
+        state: stateToWrite,
+        lastSeen: Date.now(),
+        tabId
+      };
+      set(myTabRef, payload).catch(() => {});
+    };
+
+    // User interaction events: mouse, keys, clicks, touch
+    const handleUserInteraction = () => {
+      lastActivityTime = Date.now();
+      if (currentPresenceState === 'idle' && !document.hidden) {
+        currentPresenceState = 'active';
+        writePresence('active');
+      }
+    };
+
+    // Tab visibility events: tab hidden -> 'idle', tab visible -> 'active'
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        currentPresenceState = 'idle';
+        writePresence('idle');
+      } else {
+        lastActivityTime = Date.now();
+        currentPresenceState = 'active';
+        writePresence('active');
+      }
+    };
+
+    // Idle monitor: if no user action for 60 seconds, transition to 'idle'
+    idleCheckTimer = setInterval(() => {
+      const isAway = Date.now() - lastActivityTime > 60000;
+      const shouldBeIdle = document.hidden || isAway;
+      const targetState = shouldBeIdle ? 'idle' : 'active';
+      if (targetState !== currentPresenceState) {
+        currentPresenceState = targetState;
+        writePresence(targetState);
+      }
+    }, 10000);
+
+    // Heartbeat: update lastSeen every 12 seconds so server and peers know tab is alive
+    heartbeatTimer = setInterval(() => {
+      writePresence(currentPresenceState);
+    }, 12000);
+
+    const cleanRemove = () => {
+      try {
+        remove(myTabRef);
+      } catch {}
+    };
+
+    window.addEventListener('mousemove', handleUserInteraction, { passive: true });
+    window.addEventListener('keydown', handleUserInteraction, { passive: true });
+    window.addEventListener('click', handleUserInteraction, { passive: true });
+    window.addEventListener('touchstart', handleUserInteraction, { passive: true });
+    window.addEventListener('scroll', handleUserInteraction, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', cleanRemove);
+    window.addEventListener('pagehide', cleanRemove);
 
     const unsubConnected = onValue(connectedRef, (snap) => {
       if (snap.val() === true) {
-        // When connection is severed (browser shutdown, tab closed, network loss),
-        // Firebase server will execute this remove instruction on the server side!
-        onDisconnect(myTabRef).remove().then(() => {
-          set(myTabRef, true).catch(() => {});
-        }).catch(() => {
-          set(myTabRef, true).catch(() => {});
-        });
+        // Automatically remove this tab entry on Firebase server disconnect
+        onDisconnect(myTabRef).remove().catch(() => {});
+        writePresence(currentPresenceState);
+
+        // Also sweep any stale orphaned tabs under this user's email (>40s old)
+        onValue(userPresenceRootRef, (rootSnap) => {
+          const val = rootSnap.val();
+          if (val && typeof val === 'object') {
+            const now = Date.now();
+            Object.keys(val).forEach(k => {
+              if (k !== tabId) {
+                const item = val[k];
+                if (item === true || !item || !item.lastSeen || (now - item.lastSeen > 40000)) {
+                  remove(ref(db, `onlinePresence/${safeEmail}/${k}`)).catch(() => {});
+                }
+              }
+            });
+          }
+        }, { onlyOnce: true });
       }
     });
 
     return () => {
       if (typeof unsubConnected === 'function') unsubConnected();
+      clearInterval(heartbeatTimer);
+      clearInterval(idleCheckTimer);
+      window.removeEventListener('mousemove', handleUserInteraction);
+      window.removeEventListener('keydown', handleUserInteraction);
+      window.removeEventListener('click', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
+      window.removeEventListener('scroll', handleUserInteraction);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', cleanRemove);
+      window.removeEventListener('pagehide', cleanRemove);
+      cleanRemove();
     };
   }, [currentUser?.email]);
 
@@ -1284,7 +1380,6 @@ export const AppProvider = ({ children }) => {
         onDisconnect(ref(db, `onlinePresence/${safeEmail}`)).cancel();
       } catch {}
       remove(ref(db, `onlinePresence/${safeEmail}`)).catch(() => {});
-      set(ref(db, `onlinePresence/${safeEmail}`), false).catch(() => {});
       setOnlineUsers(prev => {
         const next = { ...prev };
         delete next[safeEmail];

@@ -322,7 +322,10 @@ export default function FlightQuotaProgress() {
             </thead>
             <tbody>
               {filteredStaff.map(member => {
-                const isOnline = member.email && onlineUsers[member.email.replace(/\./g, ',')];
+                const safeEmail = member.email ? member.email.replace(/\./g, ',') : '';
+                const presence = safeEmail ? onlineUsers[safeEmail] : null;
+                const isOnline = !!presence;
+                const isIdle = presence && typeof presence === 'object' && presence.state === 'idle';
                 const stats = member.stats;
 
                 return (
@@ -336,7 +339,18 @@ export default function FlightQuotaProgress() {
                           ) : (
                             <span>{member.firstName?.charAt(0) || 'U'}</span>
                           )}
-                          {isOnline && <div style={styles.onlineDot} title="Online" />}
+                          {isOnline && (
+                            <div 
+                              className={isIdle ? 'presence-dot-idle' : 'presence-dot-active'}
+                              style={{
+                                ...styles.onlineDot,
+                                boxShadow: isIdle 
+                                  ? '0 0 10px rgba(16, 185, 129, 0.85)' 
+                                  : '0 0 8px rgba(16, 185, 129, 0.6)'
+                              }}
+                              title={isIdle ? "Away / Idle" : "Online (Active)"} 
+                            />
+                          )}
                         </div>
                         <div>
                           <div style={{ fontWeight: '700', color: 'var(--color-text-main)' }}>

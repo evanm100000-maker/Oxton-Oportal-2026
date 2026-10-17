@@ -305,6 +305,32 @@ button {
   50% { transform: scale(1.15); opacity: 0.4; }
 }
 
+/* Presence Status Dots & Animations */
+@keyframes presence-idle-fade {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);
+  }
+  50% {
+    opacity: 0.2;
+    transform: scale(0.82);
+    box-shadow: 0 0 2px rgba(16, 185, 129, 0.15);
+  }
+}
+
+.presence-dot-idle {
+  animation: presence-idle-fade 2s infinite ease-in-out !important;
+}
+
+.presence-dot-active {
+  opacity: 1 !important;
+}
+
+.presence-dot-busy {
+  opacity: 1 !important;
+}
+
 .spinner-container { display: inline-flex; align-items: center; justify-content: center; position: relative; }
 .spinner-ring {
   width: 28px; height: 28px;

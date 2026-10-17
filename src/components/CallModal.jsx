@@ -27,6 +27,12 @@ export default function CallModal({ isOpen, onClose }) {
       const bOnline = !!onlineUsers[bSafe];
       if (aOnline && !bOnline) return -1;
       if (!aOnline && bOnline) return 1;
+      if (aOnline && bOnline) {
+        const aActive = onlineUsers[aSafe]?.state === 'active';
+        const bActive = onlineUsers[bSafe]?.state === 'active';
+        if (aActive && !bActive) return -1;
+        if (!aActive && bActive) return 1;
+      }
       return (a.firstName || '').localeCompare(b.firstName || '');
     });
 
@@ -74,7 +80,9 @@ export default function CallModal({ isOpen, onClose }) {
           ) : (
             filteredUsers.map(user => {
               const safeEmail = (user.email || '').replace(/\./g, ',');
-              const isOnline = !!onlineUsers[safeEmail];
+              const presence = safeEmail ? onlineUsers[safeEmail] : null;
+              const isOnline = !!presence;
+              const isIdle = presence && typeof presence === 'object' && presence.state === 'idle';
               const isBusy = !!(busyUsers && busyUsers[safeEmail]);
 
               return (
@@ -90,12 +98,17 @@ export default function CallModal({ isOpen, onClose }) {
                       )}
                       {isOnline && (
                         <span 
+                          className={isBusy ? 'presence-dot-busy' : isIdle ? 'presence-dot-idle' : 'presence-dot-active'}
                           style={{
                             ...styles.onlineDot,
                             backgroundColor: isBusy ? '#f59e0b' : '#10b981',
-                            boxShadow: isBusy ? '0 0 8px rgba(245, 158, 11, 0.7)' : '0 0 8px rgba(16, 185, 129, 0.6)'
+                            boxShadow: isBusy 
+                              ? '0 0 8px rgba(245, 158, 11, 0.7)' 
+                              : isIdle 
+                                ? '0 0 10px rgba(16, 185, 129, 0.85)' 
+                                : '0 0 8px rgba(16, 185, 129, 0.6)'
                           }} 
-                          title={isBusy ? "Busy (In Call)" : "Online"} 
+                          title={isBusy ? "Busy (In Call)" : isIdle ? "Away / Idle" : "Online (Active)"} 
                         />
                       )}
                     </div>
@@ -109,6 +122,8 @@ export default function CallModal({ isOpen, onClose }) {
                         @{user.robloxUsername || 'unknown'} • {isOnline ? (
                           isBusy ? (
                             <span style={{ color: '#f59e0b', fontWeight: 600 }}>Busy (In Call)</span>
+                          ) : isIdle ? (
+                            <span style={{ color: '#34d399', fontWeight: 600 }}>Away / Idle</span>
                           ) : (
                             <span style={{ color: '#10b981', fontWeight: 600 }}>Online</span>
                           )
