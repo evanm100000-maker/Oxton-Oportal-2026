@@ -64,22 +64,15 @@ export function stopOutgoingCallingSound() {
 
 export function playCallEndSound() {
   try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(420, ctx.currentTime);
-    osc.frequency.setValueAtTime(310, ctx.currentTime + 0.12);
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.3);
-    setTimeout(() => {
-      try { ctx.close(); } catch {}
-    }, 400);
-  } catch {}
+    const endAudio = new Audio('/sounds/call-end.mp3');
+    endAudio.volume = 0.85;
+    const p = endAudio.play();
+    if (p !== undefined) {
+      p.catch(err => {
+        console.debug('Autoplay prevented call-end sound:', err?.message || err);
+      });
+    }
+  } catch (err) {
+    console.debug('Failed to play call-end sound:', err);
+  }
 }

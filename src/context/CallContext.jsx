@@ -204,8 +204,9 @@ export function CallProvider({ children }) {
         setCallStatus(data.status);
         stopOutgoingCallingSound();
         stopIncomingRingtone();
+        playCallEndSound();
         setTimeout(() => {
-          cleanupCall(true);
+          cleanupCall(false);
         }, 1800);
         return;
       }
