@@ -364,7 +364,7 @@ export default function LoginScreen({ onBack }) {
           )}
         </form>
       </div>
-      <div style={styles.versionText}>V1.2</div>
+      <div style={styles.versionText}>V2</div>
     </div>
   );
 }
