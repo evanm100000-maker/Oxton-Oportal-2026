@@ -423,6 +423,8 @@ export const AppProvider = ({ children }) => {
   const [pageConfig, setPageConfig] = useFirebaseObject('pageConfig', initialPageConfig);
   const [notifications, setNotifications] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState({});
+  const [busyUsers, setBusyUsers] = useState({});
+  const [groupChats, setGroupChats] = useState([]);
   const [siteVersion, setSiteVersion] = useState(null);
   const POPPED_NOTIFS_KEY = 'oxton_popped_notifs_v1';
   const DELETED_NOTIFS_KEY = 'oxton_deleted_notifs_v1';
@@ -651,13 +653,22 @@ export const AppProvider = ({ children }) => {
   const visibleChatMessages = useMemo(() => {
     if (!currentUser) return [];
     const safeMessages = Array.isArray(chatMessages) ? chatMessages : [];
+    const myEmail = (currentUser.email || '').toLowerCase().trim();
     
     return safeMessages.filter(m => {
+      if (!m || !m.channel) return false;
       if (m.channel === 'Staff Chat' || m.channel === 'Global') return true;
       if (m.channel === 'Security') return !!currentUser.isAdmin;
+      if (m.channel.startsWith('group_')) {
+        const groupId = m.channel.replace('group_', '');
+        const targetGroup = (groupChats || []).find(g => g.id === groupId);
+        if (!targetGroup) return false;
+        const members = (targetGroup.members || []).map(e => (e || '').toLowerCase().trim());
+        return members.includes(myEmail) || !!currentUser.isAdmin;
+      }
       return true;
     });
-  }, [chatMessages, currentUser]);
+  }, [chatMessages, currentUser, groupChats]);
 
   useEffect(() => {
     const safeParse = (storage, key, fallback) => {
@@ -918,9 +929,27 @@ export const AppProvider = ({ children }) => {
       });
     });
 
+    const busyUsersRef = ref(db, 'busyUsers');
+    const unsubscribeBusy = onValue(busyUsersRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setBusyUsers(data);
+    });
+
+    const groupChatsRef = ref(db, 'groupChats');
+    const unsubscribeGroupChats = onValue(groupChatsRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const groupsArray = Object.keys(data).map(key => ({
+        id: key,
+        ...data[key]
+      }));
+      setGroupChats(groupsArray);
+    });
+
     return () => {
       if (typeof unsubscribeSiteVersion === 'function') unsubscribeSiteVersion();
       if (typeof unsubscribeOnline === 'function') unsubscribeOnline();
+      if (typeof unsubscribeBusy === 'function') unsubscribeBusy();
+      if (typeof unsubscribeGroupChats === 'function') unsubscribeGroupChats();
       Object.keys(offlineDebounceTimers).forEach(k => clearTimeout(offlineDebounceTimers[k]));
     };
   }, []);
@@ -2594,10 +2623,75 @@ useEffect(() => {
     );
   };
 
-  const deleteMeeting = (meetingId) => {
-    setMeetings(prev => prev.filter(m => m.id !== meetingId));
-    logAction('meeting_deleted', `Deleted meeting: ${meetingId}`);
+  const createGroupChat = async (name, memberEmails = []) => {
+    if (!currentUser) return null;
+    const db = getDatabase(firebaseApp);
+    const groupId = 'grp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const membersSet = new Set([currentUser.email, ...memberEmails]);
+    const members = Array.from(membersSet).filter(Boolean);
+
+    const newGroup = {
+      id: groupId,
+      name: name.trim() || 'New Group',
+      createdBy: currentUser.email,
+      createdByName: `${currentUser.firstName} ${currentUser.lastName}`.trim() || currentUser.robloxUsername,
+      createdAt: Date.now(),
+      members
+    };
+
+    try {
+      await set(ref(db, `groupChats/${groupId}`), newGroup);
+      logAction('group_chat_created', `Created group chat: ${newGroup.name}`, { groupId, members });
+      return newGroup;
+    } catch (e) {
+      console.error('Failed to create group chat:', e);
+      return null;
+    }
   };
+
+  const addGroupMember = async (groupId, email) => {
+    if (!groupId || !email) return;
+    const db = getDatabase(firebaseApp);
+    const group = (groupChats || []).find(g => g.id === groupId);
+    if (!group) return;
+    const members = Array.from(new Set([...(group.members || []), email]));
+    try {
+      await update(ref(db, `groupChats/${groupId}`), { members });
+      logAction('group_member_added', `Added ${email} to group ${group.name}`, { groupId, email });
+    } catch (e) {
+      console.error('Failed to add group member:', e);
+    }
+  };
+
+  const leaveGroupChat = async (groupId) => {
+    if (!currentUser || !groupId) return;
+    const db = getDatabase(firebaseApp);
+    const group = (groupChats || []).find(g => g.id === groupId);
+    if (!group) return;
+    const remaining = (group.members || []).filter(e => e.toLowerCase() !== currentUser.email.toLowerCase());
+    try {
+      if (remaining.length === 0) {
+        await remove(ref(db, `groupChats/${groupId}`));
+      } else {
+        await update(ref(db, `groupChats/${groupId}`), { members: remaining });
+      }
+      logAction('group_chat_left', `Left group chat ${group.name}`, { groupId });
+    } catch (e) {
+      console.error('Failed to leave group chat:', e);
+    }
+  };
+
+  const deleteGroupChat = async (groupId) => {
+    if (!groupId) return;
+    const db = getDatabase(firebaseApp);
+    try {
+      await remove(ref(db, `groupChats/${groupId}`));
+      logAction('group_chat_deleted', `Deleted group chat ${groupId}`);
+    } catch (e) {
+      console.error('Failed to delete group chat:', e);
+    }
+  };
+
 
   const addStaffNote = (staffEmail, type, text) => {
     const newNote = {
@@ -2679,6 +2773,12 @@ useEffect(() => {
         tickets,
         staffNotes,
         onlineUsers,
+        busyUsers,
+        groupChats,
+        createGroupChat,
+        addGroupMember,
+        leaveGroupChat,
+        deleteGroupChat,
         siteVersion, setSiteVersion,
         pointLogs, setPointLogs,
         theme,

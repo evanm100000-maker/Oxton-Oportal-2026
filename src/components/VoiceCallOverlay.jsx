@@ -64,9 +64,21 @@ export default function VoiceCallOverlay() {
   // Determine other user's info for active call
   const peerInfo = React.useMemo(() => {
     if (!activeCall) return { name: 'Staff Member', pfp: '', roblox: '', muted: false, deafened: false };
+    if (activeCall.type === 'group') {
+      const isCaller = callRole === 'caller';
+      return {
+        name: isCaller ? (activeCall.groupTitle || 'Group Voice Call') : (activeCall.callerName || 'Group Voice Call'),
+        subTitle: isCaller ? `${activeCall.members?.length || 0} Members in Call` : (activeCall.groupTitle || 'Group Voice Call'),
+        pfp: isCaller ? '' : activeCall.callerPfp,
+        roblox: isCaller ? '' : activeCall.callerRoblox,
+        muted: isCaller ? activeCall.receiverMuted : activeCall.callerMuted,
+        deafened: isCaller ? activeCall.receiverDeafened : activeCall.callerDeafened
+      };
+    }
     const isCaller = callRole === 'caller';
     return {
       name: isCaller ? activeCall.receiverName : activeCall.callerName,
+      subTitle: isCaller ? (activeCall.receiverRoblox ? `@${activeCall.receiverRoblox}` : '') : (activeCall.callerRoblox ? `@${activeCall.callerRoblox}` : ''),
       pfp: isCaller ? activeCall.receiverPfp : activeCall.callerPfp,
       roblox: isCaller ? activeCall.receiverRoblox : activeCall.callerRoblox,
       muted: isCaller ? activeCall.receiverMuted : activeCall.callerMuted,
@@ -111,7 +123,11 @@ export default function VoiceCallOverlay() {
 
               {/* Caller Details */}
               <div style={styles.callerDetails}>
-                <span style={styles.callTypeLabel}>Incoming Voice Call</span>
+                <span style={styles.callTypeLabel}>
+                  {incomingCall.type === 'group' 
+                    ? (incomingCall.groupTitle || 'Incoming Group Call') 
+                    : 'Incoming Voice Call'}
+                </span>
                 <h3 style={styles.callerName}>{incomingCall.callerName || 'Staff Member'}</h3>
                 {incomingCall.callerRoblox && (
                   <span style={styles.callerRoblox}>@{incomingCall.callerRoblox}</span>
@@ -265,7 +281,11 @@ export default function VoiceCallOverlay() {
 
                   <div style={styles.peerDetails}>
                     <h4 style={styles.peerName}>{peerInfo.name}</h4>
-                    {peerInfo.roblox && <span style={styles.peerRoblox}>@{peerInfo.roblox}</span>}
+                    {peerInfo.roblox ? (
+                      <span style={styles.peerRoblox}>@{peerInfo.roblox}</span>
+                    ) : peerInfo.subTitle ? (
+                      <span style={styles.peerRoblox}>{peerInfo.subTitle}</span>
+                    ) : null}
                     <div style={styles.peerSubStatus}>
                       {remoteSpeaking ? (
                         <span style={{ color: '#10b981', fontSize: '0.78rem', fontWeight: 600 }}>Speaking...</span>

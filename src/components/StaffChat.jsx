@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCall } from '../context/CallContext';
-import { Send, ShieldAlert, Users, MessageSquare, Globe, Reply, Trash2, Flag, Smile, X, Image as ImageIcon, Paperclip, Plus, Phone } from 'lucide-react';
+import { Send, ShieldAlert, Users, MessageSquare, Globe, Reply, Trash2, Flag, Smile, X, Image as ImageIcon, Paperclip, Plus, Phone, PhoneCall, UserPlus, LogOut } from 'lucide-react';
 import { storage } from "../firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -38,8 +38,23 @@ export const formatMessageLocalTime = (timestamp, use24h = false) => {
 };
 
 export default function StaffChat() {
-  const { currentUser, chatMessages, addChatMessage, deleteChatMessage, addMessageReaction, submitReport, setCustomRole, users, use24HourClock } = useApp();
-  const { initiateCall } = useCall();
+  const { 
+    currentUser, 
+    chatMessages, 
+    addChatMessage, 
+    deleteChatMessage, 
+    addMessageReaction, 
+    submitReport, 
+    setCustomRole, 
+    users, 
+    use24HourClock,
+    groupChats = [],
+    createGroupChat,
+    addGroupMember,
+    leaveGroupChat,
+    deleteGroupChat
+  } = useApp();
+  const { initiateCall, initiateGroupCall } = useCall();
   const [activeChannel, setActiveChannel] = useState('Staff Chat');
   const [inputText, setInputText] = useState('');
   const [rolePromptTarget, setRolePromptTarget] = useState(null);
@@ -49,6 +64,11 @@ export default function StaffChat() {
   const [hoveredMsgId, setHoveredMsgId] = useState(null);
   const [attachment, setAttachment] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [memberToAdd, setMemberToAdd] = useState('');
   const messagesEndRef = useRef(null);
 
   const safeChatMessages = Array.isArray(chatMessages) ? chatMessages : [];
@@ -142,11 +162,55 @@ export default function StaffChat() {
 
 
 
+  const myEmail = (currentUser?.email || '').toLowerCase().trim();
+  const myGroups = (groupChats || []).filter(g => {
+    if (!g || !g.members) return false;
+    const members = g.members.map(e => (e || '').toLowerCase().trim());
+    return members.includes(myEmail) || !!currentUser?.isAdmin;
+  });
+
+  const currentGroup = activeChannel.startsWith('group_')
+    ? (groupChats || []).find(g => g.id === activeChannel.replace('group_', ''))
+    : null;
+
   const getChannelName = () => {
     if (['Staff Chat', 'Security', 'Global'].includes(activeChannel)) {
       return `# ${activeChannel.toLowerCase().replace(' ', '-')}`;
     }
+    if (currentGroup) {
+      return `# ${currentGroup.name}`;
+    }
     return '# unknown';
+  };
+
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    if (!newGroupName.trim()) return;
+    const group = await createGroupChat(newGroupName.trim(), selectedGroupMembers);
+    if (group) {
+      setActiveChannel(`group_${group.id}`);
+      setShowCreateGroupModal(false);
+      setNewGroupName('');
+      setSelectedGroupMembers([]);
+    }
+  };
+
+  const handleCallCurrentGroup = () => {
+    if (!currentGroup) return;
+    const otherMembers = (currentGroup.members || []).filter(e => e.toLowerCase() !== myEmail);
+    if (otherMembers.length === 0) {
+      alert("There are no other members in this group to call.");
+      return;
+    }
+    initiateGroupCall(`Group Call • ${currentGroup.name}`, otherMembers);
+  };
+
+  const handleAddMemberToCurrentGroup = async (e) => {
+    e.preventDefault();
+    if (!currentGroup || !memberToAdd) return;
+    await addGroupMember(currentGroup.id, memberToAdd);
+    setShowAddMemberModal(false);
+    setMemberToAdd('');
   };
 
   return (
@@ -187,17 +251,146 @@ export default function StaffChat() {
         >
           <Globe size={16} /> Global
         </button>
+
+        {/* Group Chats Section */}
+        <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '4px' }}>
+          <h3 style={{ ...styles.sidebarTitle, marginBottom: 0 }}>
+            <Users size={16} /> Group Chats
+          </h3>
+          <button
+            onClick={() => setShowCreateGroupModal(true)}
+            style={{
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              color: '#60a5fa',
+              borderRadius: '6px',
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            title="Create New Group Chat"
+          >
+            <Plus size={12} /> New
+          </button>
+        </div>
+
+        {myGroups.length === 0 ? (
+          <div style={{ fontSize: '0.8rem', color: '#6b7280', padding: '8px 12px', fontStyle: 'italic' }}>
+            No group chats yet. Click "+ New" to create one.
+          </div>
+        ) : (
+          myGroups.map(group => {
+            const isGroupActive = activeChannel === `group_${group.id}`;
+            const memberCount = (group.members || []).length;
+            return (
+              <button
+                key={group.id}
+                onClick={() => setActiveChannel(`group_${group.id}`)}
+                style={{
+                  ...styles.channelBtn,
+                  background: isGroupActive ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                  borderColor: isGroupActive ? '#8b5cf6' : 'transparent',
+                  color: isGroupActive ? 'var(--color-text-main)' : '#9ca3af',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Users size={15} color={isGroupActive ? '#a78bfa' : '#9ca3af'} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{group.name}</span>
+                </div>
+                <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: 'rgba(255,255,255,0.08)', color: '#9ca3af' }}>
+                  {memberCount}
+                </span>
+              </button>
+            );
+          })
+        )}
       </div>
 
       {/* Main Chat Area */}
       <div style={styles.chatArea} className="glass-panel">
-        <div style={styles.chatHeader}>
-          <h2 style={styles.channelName}>{getChannelName()}</h2>
-          <span style={styles.channelDesc}>
-            {activeChannel === 'Security' ? 'Restricted security operations channel.' : 
-             activeChannel === 'Staff Chat' ? 'General staff communication channel.' : 
-             activeChannel === 'Global' ? 'Global announcements channel.' : ''}
-          </span>
+        <div style={{ ...styles.chatHeader, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={styles.channelName}>{getChannelName()}</h2>
+            <span style={styles.channelDesc}>
+              {activeChannel === 'Security' ? 'Restricted security operations channel.' : 
+               activeChannel === 'Staff Chat' ? 'General staff communication channel.' : 
+               activeChannel === 'Global' ? 'Global announcements channel.' : 
+               currentGroup ? `Group chat • ${currentGroup.members?.length || 0} members` : ''}
+            </span>
+          </div>
+
+          {/* Group Call & Actions Header if current channel is a Group */}
+          {currentGroup && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={handleCallCurrentGroup}
+                className="btn-success"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                }}
+                title="Call all group members"
+              >
+                <PhoneCall size={15} />
+                <span>Call Group</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddMemberModal(true)}
+                className="btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  fontSize: '0.85rem',
+                  cursor: 'pointer'
+                }}
+                title="Add member to group"
+              >
+                <UserPlus size={15} />
+                <span>Add</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (window.confirm(`Leave group "${currentGroup.name}"?`)) {
+                    leaveGroupChat(currentGroup.id);
+                    setActiveChannel('Staff Chat');
+                  }
+                }}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  color: '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '8px',
+                  borderRadius: '8px',
+                  cursor: 'pointer'
+                }}
+                title="Leave Group"
+              >
+                <LogOut size={15} />
+              </button>
+            </div>
+          )}
         </div>
 
         <div style={styles.messageList}>
@@ -446,6 +639,163 @@ export default function StaffChat() {
               <div style={{display: 'flex', gap: '12px', justifyContent: 'flex-end'}}>
                 <button type="button" onClick={() => setRolePromptTarget(null)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save Role</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Group Modal */}
+      {showCreateGroupModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowCreateGroupModal(false)}>
+          <div className="glass-panel" style={{ ...styles.modalContent, width: '480px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Users size={18} color="#8b5cf6" /> Create Group Chat
+              </h3>
+              <button 
+                onClick={() => setShowCreateGroupModal(false)}
+                style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateGroup}>
+              <label style={{ fontSize: '0.85rem', color: '#9ca3af', fontWeight: '600', marginBottom: '6px', display: 'block' }}>
+                Group Name
+              </label>
+              <input
+                autoFocus
+                type="text"
+                value={newGroupName}
+                onChange={e => setNewGroupName(e.target.value)}
+                placeholder="e.g. Flight Attendants, Operations Team"
+                className="input-field"
+                style={{ marginBottom: '16px', width: '100%' }}
+                required
+              />
+
+              <label style={{ fontSize: '0.85rem', color: '#9ca3af', fontWeight: '600', marginBottom: '8px', display: 'block' }}>
+                Select Staff Members ({selectedGroupMembers.length} selected)
+              </label>
+              
+              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'rgba(0,0,0,0.2)' }}>
+                {(users || [])
+                  .filter(u => u && u.approved && u.email !== currentUser?.email && u.role !== 'passenger')
+                  .map(user => {
+                    const isSelected = selectedGroupMembers.includes(user.email);
+                    return (
+                      <label 
+                        key={user.email} 
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          background: isSelected ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedGroupMembers(prev => [...prev, user.email]);
+                            } else {
+                              setSelectedGroupMembers(prev => prev.filter(em => em !== user.email));
+                            }
+                          }}
+                          style={{ accentColor: '#8b5cf6' }}
+                        />
+                        <span style={{ fontWeight: '600', color: '#f3f4f6' }}>
+                          {user.firstName} {user.lastName}
+                        </span>
+                        <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
+                          @{user.robloxUsername || 'staff'}
+                        </span>
+                      </label>
+                    );
+                  })}
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setShowCreateGroupModal(false)} 
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  disabled={!newGroupName.trim()}
+                  style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)' }}
+                >
+                  Create Group
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Member Modal */}
+      {showAddMemberModal && currentGroup && (
+        <div style={styles.modalOverlay} onClick={() => setShowAddMemberModal(false)}>
+          <div className="glass-panel" style={{ ...styles.modalContent, width: '420px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <UserPlus size={18} color="#10b981" /> Add Member to {currentGroup.name}
+              </h3>
+              <button 
+                onClick={() => setShowAddMemberModal(false)} 
+                style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddMemberToCurrentGroup}>
+              <label style={{ fontSize: '0.85rem', color: '#9ca3af', fontWeight: '600', marginBottom: '6px', display: 'block' }}>
+                Select Staff Member
+              </label>
+              <select
+                value={memberToAdd}
+                onChange={e => setMemberToAdd(e.target.value)}
+                className="input-field"
+                style={{ width: '100%', marginBottom: '16px' }}
+                required
+              >
+                <option value="">Choose staff...</option>
+                {(users || [])
+                  .filter(u => u && u.approved && u.email && !(currentGroup.members || []).includes(u.email) && u.role !== 'passenger')
+                  .map(u => (
+                    <option key={u.email} value={u.email}>
+                      {u.firstName} {u.lastName} (@{u.robloxUsername || 'staff'})
+                    </option>
+                  ))}
+              </select>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setShowAddMemberModal(false)} 
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  disabled={!memberToAdd}
+                >
+                  Add Member
+                </button>
               </div>
             </form>
           </div>

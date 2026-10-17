@@ -4,7 +4,7 @@ import { useCall } from '../context/CallContext';
 import { Phone, Search, X, User, Shield, Volume2 } from 'lucide-react';
 
 export default function CallModal({ isOpen, onClose }) {
-  const { users, currentUser, onlineUsers } = useApp();
+  const { users, currentUser, onlineUsers, busyUsers } = useApp();
   const { initiateCall } = useCall();
   const [search, setSearch] = useState('');
 
@@ -75,6 +75,7 @@ export default function CallModal({ isOpen, onClose }) {
             filteredUsers.map(user => {
               const safeEmail = (user.email || '').replace(/\./g, ',');
               const isOnline = !!onlineUsers[safeEmail];
+              const isBusy = !!(busyUsers && busyUsers[safeEmail]);
 
               return (
                 <div key={user.email} style={styles.userRow}>
@@ -87,7 +88,16 @@ export default function CallModal({ isOpen, onClose }) {
                           <User size={18} color="#9ca3af" />
                         </div>
                       )}
-                      {isOnline && <span style={styles.onlineDot} title="Online" />}
+                      {isOnline && (
+                        <span 
+                          style={{
+                            ...styles.onlineDot,
+                            backgroundColor: isBusy ? '#f59e0b' : '#10b981',
+                            boxShadow: isBusy ? '0 0 8px rgba(245, 158, 11, 0.7)' : '0 0 8px rgba(16, 185, 129, 0.6)'
+                          }} 
+                          title={isBusy ? "Busy (In Call)" : "Online"} 
+                        />
+                      )}
                     </div>
 
                     <div style={styles.nameBlock}>
@@ -97,7 +107,11 @@ export default function CallModal({ isOpen, onClose }) {
                       </div>
                       <span style={styles.userRoblox}>
                         @{user.robloxUsername || 'unknown'} • {isOnline ? (
-                          <span style={{ color: '#10b981', fontWeight: 600 }}>Online</span>
+                          isBusy ? (
+                            <span style={{ color: '#f59e0b', fontWeight: 600 }}>Busy (In Call)</span>
+                          ) : (
+                            <span style={{ color: '#10b981', fontWeight: 600 }}>Online</span>
+                          )
                         ) : (
                           <span style={{ color: '#9ca3af' }}>Offline</span>
                         )}

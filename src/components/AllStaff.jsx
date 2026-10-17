@@ -7,6 +7,7 @@ export default function AllStaff() {
   const { 
     users,
     onlineUsers, 
+    busyUsers,
     flightLogs, 
     flights = [],
     quotaConfig,
@@ -92,7 +93,9 @@ export default function AllStaff() {
 
       <div style={styles.grid}>
         {displayUsers.filter(user => `${user.firstName} ${user.lastName} ${user.robloxUsername}`.toLowerCase().includes(searchQuery.toLowerCase())).map(user => {
-          const isOnline = user.email && onlineUsers[user.email.replace(/\./g, ',')];
+          const safeEmail = user.email ? user.email.replace(/\./g, ',') : '';
+          const isOnline = !!(safeEmail && onlineUsers[safeEmail]);
+          const isBusy = !!(safeEmail && busyUsers && busyUsers[safeEmail]);
           const badge = calculateBadge(user.email);
           const goldMedals = user.goldMedals || 0;
           const silverMedals = user.silverMedals || 0;
@@ -116,7 +119,16 @@ export default function AllStaff() {
                       <User size={24} color="#9ca3af" />
                     </div>
                   )}
-                  {isOnline && <div style={styles.onlineDot} title="Online"></div>}
+                  {isOnline && (
+                    <div 
+                      style={{
+                        ...styles.onlineDot,
+                        backgroundColor: isBusy ? '#f59e0b' : '#10b981',
+                        boxShadow: isBusy ? '0 0 8px rgba(245, 158, 11, 0.7)' : '0 0 8px rgba(16, 185, 129, 0.6)'
+                      }} 
+                      title={isBusy ? "Busy (In Call)" : "Online"}
+                    />
+                  )}
                 </div>
                 
                 <div style={styles.userInfo}>

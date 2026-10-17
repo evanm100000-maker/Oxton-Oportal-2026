@@ -402,6 +402,15 @@ export function CallProvider({ children }) {
     remoteStreamRef.current = null;
     iceCandidatesQueue.current = [];
 
+    // Clear busy presence status for current user
+    if (currentUser?.email) {
+      const mySafe = currentUser.email.replace(/\./g, ',');
+      try {
+        onDisconnect(ref(db, `busyUsers/${mySafe}`)).cancel();
+      } catch {}
+      remove(ref(db, `busyUsers/${mySafe}`)).catch(() => {});
+    }
+
     setActiveCall(null);
     setIncomingCall(null);
     setCallRole(null);
@@ -452,7 +461,10 @@ export function CallProvider({ children }) {
         }
 
         // Check if this is an incoming call to me and I'm not the caller
-        if (callObj.receiverEmail === currentUser.email && callObj.status === 'calling') {
+        const isTargetOfCall = (callObj.receiverEmail === currentUser.email) ||
+          (callObj.type === 'group' && Array.isArray(callObj.members) && callObj.members.includes(currentUser.email));
+
+        if (isTargetOfCall && callObj.callerEmail !== currentUser.email && callObj.status === 'calling') {
           if (activeCall && activeCall.id !== callObj.id && callStatus === 'connected') {
             update(ref(db, `calls/${callObj.id}`), { status: 'busy', endedAt: Date.now() });
             remove(userCallRef);
@@ -652,6 +664,14 @@ export function CallProvider({ children }) {
       });
       onDisconnect(ref(db, `userCalls/${callerSafe}`)).remove();
 
+      // Mark caller as busy (yellow dot)
+      await set(ref(db, `busyUsers/${callerSafe}`), {
+        inCall: true,
+        callId,
+        timestamp: Date.now()
+      });
+      onDisconnect(ref(db, `busyUsers/${callerSafe}`)).remove();
+
       setActiveCall(callData);
       setCallRole('caller');
       setCallStatus('calling');
@@ -727,6 +747,14 @@ export function CallProvider({ children }) {
 
       await update(ref(db, `userCalls/${receiverSafe}`), { status: 'connected' });
 
+      // Mark receiver as busy (yellow dot)
+      await set(ref(db, `busyUsers/${receiverSafe}`), {
+        inCall: true,
+        callId,
+        timestamp: Date.now()
+      });
+      onDisconnect(ref(db, `busyUsers/${receiverSafe}`)).remove();
+
       setActiveCall({ ...incomingCall, status: 'connected' });
       setIncomingCall(null);
       setCallRole('receiver');
@@ -779,12 +807,146 @@ export function CallProvider({ children }) {
           status: 'ended',
           endedAt: Date.now()
         });
-        if (callerSafe) remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
-        if (receiverSafe) remove(ref(db, `userCalls/${receiverSafe}`)).catch(() => {});
+        if (callerSafe) {
+          remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
+          remove(ref(db, `busyUsers/${callerSafe}`)).catch(() => {});
+        }
+        if (receiverSafe) {
+          remove(ref(db, `userCalls/${receiverSafe}`)).catch(() => {});
+          remove(ref(db, `busyUsers/${receiverSafe}`)).catch(() => {});
+        }
       } catch {}
     }
 
     cleanupCall(true);
+  };
+
+  // 4b. INITIATE GROUP / FLIGHT CALL
+  const initiateGroupCall = async (callTitle, targetEmails = [], flightCode = null) => {
+    if (!currentUser) return;
+    if (activeCall) {
+      alert("You are already in an active call.");
+      return;
+    }
+    const cleanEmails = (targetEmails || []).filter(e => e && e.toLowerCase().trim() !== currentUser.email.toLowerCase().trim());
+    if (cleanEmails.length === 0) {
+      alert("No other staff members available to call.");
+      return;
+    }
+
+    try {
+      const streamToSend = await setupLocalAudioPipeline(selectedMicId);
+      const callId = `call_grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const callerSafe = currentUser.email.replace(/\./g, ',');
+      const callerName = `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername;
+
+      const pc = new RTCPeerConnection(ICE_SERVERS);
+      pcRef.current = pc;
+      iceCandidatesQueue.current = [];
+
+      streamToSend.getAudioTracks().forEach(track => pc.addTrack(track, streamToSend));
+
+      pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          playRemoteStream(event.streams[0]);
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          push(ref(db, `calls/${callId}/callerCandidates`), event.candidate.toJSON());
+        }
+      };
+
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false
+      });
+      await pc.setLocalDescription(offer);
+
+      const targetSafes = cleanEmails.map(e => e.replace(/\./g, ','));
+
+      const callData = {
+        id: callId,
+        type: 'group',
+        groupTitle: callTitle || (flightCode ? `Flight Call • ${flightCode}` : 'Group Voice Call'),
+        flightCode: flightCode || null,
+        callerEmail: currentUser.email,
+        callerName,
+        callerPfp: currentUser.profilePicture || '',
+        callerRoblox: currentUser.robloxUsername || '',
+        receiverEmail: cleanEmails[0], // primary for WebRTC fallback
+        receiverName: `${cleanEmails.length} Staff Member${cleanEmails.length > 1 ? 's' : ''}`,
+        members: [currentUser.email, ...cleanEmails],
+        status: 'calling',
+        createdAt: Date.now(),
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp
+        },
+        callerMuted: false,
+        receiverMuted: false,
+        callerDeafened: false,
+        receiverDeafened: false
+      };
+
+      await set(ref(db, `calls/${callId}`), callData);
+      onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
+
+      // Ring all recipients simultaneously
+      await Promise.all(targetSafes.map(safe => {
+        return set(ref(db, `userCalls/${safe}`), {
+          callId,
+          type: 'group',
+          groupTitle: callData.groupTitle,
+          status: 'calling',
+          timestamp: Date.now(),
+          callerEmail: currentUser.email,
+          callerName,
+          callerPfp: callData.callerPfp
+        });
+      }));
+
+      // Set caller's own userCalls entry
+      await set(ref(db, `userCalls/${callerSafe}`), {
+        callId,
+        type: 'group',
+        groupTitle: callData.groupTitle,
+        status: 'calling',
+        timestamp: Date.now()
+      });
+      onDisconnect(ref(db, `userCalls/${callerSafe}`)).remove();
+
+      // Mark caller as busy
+      await set(ref(db, `busyUsers/${callerSafe}`), {
+        inCall: true,
+        callId,
+        timestamp: Date.now()
+      });
+      onDisconnect(ref(db, `busyUsers/${callerSafe}`)).remove();
+
+      setActiveCall(callData);
+      setCallRole('caller');
+      setCallStatus('calling');
+      setIsMuted(false);
+      setIsDeafened(false);
+
+      playOutgoingCallingSound();
+
+      callTimeoutRef.current = setTimeout(() => {
+        if (callStatus === 'calling') {
+          update(ref(db, `calls/${callId}`), { status: 'ended', endedAt: Date.now() });
+          targetSafes.forEach(s => remove(ref(db, `userCalls/${s}`)).catch(() => {}));
+          remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
+          cleanupCall(true);
+        }
+      }, 45000);
+
+    } catch (err) {
+      console.error('Failed to initiate group call:', err);
+      alert('Could not access microphone or initiate group call.');
+      cleanupCall();
+    }
   };
 
   // 5. MUTE / UNMUTE TOGGLE
@@ -854,6 +1016,7 @@ export function CallProvider({ children }) {
         refreshAudioDevices,
         // Call Actions
         initiateCall,
+        initiateGroupCall,
         answerCall,
         declineCall,
         endCall,

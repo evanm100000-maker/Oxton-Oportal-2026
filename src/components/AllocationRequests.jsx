@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Plane, Calendar, Clock, MapPin, ExternalLink, Users, UserPlus, UserMinus, Trash2, Lock, Unlock, Link, Check } from 'lucide-react';
+import { useCall } from '../context/CallContext';
+import { Plane, Calendar, Clock, MapPin, ExternalLink, Users, UserPlus, UserMinus, Trash2, Lock, Unlock, Link, Check, PhoneCall } from 'lucide-react';
 import { getRankWeight } from '../context/AppContext';
 import { formatFlightTimeLocal, formatFlightDateLocal } from '../utils/timeUtils';
 
@@ -21,12 +22,23 @@ export default function AllocationRequests() {
     editFlight,
     submitFlightRegister
   } = useApp();
+  const { initiateGroupCall } = useCall();
 
   const [activeRegisterFlight, setActiveRegisterFlight] = useState(null);
   const [directAssignEmail, setDirectAssignEmail] = useState({});
   const [selectedStatuses, setSelectedStatuses] = useState({});
   const [copiedId, setCopiedId] = useState(null);
   const [viewMode, setViewMode] = useState('upcoming'); // 'upcoming' or 'previous'
+
+  const handleCallFlightAttendingStaff = (flight) => {
+    const attendingEmails = getStaffList(flight, 'Attending').filter(email => activeUsers.some(user => user.email === email));
+    const targetEmails = attendingEmails.filter(e => e.toLowerCase() !== (currentUser?.email || '').toLowerCase());
+    if (targetEmails.length === 0) {
+      alert("No other attending staff members are available on this flight to call.");
+      return;
+    }
+    initiateGroupCall(`Flight Call • ${flight.flightCode}`, targetEmails, flight.flightCode);
+  };
 
   const [absenceModal, setAbsenceModal] = useState({ show: false, flightId: null, email: null, currentSelected: null });
   const [absenceReason, setAbsenceReason] = useState('');
@@ -468,12 +480,55 @@ export default function AllocationRequests() {
                   })()}
                 </div>
 
-                {/* Attendance Register Section (Only for Hosts or Admins) */}
+                {/* Admin / Host Call Attending Staff Button & Attendance Register Button */}
                 {(currentUser.isAdmin || currentUser.email === flight.host) && (
-                  <button type="button" onClick={() => setActiveRegisterFlight(flight)} className="btn-primary" style={{marginTop: '12px', marginBottom: '12px', width: '100%', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)', padding: '10px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                    <Users size={16} style={{marginRight: '8px'}} />
-                    Open Attendance Register
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', marginBottom: '12px' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => setActiveRegisterFlight(flight)} 
+                      className="btn-primary" 
+                      style={{
+                        flex: 1, 
+                        background: 'rgba(16, 185, 129, 0.15)', 
+                        color: '#10b981', 
+                        borderColor: 'rgba(16, 185, 129, 0.3)', 
+                        padding: '10px', 
+                        borderRadius: '8px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      <Users size={16} style={{marginRight: '6px'}} />
+                      Register
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCallFlightAttendingStaff(flight)}
+                      className="btn-success"
+                      style={{
+                        flex: 1.3,
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '0.85rem',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                      }}
+                      title="Call all staff who marked Attending"
+                    >
+                      <PhoneCall size={16} style={{marginRight: '6px'}} />
+                      Call Attending Staff ({getStaffList(flight, 'Attending').filter(email => activeUsers.some(user => user.email === email)).length})
+                    </button>
+                  </div>
                 )}
 
                 <div style={styles.actionContainer}>
