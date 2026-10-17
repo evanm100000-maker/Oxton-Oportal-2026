@@ -69,10 +69,10 @@ export default function FlightQuotaProgress() {
 
     // Check user.quotaFlights if explicitly set/adjusted
     let currentQuota = cycleSet.size;
-    if (user.quotaFlights !== undefined && resetTime > 0 && user.lastQuotaReset === quotaConfig?.lastResetDate) {
+    if (user.quotaFlights !== undefined && (resetTime === 0 || user.lastQuotaReset === quotaConfig?.lastResetDate)) {
       currentQuota = Number(user.quotaFlights);
-    } else if (user.quotaFlights !== undefined && resetTime === 0) {
-      currentQuota = Math.max(cycleSet.size, Number(user.quotaFlights));
+    } else if (user.quotaFlights !== undefined) {
+      currentQuota = Number(user.quotaFlights);
     }
 
     const isOnLoa = loaRequests.some(l => l.userEmail === email && l.status === 'Approved');
@@ -123,8 +123,16 @@ export default function FlightQuotaProgress() {
     if (filterTab === 'LOA') return member.stats.isOnLoa;
     return true;
   }).sort((a, b) => {
-    if (sortBy === 'progress_desc') return b.stats.currentQuota - a.stats.currentQuota;
-    if (sortBy === 'progress_asc') return a.stats.currentQuota - b.stats.currentQuota;
+    if (sortBy === 'progress_desc') {
+      const diff = b.stats.currentQuota - a.stats.currentQuota;
+      if (diff !== 0) return diff;
+      return (a.firstName || '').localeCompare(b.firstName || '') || (a.email || '').localeCompare(b.email || '');
+    }
+    if (sortBy === 'progress_asc') {
+      const diff = a.stats.currentQuota - b.stats.currentQuota;
+      if (diff !== 0) return diff;
+      return (a.firstName || '').localeCompare(b.firstName || '') || (a.email || '').localeCompare(b.email || '');
+    }
     if (sortBy === 'name') return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
     return 0;
   });
@@ -141,15 +149,16 @@ export default function FlightQuotaProgress() {
   const handleResetSingle = (member) => {
     if (window.confirm(`Reset flight quota progress for ${member.firstName} ${member.lastName} to 0?`)) {
       resetStaffQuota(member.email);
-      setFeedbackMsg(`Reset flight quota for ${member.firstName} ${member.lastName}.`);
+      setFeedbackMsg(`Reset flight quota for ${member.firstName} ${member.lastName} to 0.`);
       setTimeout(() => setFeedbackMsg(''), 4000);
     }
   };
 
   const handleAdjustSingle = (member, delta) => {
-    adjustStaffQuota(member.email, delta);
-    setFeedbackMsg(`Adjusted flight quota for ${member.firstName} ${member.lastName} by ${delta > 0 ? `+${delta}` : delta}.`);
-    setTimeout(() => setFeedbackMsg(''), 3000);
+    adjustStaffQuota(member.email, delta, member.stats.currentQuota);
+    const newCount = Math.max(0, member.stats.currentQuota + delta);
+    setFeedbackMsg(`Updated ${member.firstName} ${member.lastName}'s quota progress to ${newCount}/${quotaTarget} flights.`);
+    setTimeout(() => setFeedbackMsg(''), 3500);
   };
 
   return (
@@ -594,12 +603,14 @@ export default function FlightQuotaProgress() {
 
 const styles = {
   container: {
-    padding: '24px',
+    padding: '16px',
     maxWidth: '1280px',
+    width: '100%',
+    boxSizing: 'border-box',
     margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '24px'
+    gap: '20px'
   },
   headerCard: {
     padding: '24px 28px',
@@ -718,7 +729,8 @@ const styles = {
     background: 'rgba(255,255,255,0.04)',
     border: '1px solid rgba(255,255,255,0.08)',
     flex: 1,
-    minWidth: '260px'
+    minWidth: 'min(260px, 100%)',
+    boxSizing: 'border-box'
   },
   searchInput: {
     background: 'transparent',

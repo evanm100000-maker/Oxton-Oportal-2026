@@ -224,14 +224,15 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
             normalizedData = Object.keys(data).map(key => {
               const item = data[key];
               if (item && typeof item === 'object') {
-                Object.defineProperty(item, '_firebaseKey', { value: key, enumerable: false, writable: true });
+                item._firebaseKey = key;
               }
               return item;
             });
           } else if (Array.isArray(data)) {
             normalizedData = data.map((item, index) => {
               if (item && typeof item === 'object') {
-                Object.defineProperty(item, '_firebaseKey', { value: index.toString(), enumerable: false, writable: true });
+                const key = item.id ? String(item.id) : (item.email ? item.email.toLowerCase().trim().replace(/\./g, ',') : index.toString());
+                item._firebaseKey = key;
               }
               return item;
             });
@@ -252,7 +253,10 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
               return true;
             });
 
-            normalizedData.reverse(); // Ensure newest items are at the top
+            // Only reverse timestamped feeds; keep directories like users stable
+            if (path !== 'users') {
+              normalizedData.reverse();
+            }
           } else {
             normalizedData = [];
           }
@@ -291,21 +295,28 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
       nextArray.forEach(item => {
         let fbKey = item._firebaseKey;
         if (!fbKey) {
-          // New item! Use id, normalized email, or a random string as the key
-          fbKey = item.id || (item.email ? item.email.toLowerCase().trim().replace(/\./g, ',') : Math.random().toString(36).substring(2, 10));
-          Object.defineProperty(item, '_firebaseKey', { value: fbKey, enumerable: false, writable: true });
+          fbKey = item.id ? String(item.id) : (item.email ? item.email.toLowerCase().trim().replace(/\./g, ',') : Math.random().toString(36).substring(2, 10));
+          item._firebaseKey = fbKey;
         }
         
-        const currentItem = currentArray.find(i => i._firebaseKey === fbKey);
+        const currentItem = currentArray.find(i => 
+          (i._firebaseKey && i._firebaseKey === fbKey) ||
+          (i.email && item.email && i.email.toLowerCase().trim() === item.email.toLowerCase().trim()) ||
+          (i.id && item.id && String(i.id) === String(item.id))
+        );
         if (!currentItem || JSON.stringify(currentItem) !== JSON.stringify(item)) {
           updates[fbKey] = item;
         }
       });
       
-      // Find deletions
+      // Find deletions safely checking email, id and _firebaseKey
       currentArray.forEach(item => {
         const fbKey = item._firebaseKey;
-        const stillExists = nextArray.some(i => i._firebaseKey === fbKey);
+        const stillExists = nextArray.some(i => 
+          (i._firebaseKey && i._firebaseKey === fbKey) ||
+          (i.email && item.email && i.email.toLowerCase().trim() === item.email.toLowerCase().trim()) ||
+          (i.id && item.id && String(i.id) === String(item.id))
+        );
         if (!stillExists && fbKey) {
           updates[fbKey] = null;
         }
@@ -1669,28 +1680,56 @@ export const AppProvider = ({ children }) => {
   };
 
   const resetStaffQuota = (email) => {
+    const normalizedTarget = email?.toLowerCase().trim();
     const nowIso = new Date().toISOString();
-    setUsers(prev => prev.map(u => {
-      if (u.email !== email) return u;
+    const resetDate = quotaConfig?.lastResetDate || nowIso;
+
+    setUsers(prev => (prev || []).map(u => {
+      if (u.email?.toLowerCase().trim() !== normalizedTarget) return u;
       return {
         ...u,
         quotaFlights: 0,
-        lastQuotaReset: nowIso
+        lastQuotaReset: resetDate
       };
     }));
+
+    const db = getDatabase(firebaseApp);
+    const safeEmail = normalizedTarget.replace(/\./g, ',');
+    update(ref(db, `userQuotas/${safeEmail}`), {
+      quotaFlights: 0,
+      lastQuotaReset: resetDate,
+      updatedAt: nowIso
+    }).catch(() => {});
+
     logAction('staff_quota_reset', `Reset flight quota for ${email} to 0`, { email });
   };
 
-  const adjustStaffQuota = (email, delta) => {
-    setUsers(prev => prev.map(u => {
-      if (u.email !== email) return u;
-      const current = Math.max(0, Number(u.quotaFlights || 0) + delta);
+  const adjustStaffQuota = (email, delta, currentCount) => {
+    const normalizedTarget = email?.toLowerCase().trim();
+    const nowIso = new Date().toISOString();
+    const resetDate = quotaConfig?.lastResetDate || nowIso;
+
+    let computedNewQuota = 0;
+    setUsers(prev => (prev || []).map(u => {
+      if (u.email?.toLowerCase().trim() !== normalizedTarget) return u;
+      const base = currentCount !== undefined ? Number(currentCount) : Number(u.quotaFlights !== undefined ? u.quotaFlights : 0);
+      computedNewQuota = Math.max(0, base + delta);
       return {
         ...u,
-        quotaFlights: current
+        quotaFlights: computedNewQuota,
+        lastQuotaReset: resetDate
       };
     }));
-    logAction('staff_quota_adjusted', `Adjusted flight quota for ${email} by ${delta}`, { email, delta });
+
+    const db = getDatabase(firebaseApp);
+    const safeEmail = normalizedTarget.replace(/\./g, ',');
+    update(ref(db, `userQuotas/${safeEmail}`), {
+      quotaFlights: computedNewQuota,
+      lastQuotaReset: resetDate,
+      updatedAt: nowIso
+    }).catch(() => {});
+
+    logAction('staff_quota_adjusted', `Adjusted flight quota for ${email} by ${delta > 0 ? `+${delta}` : delta} (New: ${computedNewQuota})`, { email, delta, computedNewQuota });
   };
 
   const addInfraction = (infData) => {

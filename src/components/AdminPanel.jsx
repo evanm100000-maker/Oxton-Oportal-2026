@@ -616,7 +616,7 @@ export default function AdminPanel() {
         </button>
       </div>
 
-      <div style={styles.mainContent}>
+      <div className="admin-main-content" style={styles.mainContent}>
       {successMsg && (
         <div style={styles.successAlert}><span>{successMsg}</span></div>
       )}
@@ -2776,9 +2776,9 @@ const styles = {
   actionRow: { display: 'flex', gap: '8px' },
   actionMiniBtn: { display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' },
   roleBtn: { padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600' },
-  form: { display: 'flex', flexDirection: 'column', gap: '18px', background: 'rgba(0,0,0,0.15)', border: '1px solid var(--color-border)', padding: '24px', borderRadius: '16px' },
+  form: { display: 'flex', flexDirection: 'column', gap: '18px', background: 'rgba(0,0,0,0.15)', border: '1px solid var(--color-border)', padding: '24px', borderRadius: '16px', maxWidth: '100%', boxSizing: 'border-box' },
   formRow: { display: 'flex', gap: '20px', flexWrap: 'wrap' },
-  inputWrapper: { flex: 1, minWidth: '240px', display: 'flex', flexDirection: 'column', gap: '6px' },
+  inputWrapper: { flex: 1, minWidth: 'min(240px, 100%)', display: 'flex', flexDirection: 'column', gap: '6px' },
   label: { fontSize: '0.85rem', fontWeight: '500', color: 'var(--color-text-muted)' },
   textarea: { resize: 'vertical', minHeight: '110px' },
   confidentialTextarea: { resize: 'vertical', borderStyle: 'dashed', borderColor: 'rgba(6, 182, 212, 0.3)', background: 'rgba(6, 182, 212, 0.02)' },
@@ -2796,7 +2796,7 @@ const styles = {
   loaActionButtons: { display: 'flex', gap: '10px' },
   loaActionBtn: { padding: '8px 16px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' },
   overlay: { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  modal: { padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '90vh' },
-  composeBox: { padding: '24px', borderRadius: '12px' },
+  modal: { padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '90vh', maxWidth: 'calc(100vw - 24px)', width: '100%', boxSizing: 'border-box' },
+  composeBox: { padding: '24px', borderRadius: '12px', maxWidth: '100%', boxSizing: 'border-box' },
   composeTitle: { fontSize: '1.25rem', fontWeight: '700', color: 'var(--color-text-main)', marginBottom: '16px' }
 };

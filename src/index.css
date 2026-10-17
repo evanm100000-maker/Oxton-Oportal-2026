@@ -894,3 +894,266 @@ body.light-mode div[style*="tableWrapper"] {
   border-color: #cbd5e1 !important;
 }
 
+/* ========================================================
+   RESPONSIVE DESIGN SYSTEM (PHONES & TABLETS)
+   ======================================================== */
+
+/* Prevent horizontal overflow globally across all devices */
+html, body, #root, .app-wrapper {
+  max-width: 100vw !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* Ensure all tables scroll horizontally inside their container instead of blowing out page width */
+.tableWrapper,
+div[style*="tableWrapper"],
+div[style*="table-wrapper"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
+table {
+  max-width: 100%;
+}
+
+.tableWrapper table,
+div[style*="tableWrapper"] table {
+  min-width: 620px;
+}
+
+/* TABLET BREAKPOINT (769px to 1024px) */
+@media (max-width: 1024px) {
+  .dashboard-card-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 16px !important;
+  }
+
+  .admin-layout {
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  .admin-sidebar {
+    width: 100% !important;
+    position: static !important;
+    max-height: none !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .admin-sidebar::-webkit-scrollbar {
+    height: 5px !important;
+  }
+
+  .admin-sidebar button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 8px 14px !important;
+    font-size: 0.85rem !important;
+  }
+
+  .admin-main-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 32px !important;
+    padding-bottom: 60px !important;
+  }
+}
+
+/* PHONE BREAKPOINT (<= 768px) */
+@media (max-width: 768px) {
+  /* Dashboard layout & Navbar */
+  .dashboard-navbar,
+  nav[style*="navbar"],
+  div[style*="navbar"] {
+    width: calc(100% - 16px) !important;
+    margin: 8px auto !important;
+    padding: 12px 14px !important;
+    gap: 10px !important;
+    border-radius: 12px !important;
+  }
+
+  .dashboard-nav-controls,
+  div[style*="navControls"] {
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .dashboard-clock-widget,
+  div[style*="dashboard-clock-widget"] {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    margin: 8px 0 0 0 !important;
+    justify-content: center !important;
+    font-size: 0.8rem !important;
+    padding: 6px 12px !important;
+  }
+
+  .dashboard-main-content,
+  main[style*="mainContent"] {
+    padding: 0 10px 32px 10px !important;
+  }
+
+  .glass-panel[style*="pageCard"],
+  div[style*="pageCard"] {
+    padding: 16px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .greetingText,
+  div[style*="greetingText"],
+  h1[style*="greetingText"] {
+    font-size: 1.6rem !important;
+  }
+
+  /* Grid Cards */
+  .dashboard-card-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  div[style*="menuCard"] {
+    padding: 16px !important;
+  }
+
+  /* Admin Panel on Phones */
+  .admin-layout {
+    flex-direction: column !important;
+    gap: 14px !important;
+  }
+
+  .admin-sidebar {
+    width: 100% !important;
+    position: static !important;
+    max-height: none !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    gap: 8px !important;
+    padding: 8px 10px !important;
+    border-radius: 10px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .admin-sidebar button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 7px 12px !important;
+    font-size: 0.8rem !important;
+  }
+
+  .admin-main-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 24px !important;
+    padding-bottom: 40px !important;
+  }
+
+  /* Admin Forms */
+  form[style*="form"],
+  div[style*="form"] {
+    padding: 14px 12px !important;
+    gap: 14px !important;
+    border-radius: 12px !important;
+  }
+
+  div[style*="formRow"] {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  div[style*="inputWrapper"] {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .input-field,
+  input,
+  select,
+  textarea {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Flight Quota Progress on Phones */
+  div[style*="kpiGrid"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  div[style*="controlBar"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  div[style*="filterPills"] {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 4px !important;
+  }
+
+  div[style*="filterPills"] button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  div[style*="headerCard"] {
+    padding: 16px 14px !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  div[style*="resetWrap"] {
+    width: 100% !important;
+  }
+
+  div[style*="resetWrap"] button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Modals on Phones */
+  div[style*="modalOverlay"],
+  div[style*="overlay"] {
+    padding: 12px !important;
+  }
+
+  div[style*="modalContent"],
+  div[style*="modal"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92vh !important;
+    padding: 16px !important;
+    border-radius: 12px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  div[style*="kpiGrid"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .navBrandText,
+  span[style*="navBrandText"] {
+    font-size: 1rem !important;
+  }
+}
+
