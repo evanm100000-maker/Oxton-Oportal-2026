@@ -804,7 +804,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', marginBottom: '8px', justifyContent: 'space-between' }}>
                 <h1 style={{ ...styles.greetingText, marginBottom: 0 }}>
                   {(() => {
-                    const hour = currentTime.getHours();
+                    const hour = new Date().getHours();
                     if (hour >= 6 && hour < 12) return 'Morning';
                     if (hour >= 12 && hour < 18) return 'Afternoon';
                     if (hour >= 18 && hour < 21) return 'Evening';
