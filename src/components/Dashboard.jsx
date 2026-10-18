@@ -813,7 +813,7 @@ export default function Dashboard() {
                 </h1>
               </div>
               <p style={{ ...styles.greetingSub, marginTop: '8px' }}>
-                Welcome back. Use the sections below to view, log, and request staff actions.
+                Welcome back to duty. Your central command hub to coordinate flights, log reports, and manage staff operations.
               </p>
               
               {(currentUser.goldMedals > 0 || currentUser.silverMedals > 0 || currentUser.bronzeMedals > 0) && (
