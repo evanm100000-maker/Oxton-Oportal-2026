@@ -34,6 +34,12 @@ export const toSafeEmail = (email) => {
   return email.trim().toLowerCase().replace(/\./g, ',');
 };
 
+export const sanitizePfp = (pfp) => {
+  if (!pfp || typeof pfp !== 'string') return '';
+  if (pfp.startsWith('data:')) return ''; // Strip base64 payloads from database to prevent massive bandwidth usage
+  return pfp;
+};
+
 export function CallProvider({ children }) {
   const { currentUser, sendNotificationToUser } = useApp();
   
@@ -143,10 +149,10 @@ export function CallProvider({ children }) {
     }
   }, []);
 
-  // Listen to all active calls in Firebase (for Join Call button on flights & groups)
+  // Listen to lightweight activeCalls in Firebase (for Join Call button on flights & groups)
   useEffect(() => {
-    const callsRef = ref(db, 'calls');
-    const unsub = onValue(callsRef, (snapshot) => {
+    const activeCallsRef = ref(db, 'activeCalls');
+    const unsub = onValue(activeCallsRef, (snapshot) => {
       const data = snapshot.val() || {};
       const active = Object.values(data).filter(c => 
         c && c.id && (c.status === 'calling' || c.status === 'connected')
@@ -783,11 +789,11 @@ export function CallProvider({ children }) {
         id: callId,
         callerEmail: currentUser.email,
         callerName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername,
-        callerPfp: currentUser.profilePicture || '',
+        callerPfp: sanitizePfp(currentUser.profilePicture),
         callerRoblox: currentUser.robloxUsername || '',
         receiverEmail: targetUser.email,
         receiverName: `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || targetUser.robloxUsername,
-        receiverPfp: targetUser.profilePicture || '',
+        receiverPfp: sanitizePfp(targetUser.profilePicture),
         receiverRoblox: targetUser.robloxUsername || '',
         status: 'calling',
         createdAt: Date.now(),
@@ -804,6 +810,19 @@ export function CallProvider({ children }) {
 
       await set(ref(db, `calls/${callId}`), callData);
       onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
+
+      // Register lightweight activeCalls entry for instant, zero-cost signaling
+      set(ref(db, `activeCalls/${callId}`), {
+        id: callId,
+        type: 'direct',
+        status: 'calling',
+        callerEmail: currentUser.email,
+        receiverEmail: targetUser.email,
+        callerName: callData.callerName,
+        receiverName: callData.receiverName,
+        createdAt: Date.now()
+      }).catch(() => {});
+      onDisconnect(ref(db, `activeCalls/${callId}`)).remove();
 
       const userCallPayload = {
         callId,
@@ -853,6 +872,10 @@ export function CallProvider({ children }) {
       callTimeoutRef.current = setTimeout(() => {
         if (callStatus === 'calling') {
           update(ref(db, `calls/${callId}`), { status: 'ended', endedAt: Date.now() });
+          remove(ref(db, `activeCalls/${callId}`)).catch(() => {});
+          setTimeout(() => {
+            remove(ref(db, `calls/${callId}`)).catch(() => {});
+          }, 10000);
           remove(ref(db, `userCalls/${receiverSafe}`));
           remove(ref(db, `userCalls/${callerSafe}`));
           if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
@@ -939,6 +962,7 @@ export function CallProvider({ children }) {
         answeredAt: Date.now()
       });
       onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
+      update(ref(db, `activeCalls/${callId}`), { status: 'connected' }).catch(() => {});
 
       await update(ref(db, `userCalls/${receiverSafe}`), { status: 'connected' }).catch(() => {});
       if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
@@ -986,6 +1010,10 @@ export function CallProvider({ children }) {
         status: 'declined',
         endedAt: Date.now()
       });
+      remove(ref(db, `activeCalls/${callId}`)).catch(() => {});
+      setTimeout(() => {
+        remove(ref(db, `calls/${callId}`)).catch(() => {});
+      }, 10000);
       await remove(ref(db, `userCalls/${receiverSafe}`)).catch(() => {});
       if (rawReceiverSafe && rawReceiverSafe !== receiverSafe) {
         await remove(ref(db, `userCalls/${rawReceiverSafe}`)).catch(() => {});
@@ -1012,6 +1040,12 @@ export function CallProvider({ children }) {
           status: 'ended',
           endedAt: Date.now()
         });
+        remove(ref(db, `activeCalls/${callId}`)).catch(() => {});
+        remove(ref(db, `calls/${callId}/callerCandidates`)).catch(() => {});
+        remove(ref(db, `calls/${callId}/receiverCandidates`)).catch(() => {});
+        setTimeout(() => {
+          remove(ref(db, `calls/${callId}`)).catch(() => {});
+        }, 10000);
         if (callerSafe) {
           remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
           remove(ref(db, `busyUsers/${callerSafe}`)).catch(() => {});
@@ -1096,7 +1130,7 @@ export function CallProvider({ children }) {
         flightCode: flightCode || null,
         callerEmail: currentUser.email,
         callerName,
-        callerPfp: currentUser.profilePicture || '',
+        callerPfp: sanitizePfp(currentUser.profilePicture),
         callerRoblox: currentUser.robloxUsername || '',
         receiverEmail: cleanEmails[0],
         receiverName: `${cleanEmails.length} Staff Member${cleanEmails.length > 1 ? 's' : ''}`,
@@ -1116,6 +1150,20 @@ export function CallProvider({ children }) {
 
       await set(ref(db, `calls/${callId}`), callData);
       onDisconnect(ref(db, `calls/${callId}/status`)).set('ended');
+
+      // Register lightweight activeCalls entry
+      set(ref(db, `activeCalls/${callId}`), {
+        id: callId,
+        type: 'group',
+        groupId: groupId || null,
+        flightCode: flightCode || null,
+        groupTitle: callData.groupTitle,
+        status: 'calling',
+        callerEmail: currentUser.email,
+        members: callData.members,
+        createdAt: Date.now()
+      }).catch(() => {});
+      onDisconnect(ref(db, `activeCalls/${callId}`)).remove();
 
       // Ring all recipients simultaneously
       await Promise.all(targetSafes.map(safe => {
@@ -1169,6 +1217,10 @@ export function CallProvider({ children }) {
       callTimeoutRef.current = setTimeout(() => {
         if (callStatus === 'calling') {
           update(ref(db, `calls/${callId}`), { status: 'ended', endedAt: Date.now() });
+          remove(ref(db, `activeCalls/${callId}`)).catch(() => {});
+          setTimeout(() => {
+            remove(ref(db, `calls/${callId}`)).catch(() => {});
+          }, 10000);
           targetSafes.forEach(s => remove(ref(db, `userCalls/${s}`)).catch(() => {}));
           remove(ref(db, `userCalls/${callerSafe}`)).catch(() => {});
           if (rawCallerSafe && rawCallerSafe !== callerSafe) {
@@ -1305,6 +1357,12 @@ export function CallProvider({ children }) {
         members: updatedMembers
       });
 
+      update(ref(db, `activeCalls/${activeCall.id}`), {
+        type: 'group',
+        groupTitle: currentTitle,
+        members: updatedMembers
+      }).catch(() => {});
+
       const userCallPayload = {
         callId: activeCall.id,
         type: 'group',
@@ -1313,7 +1371,7 @@ export function CallProvider({ children }) {
         timestamp: Date.now(),
         callerEmail: currentUser.email,
         callerName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername || 'Staff',
-        callerPfp: currentUser.profilePicture || ''
+        callerPfp: sanitizePfp(currentUser.profilePicture)
       };
 
       await set(ref(db, `userCalls/${targetSafe}`), userCallPayload);

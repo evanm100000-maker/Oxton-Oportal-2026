@@ -129,6 +129,12 @@ const initialHomeworkConfig = {
   description: 'Access Google Classroom to view assigned training coursework, revision materials, and staff homework tasks.'
 };
 
+const initialQuotaConfig = {
+  lastResetDate: null,
+  resetBy: null,
+  resetByName: null
+};
+
 const initialPageConfig = {
   allocation: true,
   calendar: true,
@@ -215,10 +221,14 @@ export const canTakeAction = (issuer, target) => {
 const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null) => {
   const [localData, setLocalData] = useState(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
+  const initialValueRef = useRef(initialValue);
+  useEffect(() => {
+    initialValueRef.current = initialValue;
+  }, [initialValue]);
 
   useEffect(() => {
     if (!enabled) {
-      setLocalData(initialValue);
+      setLocalData(initialValueRef.current);
       setIsLoaded(true);
       return;
     }
@@ -226,9 +236,10 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
     const dbRef = limitCount ? query(ref(db, path), limitToLast(limitCount)) : ref(db, path);
     const unsub = onValue(dbRef, snapshot => {
       const data = snapshot.val();
+      const currentInitial = initialValueRef.current;
       if (data) {
         let normalizedData = data;
-        if (Array.isArray(initialValue)) {
+        if (Array.isArray(currentInitial)) {
           if (typeof data === 'object' && !Array.isArray(data)) {
             normalizedData = Object.keys(data).map(key => {
               const item = data[key];
@@ -272,12 +283,12 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
         }
         setLocalData(normalizedData);
       } else {
-        setLocalData(initialValue);
+        setLocalData(currentInitial);
       }
       setIsLoaded(true);
     });
     return unsub;
-  }, [path, initialValue, enabled]);
+  }, [path, enabled, limitCount]);
 
   const updateData = (updater) => {
     setLocalData(prev => {
@@ -350,25 +361,31 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
 const useFirebaseObject = (path, initialValue, enabled = true) => {
   const [localData, setLocalData] = useState(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
+  const initialValueRef = useRef(initialValue);
+  useEffect(() => {
+    initialValueRef.current = initialValue;
+  }, [initialValue]);
   
   useEffect(() => {
     if (!enabled) {
-      setLocalData(initialValue);
+      setLocalData(initialValueRef.current);
       setIsLoaded(true);
       return;
     }
     const db = getDatabase(firebaseApp);
     const unsub = onValue(ref(db, path), snapshot => {
       const data = snapshot.val();
-      setLocalData(data ? (typeof initialValue === 'object' && initialValue !== null && !Array.isArray(initialValue) ? { ...initialValue, ...data } : data) : initialValue);
+      const currentInitial = initialValueRef.current;
+      setLocalData(data ? (typeof currentInitial === 'object' && currentInitial !== null && !Array.isArray(currentInitial) ? { ...currentInitial, ...data } : data) : currentInitial);
       setIsLoaded(true);
     });
     return unsub;
-  }, [path, initialValue, enabled]);
+  }, [path, enabled]);
 
   const updateData = (updater) => {
     setLocalData(prev => {
-      const dataToUpdate = prev ? (typeof initialValue === 'object' && initialValue !== null && !Array.isArray(initialValue) ? { ...initialValue, ...prev } : prev) : initialValue;
+      const currentInitial = initialValueRef.current;
+      const dataToUpdate = prev ? (typeof currentInitial === 'object' && currentInitial !== null && !Array.isArray(currentInitial) ? { ...currentInitial, ...prev } : prev) : currentInitial;
       const nextData = typeof updater === 'function' ? updater(dataToUpdate) : updater;
       const db = getDatabase(firebaseApp);
       try {
@@ -406,20 +423,21 @@ export const AppProvider = ({ children }) => {
   const [useLongDateFormat, setUseLongDateFormat] = useState(false);
   const [warningConfig, setWarningConfig] = useFirebaseObject('warningConfig', initialWarningConfig);
   const [maintenanceConfig, setMaintenanceConfig] = useFirebaseObject('maintenanceConfig', initialMaintenanceConfig);
+  const isAdmin = Boolean(currentUser?.isAdmin);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [passwordResets, setPasswordResets] = useFirebaseArray('passwordResets', EMPTY_ARRAY);
+  const [passwordResets, setPasswordResets] = useFirebaseArray('passwordResets', EMPTY_ARRAY, isAdmin);
   const [chatMessages, setChatMessages] = useFirebaseArray('chatMessages', EMPTY_ARRAY, isLoggedIn, 200);
   const [announcements, setAnnouncements] = useFirebaseArray('announcements', initialAnnouncements, true, 50);
   const [bypassConfig, setBypassConfig] = useFirebaseObject('bypassConfig', initialBypassConfig);
   const [emergencyAlertConfig, setEmergencyAlertConfig] = useFirebaseObject('emergencyAlert', initialEmergencyAlertConfig);
-  const [quotaConfig, setQuotaConfig] = useFirebaseObject('quotaConfig', { lastResetDate: null, resetBy: null, resetByName: null });
+  const [quotaConfig, setQuotaConfig] = useFirebaseObject('quotaConfig', initialQuotaConfig);
   const [homeworkConfig, setHomeworkConfig] = useFirebaseObject('homeworkConfig', initialHomeworkConfig);
 
   const [informalSanctions, setInformalSanctions] = useFirebaseArray('informalSanctions', EMPTY_ARRAY, isLoggedIn, 50);
-  const [pointLogs, setPointLogs] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isLoggedIn, 500);
-  const [events, setEvents] = useFirebaseArray('events', initialEvents, true, 50);
-  const [unavailableDates, setUnavailableDates] = useFirebaseArray('unavailableDates', initialUnavailableDates, true, 200);
-  const [meetings, setMeetings] = useFirebaseArray('meetings', initialMeetings, true, 50);
+  const [pointLogs, setPointLogs] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isAdmin, 200);
+  const [events, setEvents] = useFirebaseArray('events', initialEvents, isLoggedIn, 50);
+  const [unavailableDates, setUnavailableDates] = useFirebaseArray('unavailableDates', initialUnavailableDates, isLoggedIn, 200);
+  const [meetings, setMeetings] = useFirebaseArray('meetings', initialMeetings, isLoggedIn, 50);
   const [pageConfig, setPageConfig] = useFirebaseObject('pageConfig', initialPageConfig);
   const [notifications, setNotifications] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState({});
@@ -872,7 +890,7 @@ export const AppProvider = ({ children }) => {
     const isPresenceOnline = (val) => {
       if (!val) return null;
       const now = Date.now();
-      const STALE_THRESHOLD_MS = 40000; // 40 seconds heartbeat expiry threshold
+      const STALE_THRESHOLD_MS = 75000; // 75 seconds heartbeat expiry threshold
 
       if (val === true) return { isOnline: true, state: 'active', lastSeen: now };
 
@@ -932,7 +950,19 @@ export const AppProvider = ({ children }) => {
           nextState[commaKey.toLowerCase()] = status;
         }
       });
-      setOnlineUsers(nextState);
+      setOnlineUsers(prev => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(nextState);
+        if (prevKeys.length !== nextKeys.length) return nextState;
+        for (const k of nextKeys) {
+          const p = prev[k];
+          const n = nextState[k];
+          if (!p || p.isOnline !== n.isOnline || p.state !== n.state) {
+            return nextState;
+          }
+        }
+        return prev;
+      });
     };
 
     const unsubscribeOnline = onValue(onlinePresenceRef, (snapshot) => {
@@ -940,17 +970,20 @@ export const AppProvider = ({ children }) => {
       recomputeOnlineUsers(latestPresenceSnapshot);
     });
 
-    // Check periodically so closed tabs/dead heartbeats expire within seconds automatically
+    // Check periodically so closed tabs/dead heartbeats expire automatically
     const heartbeatScanInterval = setInterval(() => {
       if (latestPresenceSnapshot) {
         recomputeOnlineUsers(latestPresenceSnapshot);
       }
-    }, 10000);
+    }, 25000);
 
     const busyUsersRef = ref(db, 'busyUsers');
     const unsubscribeBusy = onValue(busyUsersRef, (snapshot) => {
       const data = snapshot.val() || {};
-      setBusyUsers(data);
+      setBusyUsers(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
+        return data;
+      });
     });
 
     const groupChatsRef = ref(db, 'groupChats');
@@ -1055,10 +1088,10 @@ export const AppProvider = ({ children }) => {
       }
     }, 10000);
 
-    // Heartbeat: update lastSeen every 12 seconds so server and peers know tab is alive
+    // Heartbeat: update lastSeen every 30 seconds so server and peers know tab is alive
     heartbeatTimer = setInterval(() => {
       writePresence(currentPresenceState);
-    }, 12000);
+    }, 30000);
 
     const cleanRemove = () => {
       try {
@@ -1085,7 +1118,7 @@ export const AppProvider = ({ children }) => {
         }
         writePresence(currentPresenceState);
 
-        // Also sweep any stale orphaned tabs under this user's email (>40s old)
+        // Also sweep any stale orphaned tabs under this user's email (>75s old)
         onValue(userPresenceRootRef, (rootSnap) => {
           const val = rootSnap.val();
           if (val && typeof val === 'object') {
@@ -1093,7 +1126,7 @@ export const AppProvider = ({ children }) => {
             Object.keys(val).forEach(k => {
               if (k !== tabId) {
                 const item = val[k];
-                if (item === true || !item || !item.lastSeen || (now - item.lastSeen > 40000)) {
+                if (item === true || !item || !item.lastSeen || (now - item.lastSeen > 75000)) {
                   remove(ref(db, `onlinePresence/${safeEmail}/${k}`)).catch(() => {});
                   if (lowerSafeEmail !== safeEmail) {
                     remove(ref(db, `onlinePresence/${lowerSafeEmail}/${k}`)).catch(() => {});
@@ -2358,7 +2391,7 @@ export const AppProvider = ({ children }) => {
       senderEmail: currentUser.email,
       senderName: `${currentUser.firstName} ${currentUser.lastName}`,
       senderRole: currentUser.customRole || (currentUser.isAdmin ? 'Admin' : 'Staff'),
-      senderPfp: currentUser.profilePicture || '',
+      senderPfp: currentUser.profilePicture && !currentUser.profilePicture.startsWith('data:') ? currentUser.profilePicture : '',
       timestamp: new Date().toISOString(),
       replyTo,
       reactions: []

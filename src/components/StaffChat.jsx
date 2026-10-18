@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCall } from '../context/CallContext';
 import { Send, ShieldAlert, Users, MessageSquare, Globe, Reply, Trash2, Flag, Smile, X, Image as ImageIcon, Paperclip, Plus, Phone, PhoneCall, UserPlus, LogOut } from 'lucide-react';
@@ -84,6 +84,14 @@ export default function StaffChat() {
         return timeA - timeB;
       });
   }, [safeChatMessages, activeChannel]);
+
+  const userMap = useMemo(() => {
+    const map = new Map();
+    (users || []).forEach(u => {
+      if (u.email) map.set(u.email.toLowerCase(), u);
+    });
+    return map;
+  }, [users]);
 
   // Scroll to the newest messages at the bottom when opening a channel or when new messages arrive
   useEffect(() => {
@@ -488,6 +496,8 @@ export default function StaffChat() {
 
               const senderName = msg.senderName || 'Unknown';
               const messageText = msg.text || '';
+              const senderUser = userMap.get(msg.senderEmail?.toLowerCase());
+              const senderPfp = senderUser?.profilePicture || (msg.senderPfp && !msg.senderPfp.startsWith('data:') ? msg.senderPfp : '');
 
               return (
                 <React.Fragment key={msg.id}>
@@ -505,7 +515,7 @@ export default function StaffChat() {
                 }}
               >
                 <div 
-                  style={{...styles.avatar, background: msg.senderPfp ? 'transparent' : '#3b82f6'}}
+                  style={{...styles.avatar, background: senderPfp ? 'transparent' : '#3b82f6'}}
                   title={currentUser.isAdmin ? "Click to set role" : ""}
                   onClick={() => {
                     if (currentUser.isAdmin) {
@@ -514,8 +524,8 @@ export default function StaffChat() {
                     }
                   }}
                 >
-                  {msg.senderPfp ? (
-                    <img src={msg.senderPfp} alt="Avatar" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
+                  {senderPfp ? (
+                    <img src={senderPfp} alt="Avatar" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
                   ) : (
                     senderName.charAt(0)
                   )}
@@ -616,12 +626,12 @@ export default function StaffChat() {
                     <button 
                       style={{ ...styles.actionBtn, color: '#10b981' }} 
                       onClick={() => {
-                        const targetUser = (users || []).find(u => u.email === msg.senderEmail) || {
+                        const targetUser = senderUser || (users || []).find(u => u.email === msg.senderEmail) || {
                           email: msg.senderEmail,
                           firstName: msg.senderName || 'Staff',
                           lastName: '',
                           robloxUsername: '',
-                          profilePicture: msg.senderPfp || ''
+                          profilePicture: senderPfp || ''
                         };
                         initiateCall(targetUser);
                       }} 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3 } from 'lucide-react';
 import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
@@ -57,29 +57,55 @@ export default function Infractions() {
   const safeInformalSanctions = Array.isArray(informalSanctions) ? informalSanctions : [];
   const myEmail = currentUser?.email || '';
 
-  const myLogs = safeInfractions.filter(inf => inf && inf.staffEmail === myEmail);
-  const myInformalSanctions = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail === myEmail);
+  const {
+    myLogs,
+    myInformalSanctions,
+    c1Count,
+    c2Count,
+    genericWarningCount,
+    c1c2CombinedCount,
+    c3Count,
+    c4Count,
+    c5Count,
+    totalWeightedPoints,
+    myUpcomingSanctions
+  } = useMemo(() => {
+    const logs = safeInfractions.filter(inf => inf && inf.staffEmail === myEmail);
+    const informal = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail === myEmail);
+    let c1 = 0, c2 = 0, gen = 0, c3 = 0, c4 = 0, c5 = 0;
+    const upcoming = [];
+    logs.forEach(inf => {
+      if (!inf) return;
+      if (inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))) c1++;
+      else if (inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))) c2++;
+      else if (inf.type?.toLowerCase().includes('warning')) gen++;
+      else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) c3++;
+      else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) c4++;
+      else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) c5++;
 
-  // Individual consequence counts
-  const c1Count = myLogs.filter(inf => inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))).length;
-  const c2Count = myLogs.filter(inf => inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))).length;
-  const genericWarningCount = myLogs.filter(inf => !inf.type?.includes('C1') && !inf.type?.includes('C2') && inf.type?.toLowerCase().includes('warning')).length;
-  const c1c2CombinedCount = c1Count + c2Count + genericWarningCount;
+      const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus === 'Scheduled';
+      if (isDetention && inf.detentionStatus !== 'Passed') {
+        upcoming.push(inf);
+      }
+    });
+    c3 += informal.length;
+    const combined = c1 + c2 + gen;
+    const weighted = (c1 * 1) + (c2 * 2) + (gen * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5);
 
-  const c3Count = myLogs.filter(inf => inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')).length + myInformalSanctions.length;
-  const c4Count = myLogs.filter(inf => inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')).length;
-  const c5Count = myLogs.filter(inf => inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')).length;
-
-  // Weighted Total Consequences:
-  // C1 = 1 point, C2 = 2 points, C3 = 3 points, C4 = 4 points (e.g. 2 C4s = 8), C5 = 5 points
-  const totalWeightedPoints = (c1Count * 1) + (c2Count * 2) + (genericWarningCount * 1) + (c3Count * 3) + (c4Count * 4) + (c5Count * 5);
-  
-  // Upcoming sanctions: C4 detentions that are scheduled or active
-  const myUpcomingSanctions = myLogs.filter(inf => {
-    if (!inf) return false;
-    const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus === 'Scheduled';
-    return isDetention && inf.detentionStatus !== 'Passed';
-  });
+    return {
+      myLogs: logs,
+      myInformalSanctions: informal,
+      c1Count: c1,
+      c2Count: c2,
+      genericWarningCount: gen,
+      c1c2CombinedCount: combined,
+      c3Count: c3,
+      c4Count: c4,
+      c5Count: c5,
+      totalWeightedPoints: weighted,
+      myUpcomingSanctions: upcoming
+    };
+  }, [safeInfractions, safeInformalSanctions, myEmail]);
 
   const formatSanctionDate = (dateStr) => {
     if (!dateStr) return 'Upcoming';
@@ -166,37 +192,57 @@ export default function Infractions() {
     setTimeout(() => setLogSuccess(''), 4000);
   };
 
-  // Helper to calculate total consequence points for any staff member
-  const calculateStaffPoints = (email) => {
-    const staffLogs = safeInfractions.filter(inf => inf && inf.staffEmail === email);
-    const staffInformal = safeInformalSanctions.filter(s => s && s.staffEmail === email);
-    let pts = 0;
-    staffLogs.forEach(inf => {
-      if (inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))) pts += 1;
-      else if (inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))) pts += 2;
-      else if (inf.type?.toLowerCase().includes('warning')) pts += 1;
-      else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) pts += 3;
-      else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) pts += 4;
-      else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) pts += 5;
+  // Fast O(1) lookup map for consequence points across all staff
+  const staffPointsMap = useMemo(() => {
+    const map = new Map();
+    safeInfractions.forEach(inf => {
+      if (!inf?.staffEmail) return;
+      const email = inf.staffEmail.toLowerCase();
+      let pts = 0;
+      if (inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))) pts = 1;
+      else if (inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))) pts = 2;
+      else if (inf.type?.toLowerCase().includes('warning')) pts = 1;
+      else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) pts = 3;
+      else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) pts = 4;
+      else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) pts = 5;
+      map.set(email, (map.get(email) || 0) + pts);
     });
-    pts += (staffInformal.length * 3);
-    return pts;
+    safeInformalSanctions.forEach(s => {
+      if (!s?.staffEmail) return;
+      const email = s.staffEmail.toLowerCase();
+      map.set(email, (map.get(email) || 0) + 3);
+    });
+    return map;
+  }, [safeInfractions, safeInformalSanctions]);
+
+  // Backward-compatible helper to calculate total consequence points for any staff member
+  const calculateStaffPoints = (email) => {
+    if (!email) return 0;
+    return staffPointsMap.get(email.toLowerCase()) || 0;
   };
 
   // Filter for All Staff tab
-  const filteredAllStaffLogs = safeInfractions.filter(inf => {
-    if (!inf) return false;
-    const matchesSearch = `${inf.staffName || ''} ${inf.staffEmail || ''} ${inf.mainMessage || ''}`.toLowerCase().includes(searchStaff.toLowerCase());
-    if (!matchesSearch) return false;
+  const filteredAllStaffLogs = useMemo(() => {
+    const search = searchStaff.toLowerCase().trim();
+    return safeInfractions.filter(inf => {
+      if (!inf) return false;
+      if (search) {
+        const matchesSearch = `${inf.staffName || ''} ${inf.staffEmail || ''} ${inf.mainMessage || ''}`.toLowerCase().includes(search);
+        if (!matchesSearch) return false;
+      }
 
-    if (tierFilter === 'c1c2') return inf.type?.startsWith('C1') || inf.type?.startsWith('C2') || inf.type?.toLowerCase().includes('warning');
-    if (tierFilter === 'c3') return inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal');
-    if (tierFilter === 'c4') return inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention');
-    if (tierFilter === 'c5') return inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension');
-    return true;
-  });
+      if (tierFilter === 'c1c2') return inf.type?.startsWith('C1') || inf.type?.startsWith('C2') || inf.type?.toLowerCase().includes('warning');
+      if (tierFilter === 'c3') return inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal');
+      if (tierFilter === 'c4') return inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention');
+      if (tierFilter === 'c5') return inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension');
+      return true;
+    });
+  }, [safeInfractions, searchStaff, tierFilter]);
 
-  const eligibleStaff = users.filter(u => u && u.approved && u.email !== currentUser?.email);
+  const eligibleStaff = useMemo(() => {
+    const curEmail = currentUser?.email?.toLowerCase();
+    return users.filter(u => u && u.approved && u.email?.toLowerCase() !== curEmail);
+  }, [users, currentUser?.email]);
 
   if (!currentUser) {
     return (

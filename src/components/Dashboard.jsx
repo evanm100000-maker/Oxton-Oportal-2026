@@ -8,30 +8,103 @@ import {
   GraduationCap, Phone
 } from 'lucide-react';
 
-// Subcomponents (we will create these next)
-import Announcements from './Announcements';
-import AllocationRequests from './AllocationRequests';
-import Performance from './Performance';
-import Tasks from './Tasks';
-import Homework from './Homework';
-import SupportTickets from './SupportTickets';
-import Analytics from './Analytics';
-import LeaveOfAbsence from './LeaveOfAbsence';
-import Documents from './Documents';
-import Reports from './Reports';
-import Infractions from './Infractions';
-import AdminPanel from './AdminPanel';
-import Leaderboard from './Leaderboard';
-import SettingsModal from './SettingsModal';
-import NotificationsModal from './NotificationsModal';
-import CallModal from './CallModal';
-import StaffChat from './StaffChat';
-import AllStaff from './AllStaff';
-import Events from './Events';
-import Meetings from './Meetings';
-import CalendarPage from './CalendarPage';
-import FlightRegister from './FlightRegister';
 import { formatCustomLongDate } from '../utils/timeUtils';
+
+// Code-split subcomponents for fast initial page load and minimal memory footprint
+const Announcements = React.lazy(() => import('./Announcements'));
+const AllocationRequests = React.lazy(() => import('./AllocationRequests'));
+const Performance = React.lazy(() => import('./Performance'));
+const Tasks = React.lazy(() => import('./Tasks'));
+const Homework = React.lazy(() => import('./Homework'));
+const SupportTickets = React.lazy(() => import('./SupportTickets'));
+const Analytics = React.lazy(() => import('./Analytics'));
+const LeaveOfAbsence = React.lazy(() => import('./LeaveOfAbsence'));
+const Documents = React.lazy(() => import('./Documents'));
+const Reports = React.lazy(() => import('./Reports'));
+const Infractions = React.lazy(() => import('./Infractions'));
+const AdminPanel = React.lazy(() => import('./AdminPanel'));
+const Leaderboard = React.lazy(() => import('./Leaderboard'));
+const SettingsModal = React.lazy(() => import('./SettingsModal'));
+const NotificationsModal = React.lazy(() => import('./NotificationsModal'));
+const CallModal = React.lazy(() => import('./CallModal'));
+const StaffChat = React.lazy(() => import('./StaffChat'));
+const AllStaff = React.lazy(() => import('./AllStaff'));
+const Events = React.lazy(() => import('./Events'));
+const Meetings = React.lazy(() => import('./Meetings'));
+const CalendarPage = React.lazy(() => import('./CalendarPage'));
+const FlightRegister = React.lazy(() => import('./FlightRegister'));
+
+const TabLoadingFallback = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '350px', gap: '14px', color: 'var(--color-text-muted)' }}>
+    <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#3b82f6', animation: 'spin 0.8s linear infinite' }} />
+    <span style={{ fontSize: '0.85rem' }}>Loading content...</span>
+  </div>
+);
+
+// Isolated Clock & Battery Widget - prevents Dashboard from re-rendering every 1 second
+const DashboardClockWidget = React.memo(function DashboardClockWidget({ showClockBattery, useLongDateFormat, use24HourClock }) {
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [batteryLevel, setBatteryLevel] = useState(null);
+  const [isCharging, setIsCharging] = useState(false);
+  const [hasBattery, setHasBattery] = useState(false);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    if ('getBattery' in navigator) {
+      navigator.getBattery().then((battery) => {
+        const checkBattery = () => {
+          const isDesktopFake = battery.charging && battery.chargingTime === 0 && battery.dischargingTime === Infinity && battery.level === 1;
+          setHasBattery(!isDesktopFake);
+          setBatteryLevel(Math.round(battery.level * 100));
+          setIsCharging(battery.charging);
+        };
+        checkBattery();
+        battery.addEventListener('levelchange', checkBattery);
+        battery.addEventListener('chargingchange', checkBattery);
+      }).catch(() => {
+        setHasBattery(false);
+      });
+    }
+  }, []);
+
+  if (!showClockBattery) return null;
+
+  return (
+    <div className="dashboard-clock-widget" style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '-0.2px', border: '1px solid var(--color-border)', background: 'var(--color-bg-card)', padding: '8px 16px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(20px)', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <Clock size={18} />
+        <span>
+          {useLongDateFormat 
+            ? formatCustomLongDate(currentTime)
+            : currentTime.toLocaleDateString()}
+        </span>
+        <div style={{ width: '1px', height: '20px', background: 'var(--color-border)' }} />
+        <span>
+          {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24HourClock })}
+        </span>
+      </div>
+      {hasBattery && batteryLevel !== null && (
+        <>
+          <div style={{ width: '1px', height: '20px', background: 'var(--color-border)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {(() => {
+              if (isCharging) return <BatteryCharging size={18} color="#10b981" />;
+              if (batteryLevel > 80) return <BatteryFull size={18} />;
+              if (batteryLevel > 40) return <BatteryMedium size={18} />;
+              if (batteryLevel > 15) return <BatteryLow size={18} />;
+              return <BatteryWarning size={18} color="#ef4444" />;
+            })()}
+            <span style={{ color: batteryLevel <= 20 && !isCharging ? "#ef4444" : "inherit" }}>{batteryLevel}%</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
 
 const tabToPath = {
   home: '/',
@@ -124,36 +197,6 @@ export default function Dashboard() {
   const [lastReadDocumentsCount, setLastReadDocumentsCount] = useState(0);
   const [lastReadReportsCount, setLastReadReportsCount] = useState(0);
   const [reviewedInfractionIds, setReviewedInfractionIds] = useState([]);
-  
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [batteryLevel, setBatteryLevel] = useState(null);
-  const [isCharging, setIsCharging] = useState(false);
-  const [hasBattery, setHasBattery] = useState(false);
-
-  React.useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  React.useEffect(() => {
-    if ('getBattery' in navigator) {
-      navigator.getBattery().then((battery) => {
-        const checkBattery = () => {
-          // If level is 1 (100%), charging is true, chargingTime is 0, dischargingTime is Infinity
-          // It's likely a desktop PC without a real battery (or a fully charged laptop on AC).
-          const isDesktopFake = battery.charging && battery.chargingTime === 0 && battery.dischargingTime === Infinity && battery.level === 1;
-          setHasBattery(!isDesktopFake);
-          setBatteryLevel(Math.round(battery.level * 100));
-          setIsCharging(battery.charging);
-        };
-        checkBattery();
-        battery.addEventListener('levelchange', checkBattery);
-        battery.addEventListener('chargingchange', checkBattery);
-      }).catch(() => {
-        setHasBattery(false);
-      });
-    }
-  }, []);
 
   React.useEffect(() => {
     if (currentUser?.email) {
@@ -703,37 +746,11 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {showClockBattery && (
-          <div className="dashboard-clock-widget" style={{ position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '16px', color: 'var(--color-text-main)', fontSize: '0.95rem', fontWeight: '600', letterSpacing: '-0.2px', border: '1px solid var(--color-border)', background: 'var(--color-bg-card)', padding: '8px 16px', borderRadius: '12px', zIndex: 10, backdropFilter: 'blur(20px)', boxShadow: '0 4px 16px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Clock size={18} />
-              <span>
-                {useLongDateFormat 
-                  ? formatCustomLongDate(currentTime)
-                  : currentTime.toLocaleDateString()}
-              </span>
-              <div style={{ width: '1px', height: '20px', background: 'var(--color-border)' }} />
-              <span>
-                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: !use24HourClock })}
-              </span>
-            </div>
-            {hasBattery && batteryLevel !== null && (
-              <>
-                <div style={{ width: '1px', height: '20px', background: 'var(--color-border)' }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {(() => {
-                    if (isCharging) return <BatteryCharging size={18} color="#10b981" />;
-                    if (batteryLevel > 80) return <BatteryFull size={18} />;
-                    if (batteryLevel > 40) return <BatteryMedium size={18} />;
-                    if (batteryLevel > 15) return <BatteryLow size={18} />;
-                    return <BatteryWarning size={18} color="#ef4444" />;
-                  })()}
-                  <span style={{ color: batteryLevel <= 20 && !isCharging ? "#ef4444" : "inherit" }}>{batteryLevel}%</span>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        <DashboardClockWidget 
+          showClockBattery={showClockBattery} 
+          useLongDateFormat={useLongDateFormat} 
+          use24HourClock={use24HourClock} 
+        />
       </nav>
 
       {unreadInfractions.length > 0 && activeTab !== 'infractions' && (
@@ -923,16 +940,20 @@ export default function Dashboard() {
               style={styles.pageCard}
               className="glass-panel"
             >
-              {renderActiveComponent()}
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                {renderActiveComponent()}
+              </React.Suspense>
             </motion.div>
           </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      <NotificationsModal isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
-      <CallModal isOpen={isCallModalOpen} onClose={() => setIsCallModalOpen(false)} />
+      <React.Suspense fallback={null}>
+        {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />}
+        {isNotificationsOpen && <NotificationsModal isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />}
+        {isCallModalOpen && <CallModal isOpen={isCallModalOpen} onClose={() => setIsCallModalOpen(false)} />}
+      </React.Suspense>
     </div>
   );
 }

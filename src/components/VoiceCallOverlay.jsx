@@ -83,32 +83,42 @@ export default function VoiceCallOverlay() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const resolveUserPfp = (email, fallback = '') => {
+    if (!email) return fallback || '';
+    const match = users.find(u => u && u.email && u.email.toLowerCase().trim() === email.toLowerCase().trim());
+    return match?.profilePicture || fallback || '';
+  };
+
+  const incomingPfp = resolveUserPfp(incomingCall?.callerEmail, incomingCall?.callerPfp);
+
   // Determine other user's info for active call
   const peerInfo = React.useMemo(() => {
     if (!activeCall) return { name: 'Staff Member', pfp: '', roblox: '', muted: false, deafened: false, email: '' };
+    const isCaller = callRole === 'caller';
+    const otherEmail = isCaller ? activeCall.receiverEmail : activeCall.callerEmail;
+    const userPfp = resolveUserPfp(otherEmail);
+
     if (activeCall.type === 'group') {
-      const isCaller = callRole === 'caller';
       return {
         name: isCaller ? (activeCall.groupTitle || 'Group Voice Call') : (activeCall.callerName || 'Group Voice Call'),
         subTitle: isCaller ? `${activeCall.members?.length || 0} Members in Call` : (activeCall.groupTitle || 'Group Voice Call'),
-        pfp: isCaller ? '' : activeCall.callerPfp,
+        pfp: isCaller ? '' : (userPfp || activeCall.callerPfp || ''),
         roblox: isCaller ? '' : activeCall.callerRoblox,
-        email: isCaller ? activeCall.receiverEmail : activeCall.callerEmail,
+        email: otherEmail,
         muted: isCaller ? activeCall.receiverMuted : activeCall.callerMuted,
         deafened: isCaller ? activeCall.receiverDeafened : activeCall.callerDeafened
       };
     }
-    const isCaller = callRole === 'caller';
     return {
       name: isCaller ? activeCall.receiverName : activeCall.callerName,
       subTitle: isCaller ? (activeCall.receiverRoblox ? `@${activeCall.receiverRoblox}` : '') : (activeCall.callerRoblox ? `@${activeCall.callerRoblox}` : ''),
-      pfp: isCaller ? activeCall.receiverPfp : activeCall.callerPfp,
+      pfp: userPfp || (isCaller ? activeCall.receiverPfp : activeCall.callerPfp) || '',
       roblox: isCaller ? activeCall.receiverRoblox : activeCall.callerRoblox,
-      email: isCaller ? activeCall.receiverEmail : activeCall.callerEmail,
+      email: otherEmail,
       muted: isCaller ? activeCall.receiverMuted : activeCall.callerMuted,
       deafened: isCaller ? activeCall.receiverDeafened : activeCall.callerDeafened
     };
-  }, [activeCall, callRole]);
+  }, [activeCall, callRole, users]);
 
   // List of active call member emails for merge filtering
   const activeMembersSet = React.useMemo(() => {
@@ -178,9 +188,9 @@ export default function VoiceCallOverlay() {
               <div style={styles.avatarWrapper}>
                 <div style={{ ...styles.radarPulse, borderColor: 'rgba(245, 158, 11, 0.6)' }}></div>
                 <div style={{ ...styles.avatarContainer, borderColor: '#f59e0b' }}>
-                  {incomingCall.callerPfp ? (
+                  {incomingPfp ? (
                     <img 
-                      src={incomingCall.callerPfp} 
+                      src={incomingPfp} 
                       alt={incomingCall.callerName} 
                       style={styles.avatarImg}
                     />
@@ -300,9 +310,9 @@ export default function VoiceCallOverlay() {
               <div style={styles.avatarWrapper}>
                 <div style={styles.radarPulse}></div>
                 <div style={styles.avatarContainer}>
-                  {incomingCall.callerPfp ? (
+                  {incomingPfp ? (
                     <img 
-                      src={incomingCall.callerPfp} 
+                      src={incomingPfp} 
                       alt={incomingCall.callerName} 
                       style={styles.avatarImg}
                     />

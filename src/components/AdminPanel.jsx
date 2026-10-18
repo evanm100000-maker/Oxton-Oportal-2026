@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import FlightRegister from './FlightRegister';
 import FlightQuotaProgress from './FlightQuotaProgress';
@@ -46,6 +46,8 @@ const PAGE_TOGGLES_DEF = [
   { key: 'emergencyAlerts', label: 'Emergency Alert Broadcasts', group: 'Administration & Portals' },
   { key: 'bypassAnnouncement', label: 'Screen Takeovers (Bypass)', group: 'Administration & Portals' },
 ];
+
+const KNOWN_PAGE_KEYS = new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean)));
 
 export default function AdminPanel() {
   const { 
@@ -483,47 +485,82 @@ export default function AdminPanel() {
   };
 
   // Derived lists
-  const pendingUsers = users.filter(u => !u.approved && u.role !== 'passenger');
-  const approvedUsers = users.filter(u => u.approved && u.role !== 'passenger');
-  const pendingLoas = loaRequests.filter(req => req.status === 'Pending');
-  const activeLoas = loaRequests.filter(req => req.status === 'Approved' || req.status === 'End Requested');
-  const pendingFlightLogs = flightLogs.filter(log => log.status === 'Pending');
-  const pendingPasswords = passwordResets.filter(r => r.status === 'Pending');
+  const pendingUsers = useMemo(() => users.filter(u => !u.approved && u.role !== 'passenger'), [users]);
+  const approvedUsers = useMemo(() => users.filter(u => u.approved && u.role !== 'passenger'), [users]);
+  const pendingLoas = useMemo(() => loaRequests.filter(req => req.status === 'Pending'), [loaRequests]);
+  const activeLoas = useMemo(() => loaRequests.filter(req => req.status === 'Approved' || req.status === 'End Requested'), [loaRequests]);
+  const pendingFlightLogs = useMemo(() => flightLogs.filter(log => log.status === 'Pending'), [flightLogs]);
+  const pendingPasswords = useMemo(() => passwordResets.filter(r => r.status === 'Pending'), [passwordResets]);
 
   // Support Tickets list & counters
-  const openTickets = tickets.filter(t => t.status === 'Open');
-  const unclaimedTickets = tickets.filter(t => t.status === 'Open' && !t.claimedByEmail);
-  const myClaimedTickets = tickets.filter(t => t.claimedByEmail === currentUser.email && t.status !== 'Closed');
-  const escalatedTickets = tickets.filter(t => t.status === 'Escalated');
-  const closedTickets = tickets.filter(t => t.status === 'Closed');
+  const { openTickets, unclaimedTickets, myClaimedTickets, escalatedTickets, closedTickets } = useMemo(() => {
+    const open = [], unclaimed = [], mine = [], escalated = [], closed = [];
+    tickets.forEach(t => {
+      if (t.status === 'Open') {
+        open.push(t);
+        if (!t.claimedByEmail) unclaimed.push(t);
+      }
+      if (t.claimedByEmail === currentUser.email && t.status !== 'Closed') mine.push(t);
+      if (t.status === 'Escalated') escalated.push(t);
+      if (t.status === 'Closed') closed.push(t);
+    });
+    return { openTickets: open, unclaimedTickets: unclaimed, myClaimedTickets: mine, escalatedTickets: escalated, closedTickets: closed };
+  }, [tickets, currentUser.email]);
 
-  const filteredTickets = tickets.filter(t => {
-    if (ticketFilter === 'unclaimed') return t.status === 'Open' && !t.claimedByEmail;
-    if (ticketFilter === 'mine') return t.claimedByEmail === currentUser.email && t.status !== 'Closed';
-    if (ticketFilter === 'escalated') return t.status === 'Escalated';
-    if (ticketFilter === 'closed') return t.status === 'Closed';
-    return true; // 'all'
-  });
+  const filteredTickets = useMemo(() => {
+    if (ticketFilter === 'unclaimed') return unclaimedTickets;
+    if (ticketFilter === 'mine') return myClaimedTickets;
+    if (ticketFilter === 'escalated') return escalatedTickets;
+    if (ticketFilter === 'closed') return closedTickets;
+    return tickets;
+  }, [ticketFilter, tickets, unclaimedTickets, myClaimedTickets, escalatedTickets, closedTickets]);
 
-  const groupedInfractions = Object.values([...infractions, ...informalSanctions].reduce((acc, inf) => {
-    if (!inf || !inf.staffEmail) return acc;
-    const emailKey = inf.staffEmail.toLowerCase().trim();
-    if (!acc[emailKey]) {
-      acc[emailKey] = { 
-        name: inf.staffName || (() => { const u = users.find(u => u && u.email?.toLowerCase() === emailKey); return u ? `${u.firstName} ${u.lastName}` : inf.staffEmail; })(), 
-        email: inf.staffEmail, 
-        items: []
-      };
+  const groupedInfractions = useMemo(() => {
+    const userMap = new Map();
+    users.forEach(u => {
+      if (u?.email) userMap.set(u.email.toLowerCase(), u);
+    });
+
+    const grouped = {};
+    const all = [...infractions, ...informalSanctions];
+    for (let i = 0; i < all.length; i++) {
+      const inf = all[i];
+      if (!inf || !inf.staffEmail) continue;
+      const emailKey = inf.staffEmail.toLowerCase().trim();
+      if (!grouped[emailKey]) {
+        const u = userMap.get(emailKey);
+        grouped[emailKey] = { 
+          name: inf.staffName || (u ? `${u.firstName} ${u.lastName}` : inf.staffEmail), 
+          email: inf.staffEmail, 
+          items: []
+        };
+      }
+      grouped[emailKey].items.push(inf);
     }
-    acc[emailKey].items.push(inf);
-    return acc;
-  }, {})).map(group => {
-    const stats = computeStaffConsequenceStats(group.email, infractions, informalSanctions);
-    return {
+
+    return Object.values(grouped).map(group => ({
       ...group,
-      stats
-    };
-  });
+      stats: computeStaffConsequenceStats(group.email, infractions, informalSanctions)
+    }));
+  }, [infractions, informalSanctions, users]);
+
+  const { allDisplayToggles, togglesByGroup, toggleGroups } = useMemo(() => {
+    const extraConfigKeys = Object.keys(pageConfig || {}).filter(k => !KNOWN_PAGE_KEYS.has(k));
+    const all = [
+      ...PAGE_TOGGLES_DEF,
+      ...extraConfigKeys.map(k => ({
+        key: k,
+        label: k.replace(/([A-Z])/g, ' $1').trim(),
+        group: 'Other Pages'
+      }))
+    ];
+    const groups = Array.from(new Set(all.map(t => t.group)));
+    const byGroup = {};
+    groups.forEach(g => {
+      byGroup[g] = all.filter(t => t.group === g);
+    });
+    return { allDisplayToggles: all, togglesByGroup: byGroup, toggleGroups: groups };
+  }, [pageConfig]);
 
   const isSuperAdmin = currentUser.email === superAdminEmail;
 
@@ -1661,13 +1698,7 @@ export default function AdminPanel() {
                   <button
                     type="button"
                     onClick={() => {
-                      const allToggles = [
-                        ...PAGE_TOGGLES_DEF,
-                        ...Object.keys(pageConfig || {})
-                          .filter(k => !new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean))).has(k))
-                          .map(k => ({ key: k }))
-                      ];
-                      allToggles.forEach(item => {
+                      allDisplayToggles.forEach(item => {
                         updatePageConfig(item.key, true);
                         if (item.alias) updatePageConfig(item.alias, true);
                       });
@@ -1680,13 +1711,7 @@ export default function AdminPanel() {
                   <button
                     type="button"
                     onClick={() => {
-                      const allToggles = [
-                        ...PAGE_TOGGLES_DEF,
-                        ...Object.keys(pageConfig || {})
-                          .filter(k => !new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean))).has(k))
-                          .map(k => ({ key: k }))
-                      ];
-                      allToggles.forEach(item => {
+                      allDisplayToggles.forEach(item => {
                         if (item.key !== 'adminPanel' && item.key !== 'admin') {
                           updatePageConfig(item.key, false);
                           if (item.alias && item.alias !== 'admin' && item.alias !== 'adminPanel') updatePageConfig(item.alias, false);
@@ -1701,23 +1726,9 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              {(() => {
-                const knownKeys = new Set(PAGE_TOGGLES_DEF.flatMap(p => [p.key, p.alias].filter(Boolean)));
-                const extraConfigKeys = Object.keys(pageConfig || {}).filter(k => !knownKeys.has(k));
-                const allDisplayToggles = [
-                  ...PAGE_TOGGLES_DEF,
-                  ...extraConfigKeys.map(k => ({
-                    key: k,
-                    label: k.replace(/([A-Z])/g, ' $1').trim(),
-                    group: 'Other Pages'
-                  }))
-                ];
-                const groups = Array.from(new Set(allDisplayToggles.map(t => t.group)));
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {groups.map(groupName => {
-                      const groupItems = allDisplayToggles.filter(t => t.group === groupName);
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {toggleGroups.map(groupName => {
+                  const groupItems = togglesByGroup[groupName] || [];
                       return (
                         <div key={groupName} style={{ background: 'rgba(0, 0, 0, 0.25)', padding: '14px 16px', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
                           <div style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#93c5fd', marginBottom: '12px' }}>
@@ -1780,8 +1791,6 @@ export default function AdminPanel() {
                       );
                     })}
                   </div>
-                );
-              })()}
             </div>
 
             <div style={{ padding: '20px', background: 'rgba(245, 158, 11, 0.05)', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', marginTop: '8px' }}>

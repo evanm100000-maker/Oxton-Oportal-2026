@@ -65,7 +65,7 @@ export default function SettingsModal({ isOpen, onClose }) {
           reader.readAsDataURL(croppedImageBlob);
         });
 
-        finalProfileUrl = await compressImage(dataUrl, 800, 0.6);
+        finalProfileUrl = await compressImage(dataUrl, 192, 0.7);
       }
 
       updateUserProfile(email, firstName, lastName, finalProfileUrl, robloxUsername);
