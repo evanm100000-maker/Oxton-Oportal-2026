@@ -813,7 +813,7 @@ export default function Dashboard() {
                 </h1>
               </div>
               <p style={{ ...styles.greetingSub, marginTop: '8px' }}>
-                Welcome back to duty. Your central command hub to coordinate flights, log reports, and manage staff operations.
+                Welcome to Oxton Oportal, your central command hub to coordinate flights, log reports, and manage staff operations.
               </p>
               
               {(currentUser.goldMedals > 0 || currentUser.silverMedals > 0 || currentUser.bronzeMedals > 0) && (
