@@ -17,7 +17,7 @@ try {
 if (serviceAccount) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    databaseURL: 'https://oxton-oportal-default-rtdb.europe-west1.firebasedatabase.app'
+    databaseURL: 'https://miles-messaging-default-rtdb.europe-west1.firebasedatabase.app'
   });
 }
 

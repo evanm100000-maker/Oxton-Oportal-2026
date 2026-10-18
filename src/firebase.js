@@ -9,14 +9,14 @@ import { getStorage } from "firebase/storage";
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyBNjs7UL_7O7k8UwSHizZwQpn6Kuj7Qqs4",
-  authDomain: "oxton-new-main-database.firebaseapp.com",
-  databaseURL: "https://oxton-new-main-database-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "oxton-new-main-database",
-  storageBucket: "oxton-new-main-database.firebasestorage.app",
-  messagingSenderId: "967307028847",
-  appId: "1:967307028847:web:753964ca99379a4116609a",
-  measurementId: "G-SK10CQ096L"
+  apiKey: "AIzaSyB_5aJLUEBbfinqNno9NiBcDfxn9KPMnmg",
+  authDomain: "miles-messaging.firebaseapp.com",
+  databaseURL: "https://miles-messaging-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "miles-messaging",
+  storageBucket: "miles-messaging.firebasestorage.app",
+  messagingSenderId: "49212184740",
+  appId: "1:49212184740:web:6de5cdde177af587d1ae31",
+  measurementId: "G-GCWW77QVVQ"
 };
 
 // Initialize Firebase
