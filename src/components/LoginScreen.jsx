@@ -111,7 +111,7 @@ export default function LoginScreen({ onBack }) {
           <div style={styles.logoIconContainer}>
             <img src="./logo.png" alt="Oxton Logo" style={styles.logoIcon} />
           </div>
-          <h1 style={styles.brandTitle}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.4em', color: '#60a5fa', verticalAlign: 'super', fontWeight: 'bold' }}>BETA</span></h1>
+          <h1 style={styles.brandTitle}>Oxton Oportal</h1>
           <p style={styles.brandSubtitle}>Staff Portal & Command Center</p>
         </div>
 

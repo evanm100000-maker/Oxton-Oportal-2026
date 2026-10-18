@@ -608,7 +608,7 @@ export default function Dashboard() {
           title="Go to Home"
         >
           <img src="./logo.png" alt="Oxton Logo" style={styles.navLogo} />
-          <span style={styles.navBrandText}>Oxton Oportal <span style={{ fontFamily: 'monospace', fontSize: '0.6em', color: '#60a5fa', fontWeight: 'bold', marginLeft: '4px' }}>BETA</span></span>
+          <span style={styles.navBrandText}>Oxton Oportal</span>
         </div>
 
         {/* Flight Quota Progress Indicator */}
