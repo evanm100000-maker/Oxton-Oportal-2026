@@ -1,12 +1,35 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import fs from 'fs'
 
-// https://vite.dev/config/
+const BUILD_TIME = Date.now();
+const APP_VERSION = '1.2.5';
+
+// Plugin to write public/version.json on build
+function versionEmitterPlugin() {
+  return {
+    name: 'version-emitter',
+    buildStart() {
+      const data = JSON.stringify({ version: APP_VERSION, buildTime: BUILD_TIME });
+      try {
+        fs.writeFileSync('public/version.json', data);
+      } catch (e) {
+        console.error('Failed to write version.json', e);
+      }
+    }
+  };
+}
+
 export default defineConfig({
   base: './',
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __BUILD_TIME__: BUILD_TIME
+  },
   plugins: [
     react(),
+    versionEmitterPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'logo.png'],
@@ -33,7 +56,22 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         skipWaiting: true,
-        clientsClaim: true
+        clientsClaim: true,
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-cache',
+              networkTimeoutSeconds: 2
+            }
+          },
+          {
+            urlPattern: /version\.json/,
+            handler: 'NetworkOnly'
+          }
+        ]
       }
     })
   ],
