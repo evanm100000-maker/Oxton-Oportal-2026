@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ShieldCheck, RefreshCw, Volume2, HelpCircle, Check, AlertCircle } from 'lucide-react';
 
-// Pre-defined visual challenges with realistic SVG illustrations
+// Real photographic image challenges matching official Google reCAPTCHA format
 const CHALLENGES = [
   {
     id: 'airplanes',
     title: 'airplanes',
     instruction: 'Select all squares with airplanes',
     tiles: [
-      { id: 'a1', isTarget: true, type: 'commercial_jet' },
-      { id: 'd1', isTarget: false, type: 'car' },
-      { id: 'a2', isTarget: true, type: 'airplane_runway' },
-      { id: 'd2', isTarget: false, type: 'city_bus' },
-      { id: 'a3', isTarget: true, type: 'supersonic_jet' },
-      { id: 'd3', isTarget: false, type: 'traffic_light' },
-      { id: 'd4', isTarget: false, type: 'boat' },
-      { id: 'a4', isTarget: true, type: 'propeller_plane' },
-      { id: 'd5', isTarget: false, type: 'bicycle' },
+      { id: 'a1', isTarget: true, img: './captcha/airplanes/1.jpg' },
+      { id: 'd1', isTarget: false, img: './captcha/decoys/1.jpg' },
+      { id: 'a2', isTarget: true, img: './captcha/airplanes/2.jpg' },
+      { id: 'd2', isTarget: false, img: './captcha/decoys/2.jpg' },
+      { id: 'a3', isTarget: true, img: './captcha/airplanes/3.jpg' },
+      { id: 'd3', isTarget: false, img: './captcha/decoys/3.jpg' },
+      { id: 'd4', isTarget: false, img: './captcha/decoys/4.jpg' },
+      { id: 'a4', isTarget: true, img: './captcha/airplanes/4.jpg' },
+      { id: 'd5', isTarget: false, img: './captcha/decoys/5.jpg' },
     ]
   },
   {
@@ -24,15 +24,15 @@ const CHALLENGES = [
     title: 'traffic lights',
     instruction: 'Select all squares with traffic lights',
     tiles: [
-      { id: 'tl1', isTarget: true, type: 'traffic_light_red' },
-      { id: 'd1', isTarget: false, type: 'car' },
-      { id: 'tl2', isTarget: true, type: 'traffic_light_green' },
-      { id: 'd2', isTarget: false, type: 'commercial_jet' },
-      { id: 'd3', isTarget: false, type: 'bicycle' },
-      { id: 'tl3', isTarget: true, type: 'traffic_light_yellow' },
-      { id: 'd4', isTarget: false, type: 'city_bus' },
-      { id: 'tl4', isTarget: true, type: 'traffic_light_overhead' },
-      { id: 'd5', isTarget: false, type: 'crosswalk' },
+      { id: 'tl1', isTarget: true, img: './captcha/traffic_lights/1.jpg' },
+      { id: 'd1', isTarget: false, img: './captcha/decoys/6.jpg' },
+      { id: 'tl2', isTarget: true, img: './captcha/traffic_lights/2.jpg' },
+      { id: 'd2', isTarget: false, img: './captcha/decoys/7.jpg' },
+      { id: 'd3', isTarget: false, img: './captcha/decoys/8.jpg' },
+      { id: 'tl3', isTarget: true, img: './captcha/traffic_lights/3.jpg' },
+      { id: 'd4', isTarget: false, img: './captcha/decoys/1.jpg' },
+      { id: 'tl4', isTarget: true, img: './captcha/traffic_lights/4.jpg' },
+      { id: 'd5', isTarget: false, img: './captcha/decoys/2.jpg' },
     ]
   },
   {
@@ -40,31 +40,15 @@ const CHALLENGES = [
     title: 'bicycles',
     instruction: 'Select all squares with bicycles',
     tiles: [
-      { id: 'b1', isTarget: true, type: 'bicycle' },
-      { id: 'd1', isTarget: false, type: 'commercial_jet' },
-      { id: 'd2', isTarget: false, type: 'traffic_light_red' },
-      { id: 'b2', isTarget: true, type: 'mountain_bike' },
-      { id: 'd3', isTarget: false, type: 'car' },
-      { id: 'b3', isTarget: true, type: 'road_bike' },
-      { id: 'd4', isTarget: false, type: 'city_bus' },
-      { id: 'd5', isTarget: false, type: 'crosswalk' },
-      { id: 'b4', isTarget: true, type: 'vintage_bike' },
-    ]
-  },
-  {
-    id: 'crosswalks',
-    title: 'crosswalks',
-    instruction: 'Select all squares with crosswalks',
-    tiles: [
-      { id: 'cw1', isTarget: true, type: 'crosswalk' },
-      { id: 'd1', isTarget: false, type: 'traffic_light_green' },
-      { id: 'cw2', isTarget: true, type: 'crosswalk_perspective' },
-      { id: 'd2', isTarget: false, type: 'car' },
-      { id: 'd3', isTarget: false, type: 'bicycle' },
-      { id: 'cw3', isTarget: true, type: 'crosswalk_night' },
-      { id: 'd4', isTarget: false, type: 'commercial_jet' },
-      { id: 'cw4', isTarget: true, type: 'crosswalk_urban' },
-      { id: 'd5', isTarget: false, type: 'city_bus' },
+      { id: 'b1', isTarget: true, img: './captcha/bicycles/1.jpg' },
+      { id: 'd1', isTarget: false, img: './captcha/decoys/3.jpg' },
+      { id: 'd2', isTarget: false, img: './captcha/decoys/4.jpg' },
+      { id: 'b2', isTarget: true, img: './captcha/bicycles/2.jpg' },
+      { id: 'd3', isTarget: false, img: './captcha/decoys/5.jpg' },
+      { id: 'b3', isTarget: true, img: './captcha/bicycles/3.jpg' },
+      { id: 'd4', isTarget: false, img: './captcha/decoys/6.jpg' },
+      { id: 'd5', isTarget: false, img: './captcha/decoys/7.jpg' },
+      { id: 'b4', isTarget: true, img: './captcha/bicycles/4.jpg' },
     ]
   },
   {
@@ -72,333 +56,34 @@ const CHALLENGES = [
     title: 'buses',
     instruction: 'Select all squares with buses',
     tiles: [
-      { id: 'bu1', isTarget: true, type: 'city_bus' },
-      { id: 'd1', isTarget: false, type: 'car' },
-      { id: 'bu2', isTarget: true, type: 'double_decker_bus' },
-      { id: 'd2', isTarget: false, type: 'traffic_light_red' },
-      { id: 'd3', isTarget: false, type: 'commercial_jet' },
-      { id: 'bu3', isTarget: true, type: 'school_bus' },
-      { id: 'd4', isTarget: false, type: 'crosswalk' },
-      { id: 'bu4', isTarget: true, type: 'transit_bus' },
-      { id: 'd5', isTarget: false, type: 'bicycle' },
+      { id: 'bu1', isTarget: true, img: './captcha/buses/1.jpg' },
+      { id: 'd1', isTarget: false, img: './captcha/decoys/8.jpg' },
+      { id: 'bu2', isTarget: true, img: './captcha/buses/2.jpg' },
+      { id: 'd2', isTarget: false, img: './captcha/decoys/1.jpg' },
+      { id: 'd3', isTarget: false, img: './captcha/decoys/2.jpg' },
+      { id: 'bu3', isTarget: true, img: './captcha/buses/3.jpg' },
+      { id: 'd4', isTarget: false, img: './captcha/decoys/3.jpg' },
+      { id: 'bu4', isTarget: true, img: './captcha/buses/4.jpg' },
+      { id: 'd5', isTarget: false, img: './captcha/decoys/4.jpg' },
+    ]
+  },
+  {
+    id: 'crosswalks',
+    title: 'crosswalks',
+    instruction: 'Select all squares with crosswalks',
+    tiles: [
+      { id: 'cw1', isTarget: true, img: './captcha/crosswalks/1.jpg' },
+      { id: 'd1', isTarget: false, img: './captcha/decoys/5.jpg' },
+      { id: 'cw2', isTarget: true, img: './captcha/crosswalks/2.jpg' },
+      { id: 'd2', isTarget: false, img: './captcha/decoys/6.jpg' },
+      { id: 'd3', isTarget: false, img: './captcha/decoys/7.jpg' },
+      { id: 'cw3', isTarget: true, img: './captcha/crosswalks/3.jpg' },
+      { id: 'd4', isTarget: false, img: './captcha/decoys/8.jpg' },
+      { id: 'cw4', isTarget: true, img: './captcha/crosswalks/4.jpg' },
+      { id: 'd5', isTarget: false, img: './captcha/decoys/1.jpg' },
     ]
   }
 ];
-
-// Rich, high-fidelity SVG graphics for realistic photographic style tiles
-function renderTileGraphic(type) {
-  switch (type) {
-    case 'commercial_jet':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <defs>
-            <linearGradient id="skyGrad1" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1e3a8a" />
-              <stop offset="60%" stopColor="#60a5fa" />
-              <stop offset="100%" stopColor="#bfdbfe" />
-            </linearGradient>
-            <linearGradient id="planeGrad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#f8fafc" />
-              <stop offset="50%" stopColor="#e2e8f0" />
-              <stop offset="100%" stopColor="#94a3b8" />
-            </linearGradient>
-          </defs>
-          <rect width="100" height="100" fill="url(#skyGrad1)" />
-          {/* Cloud drifts */}
-          <ellipse cx="20" cy="75" rx="30" ry="12" fill="rgba(255,255,255,0.7)" filter="blur(1px)" />
-          <ellipse cx="85" cy="40" rx="25" ry="10" fill="rgba(255,255,255,0.5)" filter="blur(1px)" />
-          {/* Contrail */}
-          <line x1="5" y1="70" x2="50" y2="48" stroke="rgba(255,255,255,0.4)" strokeWidth="3" strokeDasharray="3 2" />
-          {/* Jet Body */}
-          <path d="M25 65 Q 50 48 82 32 Q 86 30 84 34 Q 68 45 42 62 Z" fill="url(#planeGrad)" />
-          {/* Tail Fin */}
-          <polygon points="26,64 35,42 42,47 32,65" fill="#2563eb" />
-          {/* Main Wing */}
-          <polygon points="46,51 68,66 60,69 40,56" fill="#64748b" />
-          {/* Cockpit windows */}
-          <circle cx="80" cy="33" r="1.5" fill="#0f172a" />
-          <circle cx="78" cy="34" r="1.5" fill="#0f172a" />
-        </svg>
-      );
-
-    case 'airplane_runway':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <defs>
-            <linearGradient id="tarmac" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#334155" />
-              <stop offset="100%" stopColor="#0f172a" />
-            </linearGradient>
-          </defs>
-          <rect width="100" height="55" fill="#38bdf8" />
-          <rect y="55" width="100" height="45" fill="url(#tarmac)" />
-          {/* Centerline */}
-          <line x1="10" y1="78" x2="35" y2="78" stroke="#facc15" strokeWidth="3" />
-          <line x1="50" y1="78" x2="75" y2="78" stroke="#facc15" strokeWidth="3" />
-          <line x1="90" y1="78" x2="100" y2="78" stroke="#facc15" strokeWidth="3" />
-          {/* Airplane on runway */}
-          <ellipse cx="50" cy="53" rx="28" ry="7" fill="#f8fafc" />
-          <polygon points="45,46 55,46 50,32" fill="#ef4444" />
-          <polygon points="35,53 15,62 25,65 42,55" fill="#94a3b8" />
-          <polygon points="65,53 85,62 75,65 58,55" fill="#94a3b8" />
-        </svg>
-      );
-
-    case 'supersonic_jet':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#0284c7" />
-          <polygon points="15,85 85,15 85,18 35,85" fill="#f1f5f9" />
-          <polygon points="45,55 30,85 65,80" fill="#cbd5e1" />
-          <polygon points="80,18 85,15 78,24" fill="#0369a1" />
-          <line x1="10" y1="90" x2="30" y2="82" stroke="#f97316" strokeWidth="4" />
-        </svg>
-      );
-
-    case 'propeller_plane':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#7dd3fc" />
-          <path d="M20 50 Q 55 42 75 50 Q 55 58 20 50" fill="#dc2626" />
-          <polygon points="40,48 55,20 62,22 48,49" fill="#f8fafc" />
-          <line x1="75" y1="35" x2="75" y2="65" stroke="#475569" strokeWidth="3" />
-          <circle cx="75" cy="50" r="3" fill="#1e293b" />
-        </svg>
-      );
-
-    case 'traffic_light_red':
-    case 'traffic_light':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#475569" />
-          {/* Post */}
-          <rect x="47" y="65" width="6" height="35" fill="#1e293b" />
-          {/* Light Box */}
-          <rect x="36" y="15" width="28" height="54" rx="4" fill="#0f172a" stroke="#334155" strokeWidth="2" />
-          {/* Red Glowing Lamp */}
-          <circle cx="50" cy="26" r="7" fill="#ef4444" filter="drop-shadow(0 0 6px #ef4444)" />
-          {/* Yellow Dim */}
-          <circle cx="50" cy="42" r="6" fill="#713f12" opacity="0.6" />
-          {/* Green Dim */}
-          <circle cx="50" cy="58" r="6" fill="#064e3b" opacity="0.6" />
-        </svg>
-      );
-
-    case 'traffic_light_green':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#64748b" />
-          <rect x="47" y="65" width="6" height="35" fill="#0f172a" />
-          <rect x="36" y="15" width="28" height="54" rx="4" fill="#0f172a" stroke="#334155" strokeWidth="2" />
-          <circle cx="50" cy="26" r="6" fill="#7f1d1d" opacity="0.6" />
-          <circle cx="50" cy="42" r="6" fill="#713f12" opacity="0.6" />
-          <circle cx="50" cy="58" r="7" fill="#22c55e" filter="drop-shadow(0 0 6px #22c55e)" />
-        </svg>
-      );
-
-    case 'traffic_light_yellow':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#475569" />
-          <rect x="47" y="65" width="6" height="35" fill="#0f172a" />
-          <rect x="36" y="15" width="28" height="54" rx="4" fill="#0f172a" stroke="#334155" strokeWidth="2" />
-          <circle cx="50" cy="26" r="6" fill="#7f1d1d" opacity="0.6" />
-          <circle cx="50" cy="42" r="7" fill="#eab308" filter="drop-shadow(0 0 6px #eab308)" />
-          <circle cx="50" cy="58" r="6" fill="#064e3b" opacity="0.6" />
-        </svg>
-      );
-
-    case 'traffic_light_overhead':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#334155" />
-          {/* Horizontal Gantry Pole */}
-          <line x1="0" y1="25" x2="100" y2="25" stroke="#94a3b8" strokeWidth="4" />
-          {/* Hanging Light Box */}
-          <rect x="40" y="30" width="20" height="42" rx="3" fill="#020617" />
-          <circle cx="50" cy="38" r="4.5" fill="#ef4444" filter="drop-shadow(0 0 4px #ef4444)" />
-          <circle cx="50" cy="51" r="4" fill="#713f12" opacity="0.5" />
-          <circle cx="50" cy="63" r="4" fill="#064e3b" opacity="0.5" />
-        </svg>
-      );
-
-    case 'bicycle':
-    case 'road_bike':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#e2e8f0" />
-          {/* Road */}
-          <line x1="0" y1="85" x2="100" y2="85" stroke="#94a3b8" strokeWidth="4" />
-          {/* Wheels */}
-          <circle cx="26" cy="68" r="16" fill="none" stroke="#0f172a" strokeWidth="3" />
-          <circle cx="74" cy="68" r="16" fill="none" stroke="#0f172a" strokeWidth="3" />
-          <circle cx="26" cy="68" r="3" fill="#475569" />
-          <circle cx="74" cy="68" r="3" fill="#475569" />
-          {/* Bike Frame */}
-          <polygon points="26,68 50,68 66,46 42,46" fill="none" stroke="#2563eb" strokeWidth="3.5" strokeLinejoin="round" />
-          <line x1="50" y1="68" x2="42" y2="40" stroke="#2563eb" strokeWidth="3.5" />
-          <line x1="74" y1="68" x2="66" y2="46" stroke="#2563eb" strokeWidth="3.5" />
-          {/* Seat & Handlebars */}
-          <line x1="38" y1="40" x2="46" y2="40" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
-          <line x1="64" y1="42" x2="70" y2="42" stroke="#0f172a" strokeWidth="3.5" strokeLinecap="round" />
-        </svg>
-      );
-
-    case 'mountain_bike':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#fed7aa" />
-          <line x1="0" y1="85" x2="100" y2="85" stroke="#78350f" strokeWidth="6" />
-          <circle cx="26" cy="66" r="17" fill="none" stroke="#1c1917" strokeWidth="4" strokeDasharray="3 1" />
-          <circle cx="74" cy="66" r="17" fill="none" stroke="#1c1917" strokeWidth="4" strokeDasharray="3 1" />
-          <polygon points="26,66 50,66 65,46 41,46" fill="none" stroke="#16a34a" strokeWidth="4" />
-          <line x1="50" y1="66" x2="41" y2="39" stroke="#16a34a" strokeWidth="4" />
-          <line x1="74" y1="66" x2="65" y2="46" stroke="#16a34a" strokeWidth="4" />
-        </svg>
-      );
-
-    case 'vintage_bike':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#fef08a" />
-          <circle cx="28" cy="66" r="16" fill="none" stroke="#1e293b" strokeWidth="3" />
-          <circle cx="72" cy="66" r="16" fill="none" stroke="#1e293b" strokeWidth="3" />
-          <polygon points="28,66 50,66 64,46 42,46" fill="none" stroke="#ea580c" strokeWidth="3" />
-          <line x1="50" y1="66" x2="42" y2="42" stroke="#ea580c" strokeWidth="3" />
-          <line x1="72" y1="66" x2="64" y2="46" stroke="#ea580c" strokeWidth="3" />
-          {/* Front basket */}
-          <rect x="66" y="38" width="10" height="8" fill="#d97706" rx="1" />
-        </svg>
-      );
-
-    case 'crosswalk':
-    case 'crosswalk_perspective':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#1e293b" />
-          {/* Perspective zebra lines */}
-          <polygon points="12,95 24,95 32,25 24,25" fill="#f8fafc" />
-          <polygon points="34,95 46,95 48,25 40,25" fill="#f8fafc" />
-          <polygon points="56,95 68,95 64,25 56,25" fill="#f8fafc" />
-          <polygon points="78,95 90,95 80,25 72,25" fill="#f8fafc" />
-          {/* Sidewalk curb */}
-          <rect x="0" y="15" width="100" height="10" fill="#64748b" />
-        </svg>
-      );
-
-    case 'crosswalk_night':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#090d16" />
-          <line x1="20" y1="85" x2="20" y2="20" stroke="#f1f5f9" strokeWidth="8" strokeDasharray="14 10" opacity="0.8" />
-          <line x1="45" y1="85" x2="45" y2="20" stroke="#f1f5f9" strokeWidth="8" strokeDasharray="14 10" opacity="0.8" />
-          <line x1="70" y1="85" x2="70" y2="20" stroke="#f1f5f9" strokeWidth="8" strokeDasharray="14 10" opacity="0.8" />
-          <line x1="95" y1="85" x2="95" y2="20" stroke="#f1f5f9" strokeWidth="8" strokeDasharray="14 10" opacity="0.8" />
-        </svg>
-      );
-
-    case 'crosswalk_urban':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#334155" />
-          <polygon points="10,90 26,90 34,30 22,30" fill="#ffffff" />
-          <polygon points="38,90 54,90 56,30 44,30" fill="#ffffff" />
-          <polygon points="66,90 82,90 78,30 66,30" fill="#ffffff" />
-        </svg>
-      );
-
-    case 'city_bus':
-    case 'transit_bus':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#93c5fd" />
-          <rect x="0" y="80" width="100" height="20" fill="#334155" />
-          {/* Bus body */}
-          <rect x="15" y="32" width="70" height="42" rx="6" fill="#2563eb" />
-          {/* Windows */}
-          <rect x="20" y="38" width="12" height="14" rx="2" fill="#e0f2fe" />
-          <rect x="36" y="38" width="12" height="14" rx="2" fill="#e0f2fe" />
-          <rect x="52" y="38" width="12" height="14" rx="2" fill="#e0f2fe" />
-          <rect x="68" y="38" width="12" height="14" rx="2" fill="#e0f2fe" />
-          {/* Bus Wheels */}
-          <circle cx="32" cy="74" r="8" fill="#0f172a" />
-          <circle cx="32" cy="74" r="3" fill="#cbd5e1" />
-          <circle cx="68" cy="74" r="8" fill="#0f172a" />
-          <circle cx="68" cy="74" r="3" fill="#cbd5e1" />
-        </svg>
-      );
-
-    case 'double_decker_bus':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#cbd5e1" />
-          <rect x="0" y="85" width="100" height="15" fill="#1e293b" />
-          {/* Red Body */}
-          <rect x="18" y="20" width="64" height="60" rx="4" fill="#dc2626" />
-          {/* Top Floor Windows */}
-          <rect x="24" y="26" width="10" height="12" fill="#f1f5f9" />
-          <rect x="38" y="26" width="10" height="12" fill="#f1f5f9" />
-          <rect x="52" y="26" width="10" height="12" fill="#f1f5f9" />
-          <rect x="66" y="26" width="10" height="12" fill="#f1f5f9" />
-          {/* Bottom Floor Windows */}
-          <rect x="24" y="46" width="10" height="14" fill="#f1f5f9" />
-          <rect x="38" y="46" width="10" height="14" fill="#f1f5f9" />
-          <rect x="52" y="46" width="10" height="14" fill="#f1f5f9" />
-          <rect x="66" y="46" width="10" height="14" fill="#f1f5f9" />
-          {/* Wheels */}
-          <circle cx="32" cy="80" r="7" fill="#0f172a" />
-          <circle cx="68" cy="80" r="7" fill="#0f172a" />
-        </svg>
-      );
-
-    case 'school_bus':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#bae6fd" />
-          <rect x="0" y="80" width="100" height="20" fill="#475569" />
-          <rect x="12" y="34" width="76" height="40" rx="5" fill="#facc15" />
-          <line x1="12" y1="56" x2="88" y2="56" stroke="#0f172a" strokeWidth="3" />
-          <rect x="18" y="40" width="10" height="12" fill="#1e293b" />
-          <rect x="32" y="40" width="10" height="12" fill="#1e293b" />
-          <rect x="46" y="40" width="10" height="12" fill="#1e293b" />
-          <rect x="60" y="40" width="10" height="12" fill="#1e293b" />
-          <circle cx="28" cy="74" r="8" fill="#0f172a" />
-          <circle cx="72" cy="74" r="8" fill="#0f172a" />
-        </svg>
-      );
-
-    case 'car':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#e2e8f0" />
-          <rect x="0" y="78" width="100" height="22" fill="#64748b" />
-          <path d="M15 68 L 25 50 L 55 50 L 70 60 L 85 64 L 85 72 L 15 72 Z" fill="#ef4444" />
-          <polygon points="28,53 52,53 52,62 25,62" fill="#38bdf8" />
-          <circle cx="32" cy="72" r="7" fill="#0f172a" />
-          <circle cx="70" cy="72" r="7" fill="#0f172a" />
-        </svg>
-      );
-
-    case 'boat':
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="60" fill="#7dd3fc" />
-          <rect y="60" width="100" height="40" fill="#0284c7" />
-          <polygon points="20,68 80,68 70,80 30,80" fill="#f8fafc" />
-          <polygon points="50,25 50,62 70,62" fill="#ffffff" stroke="#cbd5e1" />
-          <line x1="50" y1="20" x2="50" y2="65" stroke="#475569" strokeWidth="2.5" />
-        </svg>
-      );
-
-    default:
-      return (
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', display: 'block' }}>
-          <rect width="100" height="100" fill="#334155" />
-          <circle cx="50" cy="50" r="18" fill="#475569" />
-        </svg>
-      );
-  }
-}
 
 export default function Captcha({ onVerify, verified = false, onReset }) {
   const [isChecked, setIsChecked] = useState(verified);
@@ -485,14 +170,14 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
     setIsVerifying(true);
     setErrorMsg('');
 
-    // Authentic behavior: click checkbox -> show spinner for 600ms -> open challenge modal
+    // Authentic behavior: click checkbox -> show spinner for 550ms -> open challenge modal
     setTimeout(() => {
       setIsVerifying(false);
       const nextIdx = Math.floor(Math.random() * CHALLENGES.length);
       setChallengeIdx(nextIdx);
       initChallenge(nextIdx);
       setShowChallenge(true);
-    }, 600);
+    }, 550);
   };
 
   const toggleTile = (index) => {
@@ -616,7 +301,7 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
               </div>
             )}
 
-            {/* Standard 3x3 Photo Grid */}
+            {/* Standard 3x3 Real Photo Grid */}
             {!showCodeChallenge ? (
               <div style={styles.gridContainer}>
                 {shuffledTiles.map((tile, idx) => {
@@ -631,7 +316,19 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
                         transform: isSelected ? 'scale(0.92)' : 'scale(1)',
                       }}
                     >
-                      {renderTileGraphic(tile.type)}
+                      <img 
+                        src={tile.img} 
+                        alt={tile.id} 
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          display: 'block',
+                          userSelect: 'none',
+                          pointerEvents: 'none'
+                        }}
+                        loading="eager"
+                      />
                       {isSelected && (
                         <div style={styles.checkBadge}>
                           <Check size={14} color="#ffffff" strokeWidth={3} />
@@ -905,6 +602,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)',
+    zIndex: 2,
   },
   codeContainer: {
     display: 'flex',
