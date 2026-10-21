@@ -1,10 +1,77 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import Captcha from './Captcha';
 import { 
   LogIn, UserPlus, Key, Mail, User, ShieldAlert, Award, ChevronLeft, 
-  Eye, EyeOff, Lock, CheckCircle 
+  Eye, EyeOff, Lock, CheckCircle, ShieldCheck, Clock
 } from 'lucide-react';
+
+const LOCKOUT_KEY_PREFIX = 'oxton_sec_lockout_';
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function getLockout(targetEmail) {
+  if (!targetEmail) return { attempts: 0, lockedUntil: 0 };
+  try {
+    const raw = localStorage.getItem(LOCKOUT_KEY_PREFIX + targetEmail.toLowerCase().trim());
+    if (!raw) return { attempts: 0, lockedUntil: 0 };
+    const data = JSON.parse(raw);
+    if (data.lockedUntil && data.lockedUntil > Date.now()) {
+      return data;
+    }
+    return { attempts: data.attempts || 0, lockedUntil: 0 };
+  } catch {
+    return { attempts: 0, lockedUntil: 0 };
+  }
+}
+
+function recordFailedAttempt(targetEmail) {
+  if (!targetEmail) return 0;
+  try {
+    const cur = getLockout(targetEmail);
+    const attempts = (cur.attempts || 0) + 1;
+    let lockedUntil = 0;
+    if (attempts >= MAX_ATTEMPTS) {
+      lockedUntil = Date.now() + LOCKOUT_MS;
+    }
+    localStorage.setItem(LOCKOUT_KEY_PREFIX + targetEmail.toLowerCase().trim(), JSON.stringify({
+      attempts,
+      lockedUntil
+    }));
+    return lockedUntil;
+  } catch {
+    return 0;
+  }
+}
+
+function clearLockout(targetEmail) {
+  if (!targetEmail) return;
+  try {
+    localStorage.removeItem(LOCKOUT_KEY_PREFIX + targetEmail.toLowerCase().trim());
+  } catch {}
+}
+
+function getPasswordStrength(pwd) {
+  if (!pwd) return { score: 0, label: '', color: '#4b5563', pct: '0%' };
+  let score = 0;
+  if (pwd.length >= 8) score++;
+  if (/[a-z]/.test(pwd) && /[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^a-zA-Z0-9]/.test(pwd) || pwd.length >= 12) score++;
+
+  switch (score) {
+    case 1:
+      return { score: 1, label: 'Weak', color: '#ef4444', pct: '25%' };
+    case 2:
+      return { score: 2, label: 'Fair', color: '#f59e0b', pct: '50%' };
+    case 3:
+      return { score: 3, label: 'Good', color: '#3b82f6', pct: '75%' };
+    case 4:
+      return { score: 4, label: 'Strong & Secure', color: '#10b981', pct: '100%' };
+    default:
+      return { score: 0, label: 'Too short (min 8 chars)', color: '#ef4444', pct: '10%' };
+  }
+}
 
 export default function LoginScreen({ onBack, initialChangePasswordEmail = null }) {
   const { login, signup, requestPasswordReset, completePasswordReset } = useApp();
@@ -18,6 +85,9 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
 
   // Captcha verification state
   const [captchaVerified, setCaptchaVerified] = useState(false);
+
+  // Security Lockout State
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
   // Temporary password flow states
   const [isChangingPassword, setIsChangingPassword] = useState(Boolean(initialChangePasswordEmail));
@@ -34,6 +104,39 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
   const [lastName, setLastName] = useState('');
   const [robloxUsername, setRobloxUsername] = useState('');
 
+  // Password strength calculation
+  const regPasswordStrength = useMemo(() => getPasswordStrength(password), [password]);
+  const newPasswordStrength = useMemo(() => getPasswordStrength(newPassword), [newPassword]);
+
+  // Check lockout on email change
+  useEffect(() => {
+    if (!email) {
+      setLockoutRemaining(0);
+      return;
+    }
+    const lk = getLockout(email);
+    if (lk.lockedUntil && lk.lockedUntil > Date.now()) {
+      setLockoutRemaining(Math.ceil((lk.lockedUntil - Date.now()) / 1000));
+    } else {
+      setLockoutRemaining(0);
+    }
+  }, [email]);
+
+  // Live lockout countdown timer
+  useEffect(() => {
+    if (lockoutRemaining <= 0) return;
+    const t = setInterval(() => {
+      setLockoutRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(t);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [lockoutRemaining]);
+
   const handleTabChange = (loginMode) => {
     setIsLogin(loginMode);
     setIsForgotPassword(false);
@@ -48,8 +151,8 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
     setError('');
     setSuccess('');
 
-    if (!newPassword || newPassword.length < 6) {
-      setError('Password must be at least 6 characters long.');
+    if (!newPassword || newPassword.length < 8) {
+      setError('Password must be at least 8 characters long for account security.');
       return;
     }
     if (newPassword !== confirmNewPassword) {
@@ -73,6 +176,11 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
     setError('');
     setSuccess('');
 
+    if (isLogin && lockoutRemaining > 0) {
+      setError(`Account is locked due to multiple failed login attempts. Try again in ${Math.floor(lockoutRemaining / 60)}:${String(lockoutRemaining % 60).padStart(2, '0')}.`);
+      return;
+    }
+
     if (!captchaVerified) {
       setError('Please complete the security check (I\'m not a robot) to continue.');
       return;
@@ -88,17 +196,45 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
         setIsForgotPassword(false);
         setCaptchaVerified(false);
       } else if (isLogin) {
-        const res = await login(email, password, rememberMe);
-        if (res?.requiresPasswordChange) {
-          setTempUserEmail(res.email || email);
-          setIsChangingPassword(true);
-          setPassword('');
-          setSuccess('Temporary password verified. Please choose your new permanent password below.');
-          setCaptchaVerified(false);
+        const cleanEmail = email.toLowerCase().trim();
+        const lk = getLockout(cleanEmail);
+        if (lk.lockedUntil && lk.lockedUntil > Date.now()) {
+          const secs = Math.ceil((lk.lockedUntil - Date.now()) / 1000);
+          setLockoutRemaining(secs);
+          throw new Error(`Security lockout active: Please wait ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')} before trying again.`);
+        }
+
+        try {
+          const res = await login(cleanEmail, password, rememberMe);
+          clearLockout(cleanEmail);
+          if (res?.requiresPasswordChange) {
+            setTempUserEmail(res.email || cleanEmail);
+            setIsChangingPassword(true);
+            setPassword('');
+            setSuccess('Temporary password verified. Please choose your new permanent password below.');
+            setCaptchaVerified(false);
+          }
+        } catch (loginErr) {
+          if (loginErr.message === 'Incorrect password.') {
+            const until = recordFailedAttempt(cleanEmail);
+            if (until > 0) {
+              const secs = Math.ceil((until - Date.now()) / 1000);
+              setLockoutRemaining(secs);
+              throw new Error(`Security Lockout: 5 failed login attempts. This account is temporarily locked for 5 minutes.`);
+            } else {
+              const cur = getLockout(cleanEmail);
+              const remaining = MAX_ATTEMPTS - (cur.attempts || 0);
+              throw new Error(`Incorrect password. (${remaining} attempt${remaining === 1 ? '' : 's'} remaining before security lockout)`);
+            }
+          }
+          throw loginErr;
         }
       } else {
         if (!firstName || !robloxUsername || !email || !password) {
           throw new Error('Please fill in all fields.');
+        }
+        if (password.length < 8) {
+          throw new Error('Password must be at least 8 characters long for portal security.');
         }
         await signup({ email, password, firstName, lastName, robloxUsername });
         setSuccess('Registration successful! Your account is pending admin approval.');
@@ -172,10 +308,10 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                   <input
                     type={showNewPassword ? "text" : "password"}
                     required
-                    minLength={6}
+                    minLength={8}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="At least 6 characters"
+                    placeholder="At least 8 characters"
                     className="input-field"
                     style={{ paddingLeft: '38px', paddingRight: '40px' }}
                   />
@@ -187,6 +323,19 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                     {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+
+                {/* Password strength visual meter */}
+                {newPassword && (
+                  <div style={{ marginTop: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: '4px' }}>
+                      <span style={{ color: '#9ca3af' }}>Strength:</span>
+                      <span style={{ color: newPasswordStrength.color, fontWeight: '700' }}>{newPasswordStrength.label}</span>
+                    </div>
+                    <div style={{ width: '100%', height: '4px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: newPasswordStrength.pct, height: '100%', backgroundColor: newPasswordStrength.color, transition: 'all 0.3s ease' }} />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={styles.inputWrapper}>
@@ -196,7 +345,7 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     required
-                    minLength={6}
+                    minLength={8}
                     value={confirmNewPassword}
                     onChange={(e) => setConfirmNewPassword(e.target.value)}
                     placeholder="Repeat new password"
@@ -214,7 +363,8 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
               </div>
 
               <div style={{ fontSize: '0.78rem', color: '#6b7280', padding: '0 4px' }}>
-                • Password must be at least 6 characters long.<br />
+                • Password must be at least 8 characters long.<br />
+                • Include letters, numbers, and symbols for high security.<br />
                 • Keep your password private and do not share it with anyone.
               </div>
 
@@ -279,6 +429,31 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                 Register
               </button>
             </div>
+
+            {/* Lockout Security Banner */}
+            {isLogin && lockoutRemaining > 0 && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '0.85rem',
+                color: '#fca5a5',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginBottom: '16px',
+                lineHeight: '1.4'
+              }}>
+                <Clock size={20} style={{ flexShrink: 0, color: '#ef4444' }} />
+                <div>
+                  <strong>Security Lockout:</strong> Too many failed attempts. Login is paused for{' '}
+                  <span style={{ fontWeight: '700', color: '#ffffff' }}>
+                    {Math.floor(lockoutRemaining / 60)}:{String(lockoutRemaining % 60).padStart(2, '0')}
+                  </span>.
+                </div>
+              </div>
+            )}
 
             {error && (
               <div style={styles.errorBanner}>
@@ -376,9 +551,7 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
 
               {!isForgotPassword && (
                 <div style={styles.inputWrapper}>
-                  <label style={styles.label}>
-                    {isLogin ? 'Password / Temporary Password' : 'Password'}
-                  </label>
+                  <label style={styles.label}>Password</label>
                   <div style={{ ...styles.inputInnerWrapper, position: 'relative' }}>
                     <Key size={16} style={styles.inputIcon} />
                     <input
@@ -398,6 +571,19 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
+
+                  {/* Password strength meter for registration */}
+                  {!isLogin && password && (
+                    <div style={{ marginTop: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: '4px' }}>
+                        <span style={{ color: '#9ca3af' }}>Password Strength:</span>
+                        <span style={{ color: regPasswordStrength.color, fontWeight: '700' }}>{regPasswordStrength.label}</span>
+                      </div>
+                      <div style={{ width: '100%', height: '4px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{ width: regPasswordStrength.pct, height: '100%', backgroundColor: regPasswordStrength.color, transition: 'all 0.3s ease' }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -425,9 +611,13 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (isLogin && lockoutRemaining > 0)}
                 className="btn-primary"
-                style={styles.submitBtn}
+                style={{
+                  ...styles.submitBtn,
+                  opacity: (loading || (isLogin && lockoutRemaining > 0)) ? 0.6 : 1,
+                  cursor: (loading || (isLogin && lockoutRemaining > 0)) ? 'not-allowed' : 'pointer'
+                }}
               >
                 {loading ? (
                   <div className="spinner-container" style={{ gap: '10px' }}>
@@ -437,7 +627,11 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                   </div>
                 ) : (
                   <span style={styles.btnContent}>
-                    {isForgotPassword ? 'Request Password Reset' : (isLogin ? 'Log In to System' : 'Create Staff Request')}
+                    {isLogin && lockoutRemaining > 0 ? (
+                      `Locked (${Math.floor(lockoutRemaining / 60)}:${String(lockoutRemaining % 60).padStart(2, '0')})`
+                    ) : (
+                      isForgotPassword ? 'Request Password Reset' : (isLogin ? 'Log In to System' : 'Create Staff Request')
+                    )}
                   </span>
                 )}
               </button>
