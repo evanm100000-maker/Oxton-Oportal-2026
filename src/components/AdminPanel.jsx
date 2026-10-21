@@ -7,7 +7,8 @@ import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
   Plus, Check, X, ShieldAlert, Trash2, Settings, Activity, Key, Award, FileText, MessageSquare,
-  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock, ClipboardList, Target, ExternalLink
+  LifeBuoy, Bell, AlertOctagon, Send, Lock, Eye, EyeOff, Clock, ClipboardList, Target, ExternalLink,
+  Copy, RefreshCw
 } from 'lucide-react';
 import { renderTextWithLinks, normalizeUrl } from '../utils/linkUtils';
 
@@ -194,6 +195,7 @@ export default function AdminPanel() {
 
   // Password reset state
   const [newPasswords, setNewPasswords] = useState({});
+  const [tempPasswordModal, setTempPasswordModal] = useState(null);
 
   // System Status States
   const [warnActive, setWarnActive] = useState(warningConfig?.isActive || false);
@@ -383,12 +385,29 @@ export default function AdminPanel() {
     displaySuccess('System status configuration updated!');
   };
 
+  const copyToClipboard = (text, label = 'Copied to clipboard!') => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    displaySuccess(label);
+  };
+
   const handleApprovePassword = (reqId, email) => {
-    const pwd = newPasswords[reqId];
-    if (!pwd) return alert('Please enter a new password to approve this request.');
-    approvePasswordReset(reqId, email, pwd);
+    let pwd = newPasswords[reqId]?.trim();
+    if (!pwd) {
+      pwd = `OXT-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    const finalPwd = approvePasswordReset(reqId, email, pwd) || pwd;
     setNewPasswords(prev => ({...prev, [reqId]: ''}));
-    displaySuccess(`Password reset approved for ${email}.`);
+    setTempPasswordModal({ email, password: finalPwd });
+    displaySuccess(`Temporary password generated for ${email}.`);
   };
 
   const handlePostAnnouncement = (e) => {
@@ -490,7 +509,8 @@ export default function AdminPanel() {
   const pendingLoas = useMemo(() => loaRequests.filter(req => req.status === 'Pending'), [loaRequests]);
   const activeLoas = useMemo(() => loaRequests.filter(req => req.status === 'Approved' || req.status === 'End Requested'), [loaRequests]);
   const pendingFlightLogs = useMemo(() => flightLogs.filter(log => log.status === 'Pending'), [flightLogs]);
-  const pendingPasswords = useMemo(() => passwordResets.filter(r => r.status === 'Pending'), [passwordResets]);
+  const pendingPasswords = useMemo(() => (passwordResets || []).filter(r => r.status === 'Pending'), [passwordResets]);
+  const recentPasswords = useMemo(() => (passwordResets || []).filter(r => r.status === 'Approved' || r.status === 'Completed'), [passwordResets]);
 
   // Support Tickets list & counters
   const { openTickets, unclaimedTickets, myClaimedTickets, escalatedTickets, closedTickets } = useMemo(() => {
@@ -1597,32 +1617,77 @@ export default function AdminPanel() {
       {activeSubTab === 'passwords' && (
 <div id="section-passwords">
         <div style={styles.panelSection}>
-          <h3 style={styles.panelTitle}>Password Reset Requests</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h3 style={styles.panelTitle}>Pending Password Resets</h3>
+              <p style={styles.panelSubtitle}>Approve password resets by issuing a temporary password. Users will be forced to choose a new password upon logging in.</p>
+            </div>
+          </div>
+
           {pendingPasswords.length === 0 ? (
-            <div style={styles.emptyGrid}><Key size={36} color="rgba(255,255,255,0.15)" /><p style={styles.emptyText}>No reset requests.</p></div>
+            <div style={styles.emptyGrid}><Key size={36} color="rgba(255,255,255,0.15)" /><p style={styles.emptyText}>No pending reset requests.</p></div>
           ) : (
             <div style={styles.tableWrapper}>
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.trHead}>
-                    <th style={styles.th}>Email</th>
-                    <th style={styles.th}>Date</th>
-                    <th style={styles.th}>New Password</th>
+                    <th style={styles.th}>Staff Email</th>
+                    <th style={styles.th}>Requested</th>
+                    <th style={styles.th}>Temporary Password</th>
                     <th style={styles.th}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pendingPasswords.map(req => (
                     <tr key={req.id} style={styles.trBody}>
-                      <td style={styles.td}>{req.email}</td>
+                      <td style={styles.td}>
+                        <strong>{req.email}</strong>
+                        {req.name && <div style={{ fontSize: '0.78rem', color: '#9ca3af' }}>{req.name}</div>}
+                      </td>
                       <td style={styles.td}>{new Date(req.timestamp).toLocaleString()}</td>
                       <td style={styles.td}>
-                        <input type="text" placeholder="Enter new password" value={newPasswords[req.id] || ''} onChange={e => setNewPasswords({...newPasswords, [req.id]: e.target.value})} className="input-field" style={{padding: '6px'}} />
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <input 
+                            type="text" 
+                            placeholder="Auto-generated if blank" 
+                            value={newPasswords[req.id] || ''} 
+                            onChange={e => setNewPasswords({...newPasswords, [req.id]: e.target.value})} 
+                            className="input-field" 
+                            style={{ padding: '6px 10px', minWidth: '170px' }} 
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setNewPasswords({
+                              ...newPasswords,
+                              [req.id]: `OXT-${Math.floor(1000 + Math.random() * 9000)}`
+                            })}
+                            className="btn-secondary"
+                            style={{ padding: '6px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                            title="Generate a temporary password"
+                          >
+                            <RefreshCw size={12} /> Auto
+                          </button>
+                        </div>
                       </td>
                       <td style={styles.td}>
                         <div style={styles.actionRow}>
-                          <button type="button" onClick={() => handleApprovePassword(req.id, req.email)} className="btn-success" style={styles.actionMiniBtn}><Check size={14} /> Approve</button>
-                          <button type="button" onClick={() => {rejectPasswordReset(req.id, req.email); displaySuccess('Request rejected');}} className="btn-danger" style={styles.actionMiniBtn}><X size={14} /> Reject</button>
+                          <button 
+                            type="button" 
+                            onClick={() => handleApprovePassword(req.id, req.email)} 
+                            className="btn-success" 
+                            style={styles.actionMiniBtn}
+                            title="Approve and issue temporary password"
+                          >
+                            <Check size={14} /> Approve & Issue
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => {rejectPasswordReset(req.id, req.email); displaySuccess('Request rejected');}} 
+                            className="btn-danger" 
+                            style={styles.actionMiniBtn}
+                          >
+                            <X size={14} /> Reject
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1632,6 +1697,103 @@ export default function AdminPanel() {
             </div>
           )}
         </div>
+
+        {/* Recent & Approved Temporary Passwords */}
+        {recentPasswords.length > 0 && (
+          <div style={{ ...styles.panelSection, marginTop: '24px' }}>
+            <h3 style={styles.panelTitle}>Issued Temporary Passwords & History</h3>
+            <p style={styles.panelSubtitle}>Records of approved temporary passwords. You can copy and share the temporary password with the staff member if needed.</p>
+
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.trHead}>
+                    <th style={styles.th}>Staff Email</th>
+                    <th style={styles.th}>Temporary Password</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Date</th>
+                    <th style={styles.th}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentPasswords.map(r => (
+                    <tr key={r.id || r.email} style={styles.trBody}>
+                      <td style={styles.td}><strong>{r.email}</strong></td>
+                      <td style={styles.td}>
+                        {r.tempPassword ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <code style={{ 
+                              padding: '3px 8px', 
+                              backgroundColor: 'rgba(59, 130, 246, 0.15)', 
+                              border: '1px solid rgba(59, 130, 246, 0.3)', 
+                              borderRadius: '4px',
+                              color: '#93c5fd',
+                              fontWeight: '700',
+                              letterSpacing: '1px'
+                            }}>
+                              {r.tempPassword}
+                            </code>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(r.tempPassword, `Copied password for ${r.email}`)}
+                              className="btn-secondary"
+                              style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              title="Copy temporary password"
+                            >
+                              <Copy size={12} /> Copy
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ color: '#6b7280' }}>—</span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        {r.status === 'Completed' ? (
+                          <span style={{ 
+                            padding: '3px 8px', 
+                            borderRadius: '12px', 
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)', 
+                            color: '#34d399', 
+                            fontSize: '0.75rem',
+                            fontWeight: '600'
+                          }}>
+                            ✓ Password Updated
+                          </span>
+                        ) : (
+                          <span style={{ 
+                            padding: '3px 8px', 
+                            borderRadius: '12px', 
+                            backgroundColor: 'rgba(234, 179, 8, 0.15)', 
+                            color: '#fbbf24', 
+                            fontSize: '0.75rem',
+                            fontWeight: '600'
+                          }}>
+                            ● Temp Password Active
+                          </span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        {r.approvedAt ? new Date(r.approvedAt).toLocaleString() : (r.timestamp ? new Date(r.timestamp).toLocaleString() : 'Recent')}
+                      </td>
+                      <td style={styles.td}>
+                        {r.tempPassword && (
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(r.tempPassword, `Copied temp password for ${r.email}`)}
+                            className="btn-secondary"
+                            style={{ ...styles.actionMiniBtn, padding: '4px 10px', fontSize: '0.78rem' }}
+                          >
+                            <Copy size={13} /> Copy Password
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       )}
@@ -2744,6 +2906,74 @@ export default function AdminPanel() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Temporary Password Notification Modal */}
+      {tempPasswordModal && (
+        <div style={styles.overlay}>
+          <div className="glass-panel" style={{ ...styles.modal, width: '420px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                type="button" 
+                onClick={() => setTempPasswordModal(null)} 
+                style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Key size={28} color="#3b82f6" />
+              </div>
+            </div>
+
+            <h3 style={{ color: 'var(--color-text-main)', fontSize: '1.25rem', fontWeight: '700', margin: '0 0 6px 0' }}>
+              Temporary Password Issued
+            </h3>
+            <p style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '18px' }}>
+              A temporary password has been set for <strong>{tempPasswordModal.email}</strong>.
+            </p>
+
+            <div style={{ 
+              backgroundColor: 'rgba(0, 0, 0, 0.4)', 
+              border: '1px solid rgba(59, 130, 246, 0.35)', 
+              borderRadius: '8px', 
+              padding: '16px', 
+              marginBottom: '16px' 
+            }}>
+              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: '#60a5fa', fontWeight: '700', marginBottom: '6px' }}>
+                Temporary Password
+              </div>
+              <div style={{ fontSize: '1.45rem', fontWeight: '800', letterSpacing: '2px', color: '#ffffff', fontFamily: 'monospace' }}>
+                {tempPasswordModal.password}
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: '#9ca3af', lineHeight: '1.4', marginBottom: '20px' }}>
+              Send this temporary password to the staff member. When they enter it to log in, they will automatically receive a prompt to create their own new password.
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(tempPasswordModal.password, 'Copied temporary password!')}
+                className="btn-primary"
+                style={{ padding: '10px 20px', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Copy size={16} /> Copy Password
+              </button>
+              <button
+                type="button"
+                onClick={() => setTempPasswordModal(null)}
+                className="btn-secondary"
+                style={{ padding: '10px 18px', borderRadius: '8px', fontSize: '0.85rem' }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

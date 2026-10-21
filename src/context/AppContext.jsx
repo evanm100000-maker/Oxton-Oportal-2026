@@ -425,7 +425,7 @@ export const AppProvider = ({ children }) => {
   const [maintenanceConfig, setMaintenanceConfig] = useFirebaseObject('maintenanceConfig', initialMaintenanceConfig);
   const isAdmin = Boolean(currentUser?.isAdmin);
   const [auditLogs, setAuditLogs] = useState([]);
-  const [passwordResets, setPasswordResets] = useFirebaseArray('passwordResets', EMPTY_ARRAY, isAdmin);
+  const [passwordResets, setPasswordResets] = useFirebaseArray('passwordResets', EMPTY_ARRAY, true, 50);
   const [chatMessages, setChatMessages] = useFirebaseArray('chatMessages', EMPTY_ARRAY, isLoggedIn, 200);
   const [announcements, setAnnouncements] = useFirebaseArray('announcements', initialAnnouncements, true, 50);
   const [bypassConfig, setBypassConfig] = useFirebaseObject('bypassConfig', initialBypassConfig);
@@ -1369,6 +1369,12 @@ export const AppProvider = ({ children }) => {
             return;
           }
         }
+
+        // If user logged in with a temporary password, require setting a new password
+        if (user.mustChangePassword) {
+          resolve({ requiresPasswordChange: true, email: user.email });
+          return;
+        }
         
         const now = new Date().toISOString();
         const loginHistory = user.loginHistory || [];
@@ -1451,7 +1457,7 @@ export const AppProvider = ({ children }) => {
         return;
       }
       
-      const exists = passwordResets.find(r => r.email === normalizedEmail && r.status === 'Pending');
+      const exists = (passwordResets || []).find(r => r.email === normalizedEmail && r.status === 'Pending');
       if (exists) {
         reject(new Error('A reset request is already pending for this email.'));
         return;
@@ -1460,22 +1466,85 @@ export const AppProvider = ({ children }) => {
       setPasswordResets(prev => [{
         id: 'pwd-' + Date.now(),
         email: normalizedEmail,
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.robloxUsername || 'Staff Member',
         status: 'Pending',
         timestamp: new Date().toISOString()
-      }, ...prev]);
+      }, ...(prev || [])]);
       
+      logAction('password_reset_request', `Requested password reset for ${normalizedEmail}`, { email: normalizedEmail });
       resolve();
     });
   };
 
-  const approvePasswordReset = (requestId, email, newPassword) => {
-    setUsers(prev => prev.map(u => u.email === email ? { ...u, password: newPassword } : u));
-    setPasswordResets(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Approved' } : r));
-    logAction('password_reset', `Approved password reset for ${email}`, { email });
+  const approvePasswordReset = (requestId, email, tempPassword) => {
+    const finalTempPassword = tempPassword?.trim() || `OXT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    setUsers(prev => prev.map(u => {
+      if (u.email.toLowerCase() === normalizedEmail) {
+        return {
+          ...u,
+          password: finalTempPassword,
+          mustChangePassword: true,
+          tempPasswordIssuedAt: new Date().toISOString()
+        };
+      }
+      return u;
+    }));
+
+    setPasswordResets(prev => (prev || []).map(r => r.id === requestId ? {
+      ...r,
+      status: 'Approved',
+      tempPassword: finalTempPassword,
+      approvedAt: new Date().toISOString()
+    } : r));
+
+    logAction('password_reset_approved', `Approved password reset for ${email} with temporary password: ${finalTempPassword}`, { email, tempPassword: finalTempPassword });
+    return finalTempPassword;
+  };
+
+  const completePasswordReset = (email, newPassword) => {
+    return new Promise((resolve, reject) => {
+      if (!newPassword || newPassword.length < 6) {
+        reject(new Error('New password must be at least 6 characters long.'));
+        return;
+      }
+      const normalizedEmail = email.toLowerCase().trim();
+      const user = users.find(u => u.email.toLowerCase() === normalizedEmail);
+      if (!user) {
+        reject(new Error('User account not found.'));
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const loginHistory = user.loginHistory || [];
+      loginHistory.push(now);
+      if (loginHistory.length > 30) loginHistory.shift();
+
+      const updatedUser = {
+        ...user,
+        password: newPassword,
+        mustChangePassword: false,
+        tempPasswordIssuedAt: null,
+        loginHistory,
+        lastLoginDate: now
+      };
+
+      setUsers(prev => prev.map(u => u.email.toLowerCase() === normalizedEmail ? updatedUser : u));
+      setPasswordResets(prev => (prev || []).map(r => r.email.toLowerCase() === normalizedEmail ? {
+        ...r,
+        status: 'Completed',
+        completedAt: now
+      } : r));
+
+      setCurrentUser(updatedUser);
+      logAction('password_reset_completed', `User ${normalizedEmail} successfully set new permanent password`, { email: normalizedEmail });
+      resolve(updatedUser);
+    });
   };
 
   const rejectPasswordReset = (requestId, email) => {
-    setPasswordResets(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Rejected' } : r));
+    setPasswordResets(prev => (prev || []).map(r => r.id === requestId ? { ...r, status: 'Rejected' } : r));
     logAction('password_reset_rejected', `Rejected password reset for ${email}`, { email });
   };
 
@@ -2970,6 +3039,7 @@ useEffect(() => {
         requestPasswordReset,
         approvePasswordReset,
         rejectPasswordReset,
+        completePasswordReset,
         login,
         signup,
         logout,

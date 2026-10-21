@@ -56,6 +56,19 @@ function MainApp() {
     return <SuspendedScreen />;
   }
 
+  // Force password change if user logged in with temporary password
+  if (currentUser?.mustChangePassword) {
+    return (
+      <>
+        <WarningBanner />
+        <UpdateBanner />
+        <LoaBanner />
+        <LoginScreen initialChangePasswordEmail={currentUser.email} />
+        <NotificationOverlay />
+      </>
+    );
+  }
+
   // Landing Page Selection
   if (!portalType && !currentUser) {
     return (
