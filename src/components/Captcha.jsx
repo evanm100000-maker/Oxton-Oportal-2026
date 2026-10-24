@@ -1,86 +1,237 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ShieldCheck, RefreshCw, Volume2, HelpCircle, Check, AlertCircle } from 'lucide-react';
 
-// Real photographic image challenges matching official Google reCAPTCHA format
+// Path resolver that handles any base URL, subpaths, and environments
+export function getCaptchaUrl(imgPath) {
+  if (!imgPath) return '';
+  if (imgPath.startsWith('data:') || imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+    return imgPath;
+  }
+  const clean = imgPath.replace(/^\.?\//, '');
+  const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL) || './';
+  const prefix = base.endsWith('/') ? base : `${base}/`;
+  return `${prefix}${clean}`;
+}
+
+// Visual SVG fallback illustrations if photographic assets fail to load
+function renderFallbackGraphic(type) {
+  switch (type) {
+    case 'airplane_1':
+    case 'airplane_2':
+    case 'airplane_3':
+    case 'commercial_jet':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <defs>
+            <linearGradient id="skyGrad1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1e3a8a" />
+              <stop offset="60%" stopColor="#60a5fa" />
+              <stop offset="100%" stopColor="#bfdbfe" />
+            </linearGradient>
+          </defs>
+          <rect width="100" height="100" fill="url(#skyGrad1)" />
+          <ellipse cx="20" cy="75" rx="30" ry="12" fill="rgba(255,255,255,0.7)" />
+          <ellipse cx="85" cy="40" rx="25" ry="10" fill="rgba(255,255,255,0.5)" />
+          <line x1="5" y1="70" x2="50" y2="48" stroke="rgba(255,255,255,0.5)" strokeWidth="3" strokeDasharray="3 2" />
+          <path d="M25 65 Q 50 48 82 32 Q 86 30 84 34 Q 68 45 42 62 Z" fill="#ffffff" />
+          <polygon points="50,47 62,25 68,26 58,45" fill="#e2e8f0" />
+          <polygon points="38,58 35,74 41,75 48,55" fill="#cbd5e1" />
+          <polygon points="26,64 20,53 23,52 30,62" fill="#94a3b8" />
+        </svg>
+      );
+    case 'traffic_light_1':
+    case 'traffic_light_2':
+    case 'traffic_light_3':
+    case 'traffic_light':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#334155" />
+          <rect x="36" y="14" width="28" height="72" rx="6" fill="#0f172a" stroke="#475569" strokeWidth="2" />
+          <circle cx="50" cy="28" r="8" fill="#ef4444" />
+          <circle cx="50" cy="50" r="8" fill="#eab308" />
+          <circle cx="50" cy="72" r="8" fill="#22c55e" />
+          <circle cx="50" cy="28" r="4" fill="#fca5a5" opacity="0.6" />
+        </svg>
+      );
+    case 'bicycle_1':
+    case 'bicycle_2':
+    case 'bicycle_3':
+    case 'bicycle':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#047857" />
+          <rect x="0" y="76" width="100" height="24" fill="#065f46" />
+          <circle cx="28" cy="65" r="15" fill="none" stroke="#f1f5f9" strokeWidth="3" />
+          <circle cx="72" cy="65" r="15" fill="none" stroke="#f1f5f9" strokeWidth="3" />
+          <polyline points="28,65 46,65 60,45 38,45 28,65" fill="none" stroke="#38bdf8" strokeWidth="3.5" strokeLinejoin="round" />
+          <line x1="46" y1="65" x2="42" y2="39" stroke="#38bdf8" strokeWidth="3.5" />
+          <line x1="38" y1="39" x2="46" y2="39" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+          <line x1="72" y1="65" x2="63" y2="40" stroke="#38bdf8" strokeWidth="3.5" />
+          <line x1="58" y1="36" x2="68" y2="36" stroke="#0f172a" strokeWidth="4" strokeLinecap="round" />
+        </svg>
+      );
+    case 'bus_1':
+    case 'bus_2':
+    case 'bus_3':
+    case 'bus':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#38bdf8" />
+          <rect x="0" y="78" width="100" height="22" fill="#475569" />
+          <rect x="15" y="32" width="70" height="44" rx="4" fill="#dc2626" />
+          <rect x="20" y="38" width="12" height="15" rx="2" fill="#e0f2fe" />
+          <rect x="36" y="38" width="12" height="15" rx="2" fill="#e0f2fe" />
+          <rect x="52" y="38" width="12" height="15" rx="2" fill="#e0f2fe" />
+          <rect x="68" y="38" width="12" height="15" rx="2" fill="#e0f2fe" />
+          <circle cx="32" cy="76" r="7" fill="#0f172a" />
+          <circle cx="68" cy="76" r="7" fill="#0f172a" />
+        </svg>
+      );
+    case 'crosswalk_1':
+    case 'crosswalk_2':
+    case 'crosswalk_3':
+    case 'crosswalk':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#334155" />
+          <polygon points="10,95 24,95 38,15 28,15" fill="#f8fafc" />
+          <polygon points="32,95 46,95 56,15 46,15" fill="#f8fafc" />
+          <polygon points="54,95 68,95 74,15 64,15" fill="#f8fafc" />
+          <polygon points="76,95 90,95 92,15 82,15" fill="#f8fafc" />
+        </svg>
+      );
+    case 'decoy_mountain':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#bae6fd" />
+          <polygon points="10,85 45,30 80,85" fill="#64748b" />
+          <polygon points="45,30 55,46 45,52 35,46" fill="#ffffff" />
+          <polygon points="45,85 75,45 95,85" fill="#475569" />
+          <polygon points="75,45 82,56 75,60 68,56" fill="#ffffff" />
+        </svg>
+      );
+    case 'decoy_forest':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#a7f3d0" />
+          <rect x="30" y="65" width="8" height="25" fill="#78350f" />
+          <polygon points="34,25 18,65 50,65" fill="#047857" />
+          <rect x="65" y="55" width="8" height="35" fill="#78350f" />
+          <polygon points="69,20 52,58 86,58" fill="#065f46" />
+        </svg>
+      );
+    case 'decoy_coffee':
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#fed7aa" />
+          <ellipse cx="50" cy="75" rx="30" ry="10" fill="#ea580c" opacity="0.3" />
+          <path d="M30 35 L 35 70 Q 50 78 65 70 L 70 35 Z" fill="#ffffff" stroke="#9a3412" strokeWidth="2" />
+          <path d="M70 42 Q 85 42 85 55 Q 85 65 67 65" fill="none" stroke="#9a3412" strokeWidth="3" />
+          <ellipse cx="50" cy="35" rx="20" ry="6" fill="#78350f" />
+        </svg>
+      );
+    case 'decoy_dog':
+    default:
+      return (
+        <svg viewBox="0 0 100 100" style={styles.svgGraphic}>
+          <rect width="100" height="100" fill="#fef08a" />
+          <circle cx="50" cy="50" r="26" fill="#d97706" />
+          <polygon points="32,32 25,12 40,25" fill="#b45309" />
+          <polygon points="68,32 75,12 60,25" fill="#b45309" />
+          <circle cx="42" cy="48" r="4" fill="#0f172a" />
+          <circle cx="58" cy="48" r="4" fill="#0f172a" />
+          <ellipse cx="50" cy="58" rx="6" ry="4" fill="#0f172a" />
+        </svg>
+      );
+  }
+}
+
+// 5 crystal-clear challenges. Exactly 3 distinct targets per challenge.
+// Decoys are clearly non-conflicting nature/object scenes so users never get confused.
 const CHALLENGES = [
   {
     id: 'airplanes',
     title: 'airplanes',
     instruction: 'Select all squares with airplanes',
+    requiredCount: 3,
     tiles: [
-      { id: 'a1', isTarget: true, img: './captcha/airplanes/1.jpg' },
-      { id: 'd1', isTarget: false, img: './captcha/decoys/1.jpg' },
-      { id: 'a2', isTarget: true, img: './captcha/airplanes/2.jpg' },
-      { id: 'd2', isTarget: false, img: './captcha/decoys/2.jpg' },
-      { id: 'a3', isTarget: true, img: './captcha/airplanes/3.jpg' },
-      { id: 'd3', isTarget: false, img: './captcha/decoys/3.jpg' },
-      { id: 'd4', isTarget: false, img: './captcha/decoys/4.jpg' },
-      { id: 'a4', isTarget: true, img: './captcha/airplanes/4.jpg' },
-      { id: 'd5', isTarget: false, img: './captcha/decoys/5.jpg' },
+      { id: 'plane_1', isTarget: true, img: 'captcha/airplanes/1.jpg', fallback: 'airplane_1' },
+      { id: 'decoy_m1', isTarget: false, img: 'captcha/decoys/3.jpg', fallback: 'decoy_mountain' },
+      { id: 'plane_2', isTarget: true, img: 'captcha/airplanes/2.jpg', fallback: 'airplane_2' },
+      { id: 'decoy_f1', isTarget: false, img: 'captcha/decoys/4.jpg', fallback: 'decoy_forest' },
+      { id: 'decoy_c1', isTarget: false, img: 'captcha/decoys/6.jpg', fallback: 'decoy_coffee' },
+      { id: 'plane_3', isTarget: true, img: 'captcha/airplanes/3.jpg', fallback: 'airplane_3' },
+      { id: 'decoy_d1', isTarget: false, img: 'captcha/decoys/7.jpg', fallback: 'decoy_dog' },
+      { id: 'decoy_m2', isTarget: false, img: 'captcha/decoys/5.jpg', fallback: 'decoy_mountain' },
+      { id: 'decoy_f2', isTarget: false, img: 'captcha/bicycles/1.jpg', fallback: 'bicycle' },
     ]
   },
   {
     id: 'traffic_lights',
     title: 'traffic lights',
     instruction: 'Select all squares with traffic lights',
+    requiredCount: 3,
     tiles: [
-      { id: 'tl1', isTarget: true, img: './captcha/traffic_lights/1.jpg' },
-      { id: 'd1', isTarget: false, img: './captcha/decoys/6.jpg' },
-      { id: 'tl2', isTarget: true, img: './captcha/traffic_lights/2.jpg' },
-      { id: 'd2', isTarget: false, img: './captcha/decoys/7.jpg' },
-      { id: 'd3', isTarget: false, img: './captcha/decoys/8.jpg' },
-      { id: 'tl3', isTarget: true, img: './captcha/traffic_lights/3.jpg' },
-      { id: 'd4', isTarget: false, img: './captcha/decoys/1.jpg' },
-      { id: 'tl4', isTarget: true, img: './captcha/traffic_lights/4.jpg' },
-      { id: 'd5', isTarget: false, img: './captcha/decoys/2.jpg' },
+      { id: 'tl_1', isTarget: true, img: 'captcha/traffic_lights/1.jpg', fallback: 'traffic_light_1' },
+      { id: 'decoy_m1', isTarget: false, img: 'captcha/decoys/3.jpg', fallback: 'decoy_mountain' },
+      { id: 'tl_2', isTarget: true, img: 'captcha/traffic_lights/2.jpg', fallback: 'traffic_light_2' },
+      { id: 'decoy_c1', isTarget: false, img: 'captcha/decoys/6.jpg', fallback: 'decoy_coffee' },
+      { id: 'tl_3', isTarget: true, img: 'captcha/traffic_lights/3.jpg', fallback: 'traffic_light_3' },
+      { id: 'decoy_d1', isTarget: false, img: 'captcha/decoys/7.jpg', fallback: 'decoy_dog' },
+      { id: 'decoy_f1', isTarget: false, img: 'captcha/decoys/4.jpg', fallback: 'decoy_forest' },
+      { id: 'decoy_p1', isTarget: false, img: 'captcha/airplanes/1.jpg', fallback: 'commercial_jet' },
+      { id: 'decoy_m2', isTarget: false, img: 'captcha/decoys/5.jpg', fallback: 'decoy_mountain' },
     ]
   },
   {
     id: 'bicycles',
     title: 'bicycles',
     instruction: 'Select all squares with bicycles',
+    requiredCount: 3,
     tiles: [
-      { id: 'b1', isTarget: true, img: './captcha/bicycles/1.jpg' },
-      { id: 'd1', isTarget: false, img: './captcha/decoys/3.jpg' },
-      { id: 'd2', isTarget: false, img: './captcha/decoys/4.jpg' },
-      { id: 'b2', isTarget: true, img: './captcha/bicycles/2.jpg' },
-      { id: 'd3', isTarget: false, img: './captcha/decoys/5.jpg' },
-      { id: 'b3', isTarget: true, img: './captcha/bicycles/3.jpg' },
-      { id: 'd4', isTarget: false, img: './captcha/decoys/6.jpg' },
-      { id: 'd5', isTarget: false, img: './captcha/decoys/7.jpg' },
-      { id: 'b4', isTarget: true, img: './captcha/bicycles/4.jpg' },
+      { id: 'bike_1', isTarget: true, img: 'captcha/bicycles/1.jpg', fallback: 'bicycle_1' },
+      { id: 'decoy_c1', isTarget: false, img: 'captcha/decoys/6.jpg', fallback: 'decoy_coffee' },
+      { id: 'bike_2', isTarget: true, img: 'captcha/bicycles/2.jpg', fallback: 'bicycle_2' },
+      { id: 'decoy_m1', isTarget: false, img: 'captcha/decoys/3.jpg', fallback: 'decoy_mountain' },
+      { id: 'decoy_d1', isTarget: false, img: 'captcha/decoys/7.jpg', fallback: 'decoy_dog' },
+      { id: 'bike_3', isTarget: true, img: 'captcha/bicycles/3.jpg', fallback: 'bicycle_3' },
+      { id: 'decoy_f1', isTarget: false, img: 'captcha/decoys/4.jpg', fallback: 'decoy_forest' },
+      { id: 'decoy_p1', isTarget: false, img: 'captcha/airplanes/2.jpg', fallback: 'commercial_jet' },
+      { id: 'decoy_m2', isTarget: false, img: 'captcha/decoys/5.jpg', fallback: 'decoy_mountain' },
     ]
   },
   {
     id: 'buses',
     title: 'buses',
     instruction: 'Select all squares with buses',
+    requiredCount: 3,
     tiles: [
-      { id: 'bu1', isTarget: true, img: './captcha/buses/1.jpg' },
-      { id: 'd1', isTarget: false, img: './captcha/decoys/8.jpg' },
-      { id: 'bu2', isTarget: true, img: './captcha/buses/2.jpg' },
-      { id: 'd2', isTarget: false, img: './captcha/decoys/1.jpg' },
-      { id: 'd3', isTarget: false, img: './captcha/decoys/2.jpg' },
-      { id: 'bu3', isTarget: true, img: './captcha/buses/3.jpg' },
-      { id: 'd4', isTarget: false, img: './captcha/decoys/3.jpg' },
-      { id: 'bu4', isTarget: true, img: './captcha/buses/4.jpg' },
-      { id: 'd5', isTarget: false, img: './captcha/decoys/4.jpg' },
+      { id: 'bus_1', isTarget: true, img: 'captcha/buses/1.jpg', fallback: 'bus_1' },
+      { id: 'decoy_d1', isTarget: false, img: 'captcha/decoys/7.jpg', fallback: 'decoy_dog' },
+      { id: 'bus_2', isTarget: true, img: 'captcha/buses/2.jpg', fallback: 'bus_2' },
+      { id: 'decoy_c1', isTarget: false, img: 'captcha/decoys/6.jpg', fallback: 'decoy_coffee' },
+      { id: 'bus_3', isTarget: true, img: 'captcha/buses/3.jpg', fallback: 'bus_3' },
+      { id: 'decoy_m1', isTarget: false, img: 'captcha/decoys/3.jpg', fallback: 'decoy_mountain' },
+      { id: 'decoy_f1', isTarget: false, img: 'captcha/decoys/4.jpg', fallback: 'decoy_forest' },
+      { id: 'decoy_b1', isTarget: false, img: 'captcha/bicycles/3.jpg', fallback: 'bicycle' },
+      { id: 'decoy_m2', isTarget: false, img: 'captcha/decoys/5.jpg', fallback: 'decoy_mountain' },
     ]
   },
   {
     id: 'crosswalks',
     title: 'crosswalks',
     instruction: 'Select all squares with crosswalks',
+    requiredCount: 3,
     tiles: [
-      { id: 'cw1', isTarget: true, img: './captcha/crosswalks/1.jpg' },
-      { id: 'd1', isTarget: false, img: './captcha/decoys/5.jpg' },
-      { id: 'cw2', isTarget: true, img: './captcha/crosswalks/2.jpg' },
-      { id: 'd2', isTarget: false, img: './captcha/decoys/6.jpg' },
-      { id: 'd3', isTarget: false, img: './captcha/decoys/7.jpg' },
-      { id: 'cw3', isTarget: true, img: './captcha/crosswalks/3.jpg' },
-      { id: 'd4', isTarget: false, img: './captcha/decoys/8.jpg' },
-      { id: 'cw4', isTarget: true, img: './captcha/crosswalks/4.jpg' },
-      { id: 'd5', isTarget: false, img: './captcha/decoys/1.jpg' },
+      { id: 'cw_1', isTarget: true, img: 'captcha/crosswalks/1.jpg', fallback: 'crosswalk_1' },
+      { id: 'decoy_c1', isTarget: false, img: 'captcha/decoys/6.jpg', fallback: 'decoy_coffee' },
+      { id: 'cw_2', isTarget: true, img: 'captcha/crosswalks/2.jpg', fallback: 'crosswalk_2' },
+      { id: 'decoy_m1', isTarget: false, img: 'captcha/decoys/3.jpg', fallback: 'decoy_mountain' },
+      { id: 'decoy_d1', isTarget: false, img: 'captcha/decoys/7.jpg', fallback: 'decoy_dog' },
+      { id: 'cw_3', isTarget: true, img: 'captcha/crosswalks/3.jpg', fallback: 'crosswalk_3' },
+      { id: 'decoy_f1', isTarget: false, img: 'captcha/decoys/4.jpg', fallback: 'decoy_forest' },
+      { id: 'decoy_p1', isTarget: false, img: 'captcha/airplanes/3.jpg', fallback: 'commercial_jet' },
+      { id: 'decoy_m2', isTarget: false, img: 'captcha/decoys/5.jpg', fallback: 'decoy_mountain' },
     ]
   }
 ];
@@ -90,10 +241,11 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
   const [isVerifying, setIsVerifying] = useState(false);
   const [showChallenge, setShowChallenge] = useState(false);
   const [challengeIdx, setChallengeIdx] = useState(0);
-  const [selectedTiles, setSelectedTiles] = useState([]);
+  const [selectedTileIds, setSelectedTileIds] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [isShaking, setIsShaking] = useState(false);
   const [shuffledTiles, setShuffledTiles] = useState([]);
+  const [failedImages, setFailedImages] = useState({});
 
   // Audio/Canvas code fallback challenge
   const [showCodeChallenge, setShowCodeChallenge] = useState(false);
@@ -107,13 +259,15 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
   const initChallenge = useCallback((idx) => {
     const ch = CHALLENGES[idx];
     const tilesCopy = [...ch.tiles];
+    // Fisher-Yates shuffle
     for (let i = tilesCopy.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [tilesCopy[i], tilesCopy[j]] = [tilesCopy[j], tilesCopy[i]];
     }
     setShuffledTiles(tilesCopy);
-    setSelectedTiles([]);
+    setSelectedTileIds([]);
     setErrorMsg('');
+    setFailedImages({});
   }, []);
 
   // Sync external verified state
@@ -121,7 +275,7 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
     setIsChecked(verified);
   }, [verified]);
 
-  // Generate canvas distorted text for alternative challenge
+  // Generate canvas distorted text for alternative code challenge
   const generateCanvasCode = useCallback(() => {
     const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
     let code = '';
@@ -170,46 +324,53 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
     setIsVerifying(true);
     setErrorMsg('');
 
-    // Authentic behavior: click checkbox -> show spinner for 550ms -> open challenge modal
+    // Realistic behavior: click checkbox -> spinner for 450ms -> open challenge modal
     setTimeout(() => {
       setIsVerifying(false);
       const nextIdx = Math.floor(Math.random() * CHALLENGES.length);
       setChallengeIdx(nextIdx);
       initChallenge(nextIdx);
       setShowChallenge(true);
-    }, 550);
+    }, 450);
   };
 
-  const toggleTile = (index) => {
-    setSelectedTiles(prev => 
-      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+  const toggleTile = (tileId) => {
+    setSelectedTileIds(prev => 
+      prev.includes(tileId) ? prev.filter(id => id !== tileId) : [...prev, tileId]
     );
+    setErrorMsg('');
+  };
+
+  const handleImageError = (tileId) => {
+    setFailedImages(prev => ({ ...prev, [tileId]: true }));
   };
 
   const handleVerify = () => {
-    const targetIndices = shuffledTiles
-      .map((t, idx) => t.isTarget ? idx : null)
-      .filter(idx => idx !== null);
+    const targetTileIds = shuffledTiles
+      .filter(t => t.isTarget)
+      .map(t => t.id);
 
     const isMatch = 
-      targetIndices.length === selectedTiles.length &&
-      selectedTiles.every(idx => targetIndices.includes(idx));
+      targetTileIds.length === selectedTileIds.length &&
+      targetTileIds.every(id => selectedTileIds.includes(id));
 
     if (isMatch) {
       setShowChallenge(false);
       setIsChecked(true);
+      setErrorMsg('');
       if (onVerify) onVerify(true);
     } else {
-      setErrorMsg('Please try again. Select all matching squares.');
       setIsShaking(true);
-      setTimeout(() => setIsShaking(false), 500);
+      setTimeout(() => setIsShaking(false), 450);
 
-      // Refresh with another challenge after a slight delay
-      setTimeout(() => {
-        const nextIdx = (challengeIdx + 1) % CHALLENGES.length;
-        setChallengeIdx(nextIdx);
-        initChallenge(nextIdx);
-      }, 700);
+      const required = currentChallenge.requiredCount || 3;
+      if (selectedTileIds.length === 0) {
+        setErrorMsg(`Please select the ${required} matching squares first.`);
+      } else if (selectedTileIds.length !== required) {
+        setErrorMsg(`Please select exactly ${required} squares. You currently have ${selectedTileIds.length} selected.`);
+      } else {
+        setErrorMsg(`Some selections were incorrect. Please check and try again.`);
+      }
     }
   };
 
@@ -218,6 +379,7 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
       setShowChallenge(false);
       setShowCodeChallenge(false);
       setIsChecked(true);
+      setErrorMsg('');
       if (onVerify) onVerify(true);
     } else {
       setErrorMsg('Incorrect code. Please try again.');
@@ -230,6 +392,15 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
     setChallengeIdx(nextIdx);
     initChallenge(nextIdx);
   };
+
+  const handleCancel = () => {
+    setShowChallenge(false);
+    setSelectedTileIds([]);
+    setErrorMsg('');
+    if (onReset) onReset();
+  };
+
+  const requiredCount = currentChallenge.requiredCount || 3;
 
   return (
     <div style={styles.widgetContainer}>
@@ -289,7 +460,9 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
                 {showCodeChallenge ? 'Type the characters' : currentChallenge.title}
               </div>
               <div style={styles.headerFootnote}>
-                {showCodeChallenge ? 'Enter the text below to verify you are human' : 'Click verify once there are none left.'}
+                {showCodeChallenge 
+                  ? 'Enter the 5 characters below' 
+                  : `Select all ${requiredCount} matching squares (${selectedTileIds.length}/${requiredCount} selected)`}
               </div>
             </div>
 
@@ -301,34 +474,43 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
               </div>
             )}
 
-            {/* Standard 3x3 Real Photo Grid */}
+            {/* Standard 3x3 Real Photo Grid with Instant SVG Fallback */}
             {!showCodeChallenge ? (
               <div style={styles.gridContainer}>
                 {shuffledTiles.map((tile, idx) => {
-                  const isSelected = selectedTiles.includes(idx);
+                  const isSelected = selectedTileIds.includes(tile.id);
+                  const isFailed = failedImages[tile.id];
+
                   return (
                     <div
                       key={tile.id + '-' + idx}
-                      onClick={() => toggleTile(idx)}
+                      onClick={() => toggleTile(tile.id)}
                       style={{
                         ...styles.tileBox,
                         border: isSelected ? '3px solid #1a73e8' : '2px solid rgba(255,255,255,0.08)',
                         transform: isSelected ? 'scale(0.92)' : 'scale(1)',
                       }}
+                      title={tile.id}
                     >
-                      <img 
-                        src={tile.img} 
-                        alt={tile.id} 
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          display: 'block',
-                          userSelect: 'none',
-                          pointerEvents: 'none'
-                        }}
-                        loading="eager"
-                      />
+                      {!isFailed ? (
+                        <img 
+                          src={getCaptchaUrl(tile.img)} 
+                          alt={tile.id} 
+                          onError={() => handleImageError(tile.id)}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                            userSelect: 'none',
+                            pointerEvents: 'none'
+                          }}
+                          loading="eager"
+                        />
+                      ) : (
+                        renderFallbackGraphic(tile.fallback)
+                      )}
+
                       {isSelected && (
                         <div style={styles.checkBadge}>
                           <Check size={14} color="#ffffff" strokeWidth={3} />
@@ -371,9 +553,9 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
                   type="button" 
                   onClick={showCodeChallenge ? generateCanvasCode : handleReload}
                   style={styles.iconBtn}
-                  title="Reload new images"
+                  title="New Challenge (Skip)"
                 >
-                  <RefreshCw size={20} />
+                  <RefreshCw size={19} />
                 </button>
                 <button 
                   type="button" 
@@ -386,24 +568,24 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
                     ...styles.iconBtn,
                     color: showCodeChallenge ? '#3b82f6' : '#9ca3af'
                   }}
-                  title={showCodeChallenge ? "Switch to image tiles" : "Switch to audio/text challenge"}
+                  title={showCodeChallenge ? "Switch to image tiles" : "Switch to text challenge"}
                 >
-                  <Volume2 size={20} />
+                  <Volume2 size={19} />
                 </button>
                 <button 
                   type="button" 
-                  onClick={() => alert("Please click each image tile matching the requested object, then press VERIFY.")}
+                  onClick={() => alert(`Please click all ${requiredCount} squares matching "${currentChallenge.title}". Once you have selected ${requiredCount}, press VERIFY.`)}
                   style={styles.iconBtn}
                   title="Help & Info"
                 >
-                  <HelpCircle size={20} />
+                  <HelpCircle size={19} />
                 </button>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <button
                   type="button"
-                  onClick={() => setShowChallenge(false)}
+                  onClick={handleCancel}
                   style={styles.cancelBtn}
                 >
                   Cancel
@@ -411,7 +593,10 @@ export default function Captcha({ onVerify, verified = false, onReset }) {
                 <button
                   type="button"
                   onClick={showCodeChallenge ? handleVerifyCode : handleVerify}
-                  style={styles.verifyBtn}
+                  style={{
+                    ...styles.verifyBtn,
+                    opacity: (!showCodeChallenge && selectedTileIds.length !== requiredCount) ? 0.8 : 1,
+                  }}
                 >
                   VERIFY
                 </button>
@@ -560,9 +745,10 @@ const styles = {
     lineHeight: 1.2,
   },
   headerFootnote: {
-    fontSize: '0.75rem',
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: '0.78rem',
+    color: 'rgba(255, 255, 255, 0.9)',
     marginTop: '6px',
+    fontWeight: '500',
   },
   errorBanner: {
     backgroundColor: 'rgba(239, 68, 68, 0.18)',
@@ -589,6 +775,16 @@ const styles = {
     position: 'relative',
     transition: 'transform 0.15s ease, border-color 0.15s ease',
     backgroundColor: '#1e293b',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  svgGraphic: {
+    width: '100%',
+    height: '100%',
+    display: 'block',
+    userSelect: 'none',
+    pointerEvents: 'none',
   },
   checkBadge: {
     position: 'absolute',
@@ -674,6 +870,6 @@ const styles = {
     cursor: 'pointer',
     letterSpacing: '0.5px',
     boxShadow: '0 2px 6px rgba(26, 115, 232, 0.4)',
-    transition: 'background-color 0.2s',
+    transition: 'background-color 0.2s, opacity 0.2s',
   },
 };
