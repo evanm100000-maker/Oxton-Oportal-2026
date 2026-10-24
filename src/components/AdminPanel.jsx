@@ -2747,11 +2747,11 @@ export default function AdminPanel() {
 
       {/* Audit Log Modal */}
       {selectedAuditLog && (
-        <div style={styles.overlay}>
+        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setSelectedAuditLog(null); }}>
           <div className="glass-panel" style={{...styles.modal, width: '500px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '16px'}}>
-              <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem'}}>Audit Log Details</h3>
-              <button type="button" onClick={() => setSelectedAuditLog(null)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer'}}><X size={20}/></button>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0}}>
+              <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0}}>Audit Log Details</h3>
+              <button type="button" onClick={() => setSelectedAuditLog(null)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer', padding: '4px'}}><X size={20}/></button>
             </div>
             <div style={{background: 'rgba(0,0,0,0.3)', padding: '16px', borderRadius: '8px', overflowX: 'auto'}}>
               <pre style={{color: '#a7f3d0', fontSize: '0.85rem', margin: 0}}>
@@ -2764,11 +2764,11 @@ export default function AdminPanel() {
 
       {/* Suspend User Modal */}
       {suspendModalUser && (
-        <div style={styles.overlay}>
+        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setSuspendModalUser(null); }}>
           <div className="glass-panel" style={{...styles.modal, width: '400px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '16px'}}>
-               <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem'}}>Suspend {suspendModalUser.firstName}</h3>
-               <button type="button" onClick={() => setSuspendModalUser(null)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer'}}><X size={20}/></button>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0}}>
+               <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0}}>Suspend {suspendModalUser.firstName}</h3>
+               <button type="button" onClick={() => setSuspendModalUser(null)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer', padding: '4px'}}><X size={20}/></button>
             </div>
             <form onSubmit={handleSuspend} style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
                <div style={styles.inputWrapper}>
@@ -2787,11 +2787,11 @@ export default function AdminPanel() {
 
       {/* Infraction Modal */}
       {showInfractionModal && (
-        <div style={styles.overlay}>
-          <div className="glass-panel" style={{...styles.modal, width: '500px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '16px'}}>
-               <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem'}}>Log New Consequence</h3>
-               <button type="button" onClick={() => setShowInfractionModal(false)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer'}}><X size={20}/></button>
+        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setShowInfractionModal(false); }}>
+          <div className="glass-panel" style={{...styles.modal, width: '520px'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0}}>
+               <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0}}>Log New Consequence</h3>
+               <button type="button" onClick={() => setShowInfractionModal(false)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer', padding: '4px'}}><X size={20}/></button>
             </div>
             <form onSubmit={handleAddInfraction} style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
               <div style={styles.inputWrapper}>
@@ -2841,7 +2841,7 @@ export default function AdminPanel() {
                       Controls the location displayed on the C4 sanction (e.g. C4A (Location) / C4B (Location))
                     </p>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                      {['Hall', 'Training Room A', 'Staff Briefing Room', 'Executive Office', 'Flight Deck'].map(loc => (
+                      {['HQ', 'Discord', 'Hall', 'N/A'].map(loc => (
                         <button
                           key={loc}
                           type="button"
@@ -2866,7 +2866,7 @@ export default function AdminPanel() {
                       required
                       value={infDetentionLocation}
                       onChange={e => setInfDetentionLocation(e.target.value)}
-                      placeholder="e.g. Hall, Training Room A, Office"
+                      placeholder="e.g. HQ, Discord, Hall, N/A"
                       className="input-field"
                     />
                   </div>
@@ -2931,7 +2931,7 @@ export default function AdminPanel() {
                 />
               </div>
 
-              <button type="submit" className="btn-danger" style={styles.submitBtn}>
+              <button type="submit" className="btn-danger" style={{ ...styles.submitBtn, flexShrink: 0 }}>
                 <ShieldAlert size={16} /> Publish Consequence
               </button>
             </form>
@@ -2952,16 +2952,16 @@ export default function AdminPanel() {
 
       {/* Reschedule Detention Modal */}
       {rescheduleModalItem && (
-        <div style={styles.overlay}>
+        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setRescheduleModalItem(null); }}>
           <div className="glass-panel" style={{ ...styles.modal, width: '440px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
               <h3 style={{ color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0 }}>
                 Reschedule Detention
               </h3>
               <button 
                 type="button" 
                 onClick={() => setRescheduleModalItem(null)} 
-                style={{ background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={20} />
               </button>
@@ -3006,12 +3006,33 @@ export default function AdminPanel() {
 
               <div style={styles.inputWrapper}>
                 <label style={styles.label}>Detention Location *</label>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  {['HQ', 'Discord', 'Hall', 'N/A'].map(loc => (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => setRescheduleNewLocation(loc)}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        border: '1px solid',
+                        borderColor: rescheduleNewLocation === loc ? '#f59e0b' : 'rgba(255,255,255,0.1)',
+                        background: rescheduleNewLocation === loc ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
+                        color: rescheduleNewLocation === loc ? '#f59e0b' : '#d1d5db',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {loc}
+                    </button>
+                  ))}
+                </div>
                 <input
                   type="text"
                   required
                   value={rescheduleNewLocation}
                   onChange={e => setRescheduleNewLocation(e.target.value)}
-                  placeholder="e.g. Hall, Training Room"
+                  placeholder="e.g. HQ, Discord, Hall, N/A"
                   className="input-field"
                 />
               </div>
@@ -3148,8 +3169,8 @@ const styles = {
   formRow: { display: 'flex', gap: '20px', flexWrap: 'wrap' },
   inputWrapper: { flex: 1, minWidth: 'min(240px, 100%)', display: 'flex', flexDirection: 'column', gap: '6px' },
   label: { fontSize: '0.85rem', fontWeight: '500', color: 'var(--color-text-muted)' },
-  textarea: { resize: 'vertical', minHeight: '110px' },
-  confidentialTextarea: { resize: 'vertical', borderStyle: 'dashed', borderColor: 'rgba(6, 182, 212, 0.3)', background: 'rgba(6, 182, 212, 0.02)' },
+  textarea: { resize: 'vertical', minHeight: '80px' },
+  confidentialTextarea: { resize: 'vertical', minHeight: '60px', borderStyle: 'dashed', borderColor: 'rgba(6, 182, 212, 0.3)', background: 'rgba(6, 182, 212, 0.02)' },
   submitBtn: { padding: '10px 20px', borderRadius: '8px', fontSize: '0.85rem', cursor: 'pointer', alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' },
   infractionBadge: { background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', padding: '3px 10px', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', whiteSpace: 'nowrap' },
   confidentialNote: { marginTop: '8px', color: '#67e8f9', fontSize: '0.8rem', fontStyle: 'italic' },
@@ -3163,8 +3184,38 @@ const styles = {
   loaActionPanel: { borderTop: '1px dashed var(--color-border)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' },
   loaActionButtons: { display: 'flex', gap: '10px' },
   loaActionBtn: { padding: '8px 16px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' },
-  overlay: { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  modal: { padding: '24px', display: 'flex', flexDirection: 'column', maxHeight: '90vh', maxWidth: 'calc(100vw - 24px)', width: '100%', boxSizing: 'border-box' },
+  overlay: { 
+    position: 'fixed', 
+    top: 0, 
+    left: 0, 
+    right: 0,
+    bottom: 0,
+    width: '100vw', 
+    height: '100vh', 
+    background: 'rgba(0, 0, 0, 0.75)', 
+    backdropFilter: 'blur(6px)',
+    WebkitBackdropFilter: 'blur(6px)',
+    zIndex: 9999, 
+    display: 'flex', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    padding: '16px',
+    boxSizing: 'border-box',
+    overflowY: 'auto'
+  },
+  modal: { 
+    padding: '24px', 
+    display: 'flex', 
+    flexDirection: 'column', 
+    maxHeight: 'min(90vh, 850px)', 
+    maxWidth: 'calc(100vw - 32px)', 
+    width: '100%', 
+    boxSizing: 'border-box',
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    borderRadius: '16px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
+  },
   composeBox: { padding: '24px', borderRadius: '12px', maxWidth: '100%', boxSizing: 'border-box' },
   composeTitle: { fontSize: '1.25rem', fontWeight: '700', color: 'var(--color-text-main)', marginBottom: '16px' }
 };

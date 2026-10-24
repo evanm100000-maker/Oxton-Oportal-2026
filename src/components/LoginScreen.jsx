@@ -668,7 +668,7 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
           </div>
         )}
       </div>
-      <div style={styles.versionText}>V2.1.2</div>
+      <div style={styles.versionText}>V2.1.3</div>
     </div>
   );
 }

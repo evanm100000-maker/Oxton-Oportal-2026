@@ -538,7 +538,7 @@ export default function Infractions() {
                               Cancel
                             </button>
                             <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px' }}>
-                              {['Hall', 'Training Room A', 'Staff Briefing Room', 'Executive Office', 'Flight Deck'].map(preset => (
+                              {['HQ', 'Discord', 'Hall', 'N/A'].map(preset => (
                                 <button
                                   key={preset}
                                   type="button"
@@ -1041,7 +1041,7 @@ export default function Infractions() {
                         Controls the location shown on the C4 sanction (e.g. C4A (Location) / C4B (Location))
                       </p>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                        {['Hall', 'Training Room A', 'Staff Briefing Room', 'Executive Office', 'Flight Deck'].map(loc => (
+                        {['HQ', 'Discord', 'Hall', 'N/A'].map(loc => (
                           <button
                             key={loc}
                             type="button"
@@ -1066,7 +1066,7 @@ export default function Infractions() {
                         required 
                         value={logDetentionLocation} 
                         onChange={e => setLogDetentionLocation(e.target.value)} 
-                        placeholder="e.g. Hall, Training Room"
+                        placeholder="e.g. HQ, Discord, Hall, N/A"
                         className="input-field"
                       />
                     </div>
