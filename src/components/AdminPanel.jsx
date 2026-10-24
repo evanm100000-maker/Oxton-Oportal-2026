@@ -264,7 +264,21 @@ export default function AdminPanel() {
   };
 
   const handleLoaAction = (loaId, status) => {
-    const comment = loaComments[loaId] || '';
+    let comment = (loaComments[loaId] || '').trim();
+    if (!comment) {
+      const promptLabel = status === 'Approved' 
+        ? 'Please enter an approval reason / note for this LOA (Required):'
+        : (status === 'Denied' 
+            ? 'Please enter a denial reason for this LOA (Required):' 
+            : 'Please enter a reason for ending this LOA early (Required):');
+      const input = window.prompt(promptLabel);
+      if (input === null) return;
+      comment = (input || '').trim();
+      if (!comment) {
+        alert(`A reason is required before an admin can mark an LOA as ${status}.`);
+        return;
+      }
+    }
     updateLoaStatus(loaId, status, comment);
     setLoaComments(prev => ({ ...prev, [loaId]: '' }));
     displaySuccess(`LOA request status updated to ${status}.`);
@@ -506,8 +520,26 @@ export default function AdminPanel() {
   // Derived lists
   const pendingUsers = useMemo(() => users.filter(u => !u.approved && u.role !== 'passenger'), [users]);
   const approvedUsers = useMemo(() => users.filter(u => u.approved && u.role !== 'passenger'), [users]);
-  const pendingLoas = useMemo(() => loaRequests.filter(req => req.status === 'Pending'), [loaRequests]);
-  const activeLoas = useMemo(() => loaRequests.filter(req => req.status === 'Approved' || req.status === 'End Requested'), [loaRequests]);
+  const todayDateStr = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const pendingLoas = useMemo(() => (loaRequests || []).filter(req => req && req.status === 'Pending'), [loaRequests]);
+  const activeLoas = useMemo(() => (loaRequests || []).filter(req => {
+    if (!req) return false;
+    if (req.status === 'End Requested') return true;
+    if (req.status === 'Approved') {
+      return !req.endDate || req.endDate >= todayDateStr;
+    }
+    return false;
+  }), [loaRequests, todayDateStr]);
+  const pastLoas = useMemo(() => (loaRequests || []).filter(req => {
+    if (!req) return false;
+    if (req.status === 'Denied' || req.status === 'Ended Early' || req.status === 'Completed') return true;
+    if (req.status === 'Approved' && req.endDate && req.endDate < todayDateStr) return true;
+    return false;
+  }), [loaRequests, todayDateStr]);
   const pendingFlightLogs = useMemo(() => flightLogs.filter(log => log.status === 'Pending'), [flightLogs]);
   const pendingPasswords = useMemo(() => (passwordResets || []).filter(r => r.status === 'Pending'), [passwordResets]);
   const recentPasswords = useMemo(() => (passwordResets || []).filter(r => r.status === 'Approved' || r.status === 'Completed'), [passwordResets]);
@@ -1387,8 +1419,15 @@ export default function AdminPanel() {
                   </div>
                   <div style={styles.loaActionPanel}>
                     <div style={styles.commentWrapper}>
-                      <label style={styles.commentLabel}>Decision Note:</label>
-                      <input type="text" value={loaComments[req.id] || ''} onChange={e => setLoaComments({...loaComments, [req.id]: e.target.value})} className="input-field" style={{padding: '8px 12px'}} />
+                      <label style={styles.commentLabel}>Acceptance / Denial Reason <span style={{ color: '#ef4444' }}>*</span></label>
+                      <input 
+                        type="text" 
+                        placeholder="Type reason before approving or denying..." 
+                        value={loaComments[req.id] || ''} 
+                        onChange={e => setLoaComments({...loaComments, [req.id]: e.target.value})} 
+                        className="input-field" 
+                        style={{padding: '8px 12px'}} 
+                      />
                     </div>
                     <div style={styles.loaActionButtons}>
                       <button type="button" onClick={() => handleLoaAction(req.id, 'Approved')} className="btn-success" style={styles.loaActionBtn}><Check size={14}/> Approve</button>
@@ -1418,11 +1457,21 @@ export default function AdminPanel() {
                   <div style={styles.loaReasonBox}>
                      <span style={styles.loaReasonLabel}>Status:</span>
                      <p style={{color: req.status === 'End Requested' ? '#f59e0b' : '#10b981', fontWeight: 'bold'}}>{req.status === 'End Requested' ? 'End Requested' : 'Approved'}</p>
+                     {req.adminComment && (
+                       <p style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: '6px' }}><strong>Approval Note:</strong> {req.adminComment}</p>
+                     )}
                   </div>
                   <div style={styles.loaActionPanel}>
                     <div style={styles.commentWrapper}>
-                      <label style={styles.commentLabel}>End Early Note:</label>
-                      <input type="text" value={loaComments[req.id] || ''} onChange={e => setLoaComments({...loaComments, [req.id]: e.target.value})} className="input-field" style={{padding: '8px 12px'}} />
+                      <label style={styles.commentLabel}>End Early Reason <span style={{ color: '#ef4444' }}>*</span></label>
+                      <input 
+                        type="text" 
+                        placeholder="Type reason for ending early..." 
+                        value={loaComments[req.id] || ''} 
+                        onChange={e => setLoaComments({...loaComments, [req.id]: e.target.value})} 
+                        className="input-field" 
+                        style={{padding: '8px 12px'}} 
+                      />
                     </div>
                     <div style={styles.loaActionButtons}>
                       <button type="button" onClick={() => handleLoaAction(req.id, 'Ended Early')} className="btn-danger" style={styles.loaActionBtn}><X size={14}/> End LOA Early</button>
@@ -1430,6 +1479,85 @@ export default function AdminPanel() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* LOA History & Resolved Records Section */}
+        <div style={{...styles.panelSection, marginTop: '24px'}}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <div>
+              <h3 style={styles.panelTitle}>LOA History & Archived Records ({pastLoas.length})</h3>
+              <p style={{ color: '#9ca3af', fontSize: '0.85rem', margin: '2px 0 0 0' }}>Historical archive of completed, ended early, and denied leaves with admin decision reasons.</p>
+            </div>
+          </div>
+
+          {pastLoas.length === 0 ? (
+            <div style={styles.emptyGrid}><Clock size={36} color="rgba(255,255,255,0.15)" /><p style={styles.emptyText}>No past LOA records archived yet.</p></div>
+          ) : (
+            <div style={styles.loaList}>
+              {pastLoas.map(req => {
+                const isDenied = req.status === 'Denied';
+                const isEndedEarly = req.status === 'Ended Early';
+                const statusColor = isDenied ? '#ef4444' : (isEndedEarly ? '#f59e0b' : '#10b981');
+                const statusBg = isDenied ? 'rgba(239, 68, 68, 0.12)' : (isEndedEarly ? 'rgba(245, 158, 11, 0.12)' : 'rgba(16, 185, 129, 0.12)');
+                const statusBorder = isDenied ? 'rgba(239, 68, 68, 0.3)' : (isEndedEarly ? 'rgba(245, 158, 11, 0.3)' : 'rgba(16, 185, 129, 0.3)');
+                const statusLabel = req.status === 'Approved' ? 'Completed' : req.status;
+
+                return (
+                  <div key={req.id} style={{ ...styles.loaCard, opacity: 0.95 }} className="glass-panel">
+                    <div style={styles.loaCardHeader}>
+                      <div>
+                        <h4 style={{ color: 'var(--color-text-main)', margin: '0 0 2px 0' }}>{req.userName}</h4>
+                        <span style={{ color: '#9ca3af', fontSize: '0.8rem' }}>{req.userEmail}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={styles.loaDates}>
+                          <span style={styles.loaDateText}>{req.startDate}</span> <span style={{ color: '#9ca3af' }}>to</span> <span style={styles.loaDateText}>{req.endDate}</span>
+                        </div>
+                        <span style={{
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          color: statusColor,
+                          backgroundColor: statusBg,
+                          border: `1px solid ${statusBorder}`
+                        }}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={styles.loaReasonBox}>
+                      <span style={styles.loaReasonLabel}>Staff Reason:</span>
+                      <p style={styles.loaReasonText}>{req.reason || 'No reason provided'}</p>
+                    </div>
+
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: statusBg,
+                      border: `1px solid ${statusBorder}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: statusColor, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Admin Decision Reason / Note:
+                      </span>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: '#f3f4f6', fontStyle: 'italic' }}>
+                        "{req.adminComment || 'No note recorded'}"
+                      </p>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#9ca3af', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span>Reviewed By: <strong style={{ color: '#d1d5db' }}>{req.reviewedByName || req.reviewedBy || 'Admin'}</strong></span>
+                        <span>Date: {req.reviewedAt ? new Date(req.reviewedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : (req.timestamp ? new Date(req.timestamp).toLocaleDateString() : 'N/A')}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

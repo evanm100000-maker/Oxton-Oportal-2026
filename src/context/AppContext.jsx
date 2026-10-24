@@ -245,6 +245,9 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
               const item = data[key];
               if (item && typeof item === 'object') {
                 item._firebaseKey = key;
+                if (!item.id) {
+                  item.id = key;
+                }
               }
               return item;
             });
@@ -253,6 +256,9 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
               if (item && typeof item === 'object') {
                 const key = item.id ? String(item.id) : (item.email ? item.email.toLowerCase().trim().replace(/\./g, ',') : index.toString());
                 item._firebaseKey = key;
+                if (!item.id) {
+                  item.id = key;
+                }
               }
               return item;
             });
@@ -260,12 +266,12 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
           if (Array.isArray(normalizedData)) {
             normalizedData = normalizedData.filter(item => item !== null && item !== undefined);
             
-            // Deduplicate items by email (case-insensitive) or by id
+            // Deduplicate items: only users collection keys on email; others key on unique id or _firebaseKey
             const seenKeys = new Set();
             normalizedData = normalizedData.filter(item => {
-              const uniqueKey = item.email 
+              const uniqueKey = (path === 'users' && item.email) 
                 ? item.email.toLowerCase().trim() 
-                : (item.id || item._firebaseKey || null);
+                : (item.id || item._firebaseKey || (item.email ? item.email.toLowerCase().trim() : null));
               if (uniqueKey) {
                 if (seenKeys.has(uniqueKey)) return false;
                 seenKeys.add(uniqueKey);
@@ -299,7 +305,9 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
         const seenKeys = new Set();
         nextArray = nextArray.filter(item => {
           if (!item) return false;
-          const uniqueKey = item.email ? item.email.toLowerCase().trim() : (item.id || null);
+          const uniqueKey = (path === 'users' && item.email) 
+            ? item.email.toLowerCase().trim() 
+            : (item.id || item._firebaseKey || (item.email ? item.email.toLowerCase().trim() : null));
           if (uniqueKey) {
             if (seenKeys.has(uniqueKey)) return false;
             seenKeys.add(uniqueKey);
@@ -1195,13 +1203,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const cleanupExpiredItems = () => {
       const now = new Date();
-      const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      
-      setLoaRequests(prev => {
-        if (!prev) return prev;
-        const active = prev.filter(loa => loa.endDate >= localTodayStr);
-        return active.length !== prev.length ? active : prev;
-      });
+      // Keep LOA records intact for LOA history; do not auto-delete past leaves from Firebase
 
       setAnnouncements(prev => {
         if (!prev) return prev;
@@ -1633,7 +1635,10 @@ export const AppProvider = ({ children }) => {
       issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
       timestamp: new Date().toISOString()
     };
-    setInformalSanctions(prev => [newSanction, ...prev]);
+    const db = getDatabase(firebaseApp);
+    const cleanSanction = JSON.parse(JSON.stringify(newSanction));
+    update(ref(db, 'informalSanctions'), { [newSanction.id]: cleanSanction }).catch(err => console.error('Failed to save informal sanction to Firebase:', err));
+    setInformalSanctions(prev => [newSanction, ...(prev || []).filter(s => s.id !== newSanction.id)]);
     setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - 2 } : u));
     logPointsAction(staffEmail, -2, `Informal Sanction: ${reason}`);
     logAction('informal_sanction_added', `Issued informal sanction to ${staffEmail}`, { staffEmail, reason });
@@ -1900,63 +1905,138 @@ export const AppProvider = ({ children }) => {
   };
 
   const submitLoaRequest = (loaData) => {
+    const db = getDatabase(firebaseApp);
+    const id = makeId('loa');
     const newRequest = {
-      id: 'loa-' + Date.now(),
+      id,
       startDate: loaData.startDate,
       endDate: loaData.endDate,
       reason: loaData.reason,
       status: 'Pending',
       userEmail: currentUser.email,
-      userName: `${currentUser.firstName} ${currentUser.lastName}`,
+      userName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.robloxUsername || currentUser.email,
       adminComment: '',
       timestamp: new Date().toISOString()
     };
-    setLoaRequests(prev => [newRequest, ...prev]);
+    const cleanRequest = JSON.parse(JSON.stringify(newRequest));
+    update(ref(db, 'loaRequests'), { [id]: cleanRequest }).catch(err => console.error('Failed to save LOA to Firebase:', err));
+    setLoaRequests(prev => [newRequest, ...(prev || []).filter(r => r.id !== id)]);
+
+    // Notify all admins of the new LOA request
+    (users || []).filter(u => u.isAdmin || u.siteRole === 'Admin' || u.siteRole === 'Owner').forEach(admin => {
+      if (admin.email && admin.email !== currentUser?.email) {
+        sendNotificationToUser(
+          admin.email,
+          `New LOA Request: ${newRequest.userName}`,
+          `${newRequest.userName} requested leave from ${newRequest.startDate} to ${newRequest.endDate}.`,
+          'info',
+          'general'
+        );
+      }
+    });
+
+    logAction('loa_submitted', `Submitted LOA from ${loaData.startDate} to ${loaData.endDate}`, { loaId: id });
+    return id;
   };
 
   const updateLoaStatus = (loaId, status, comment) => {
-    setLoaRequests(prev => prev.map(req => 
-      req.id === loaId ? { ...req, status, adminComment: comment !== undefined ? comment : req.adminComment } : req
+    const db = getDatabase(firebaseApp);
+    const adminNote = comment !== undefined ? String(comment).trim() : '';
+    const updates = {
+      status,
+      adminComment: adminNote,
+      reviewedBy: currentUser?.email || 'admin',
+      reviewedByName: `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'Admin',
+      reviewedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    update(ref(db, `loaRequests/${loaId}`), updates).catch(err => console.error('Failed to update LOA in Firebase:', err));
+    setLoaRequests(prev => (prev || []).map(req => 
+      (req.id === loaId || req._firebaseKey === loaId) ? { ...req, ...updates } : req
     ));
-    logAction('loa_updated', `LOA ${status} for ${loaId}`, { loaId, status });
+    logAction('loa_updated', `LOA ${status} for ${loaId}. Reason: ${adminNote || 'N/A'}`, { loaId, status, comment: adminNote });
+
+    const targetLoa = (loaRequests || []).find(r => r.id === loaId || r._firebaseKey === loaId);
+    if (targetLoa && targetLoa.userEmail) {
+      sendNotificationToUser(
+        targetLoa.userEmail,
+        `LOA Request ${status}`,
+        adminNote ? `Decision Note: ${adminNote}` : `Your LOA request has been marked as ${status}.`,
+        status === 'Approved' ? 'success' : 'danger',
+        status === 'Approved' ? 'success' : 'general'
+      );
+    }
   };
 
-  const requestEndLoaEarly = (loaId) => {
-    setLoaRequests(prev => prev.map(req => req.id === loaId ? { ...req, status: 'End Requested' } : req));
+  const requestEndLoaEarly = (loaId, note = '') => {
+    const db = getDatabase(firebaseApp);
+    const updates = {
+      status: 'End Requested',
+      earlyEndRequestedAt: new Date().toISOString(),
+      earlyEndNote: note || 'Requested early end',
+      updatedAt: new Date().toISOString()
+    };
+    update(ref(db, `loaRequests/${loaId}`), updates).catch(err => console.error('Failed to request LOA early end in Firebase:', err));
+    setLoaRequests(prev => (prev || []).map(req => (req.id === loaId || req._firebaseKey === loaId) ? { ...req, ...updates } : req));
     logAction('loa_end_requested', `User requested to end LOA early`, { loaId });
+
+    // Notify admins
+    (users || []).filter(u => u.isAdmin || u.siteRole === 'Admin' || u.siteRole === 'Owner').forEach(admin => {
+      if (admin.email && admin.email !== currentUser?.email) {
+        sendNotificationToUser(
+          admin.email,
+          'LOA Early End Requested',
+          `${currentUser.firstName} ${currentUser.lastName || ''} requested to end their LOA early.`,
+          'info',
+          'general'
+        );
+      }
+    });
   };
 
   const addDocument = (docData) => {
+    const db = getDatabase(firebaseApp);
+    const id = makeId('doc');
     const newDoc = {
-      id: 'doc-' + Date.now(),
+      id,
       title: docData.title,
       category: docData.category,
       content: docData.content,
       authorEmail: currentUser.email,
       authorName: `${currentUser.firstName} ${currentUser.lastName}`,
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      timestamp: new Date().toISOString()
     };
-    setDocuments(prev => [newDoc, ...prev]);
+    const cleanDoc = JSON.parse(JSON.stringify(newDoc));
+    update(ref(db, 'documents'), { [id]: cleanDoc }).catch(err => console.error('Failed to add document in Firebase:', err));
+    setDocuments(prev => [newDoc, ...(prev || []).filter(d => d.id !== id)]);
+    logAction('document_added', `Added document: ${docData.title}`, { docId: id });
   };
 
   const deleteDocument = (docId) => {
-    setDocuments(prev => prev.filter(d => d.id !== docId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `documents/${docId}`)).catch(err => console.error('Failed to delete document in Firebase:', err));
+    setDocuments(prev => (prev || []).filter(d => d.id !== docId && d._firebaseKey !== docId));
+    logAction('document_deleted', `Deleted document ${docId}`, { docId });
   };
 
   const submitReport = (reportData) => {
+    const db = getDatabase(firebaseApp);
+    const id = makeId('rep');
     const newReport = {
-      id: 'rep-' + Date.now(),
+      id,
       reportedPlayer: reportData.reportedPlayer,
       type: reportData.type,
       description: reportData.description,
-      evidenceLink: reportData.evidenceLink,
+      evidenceLink: reportData.evidenceLink || '',
+      severity: reportData.severity || 'Medium',
       status: 'Pending',
       reporterEmail: currentUser.email,
       reporterName: `${currentUser.firstName} ${currentUser.lastName}`,
       timestamp: new Date().toISOString(),
       comments: [
         {
-          id: 'comm-' + Date.now(),
+          id: makeId('comm'),
           authorName: `${currentUser.firstName} ${currentUser.lastName}`,
           authorEmail: currentUser.email,
           text: 'Logged a Report',
@@ -1965,32 +2045,45 @@ export const AppProvider = ({ children }) => {
         }
       ]
     };
-    setReports(prev => [newReport, ...prev]);
+    const cleanReport = JSON.parse(JSON.stringify(newReport));
+    update(ref(db, 'reports'), { [id]: cleanReport }).catch(err => console.error('Failed to save report in Firebase:', err));
+    setReports(prev => [newReport, ...(prev || []).filter(r => r.id !== id)]);
+    logAction('report_submitted', `Submitted report against ${reportData.reportedPlayer}`, { reportId: id });
   };
 
   const updateReportStatus = (reportId, status) => {
-    const rep = reports.find(r => r.id === reportId);
+    const db = getDatabase(firebaseApp);
+    const rep = (reports || []).find(r => r.id === reportId || r._firebaseKey === reportId);
     if (rep && status === 'Actioned' && rep.status !== 'Actioned') {
        setUsers(prev => prev.map(u => u.email === rep.reporterEmail ? { ...u, points: Number(u.points || 0) + 2 } : u));
        logPointsAction(rep.reporterEmail, 2, 'Report Actioned');
     }
-    setReports(prev => prev.map(r => 
-      r.id === reportId ? { ...r, status } : r
+    const updates = { status, updatedAt: new Date().toISOString() };
+    update(ref(db, `reports/${reportId}`), updates).catch(err => console.error('Failed to update report status in Firebase:', err));
+    setReports(prev => (prev || []).map(r => 
+      (r.id === reportId || r._firebaseKey === reportId) ? { ...r, ...updates } : r
     ));
+    logAction('report_status_updated', `Report ${reportId} status set to ${status}`, { reportId, status });
   };
 
   const addReportComment = (reportId, commentText) => {
+    if (!commentText?.trim()) return;
+    const db = getDatabase(firebaseApp);
+    const target = (reports || []).find(r => r.id === reportId || r._firebaseKey === reportId);
     const newComment = {
-      id: 'comm-' + Date.now(),
+      id: makeId('comm'),
       authorEmail: currentUser.email,
       authorName: `${currentUser.firstName} ${currentUser.lastName}`,
-      text: commentText,
+      text: commentText.trim(),
       timestamp: new Date().toISOString(),
       isAdmin: currentUser.isAdmin
     };
-    setReports(prev => prev.map(rep => {
-      if (rep.id !== reportId) return rep;
-      return { ...rep, comments: [...rep.comments, newComment] };
+    const currentComments = Array.isArray(target?.comments) ? target.comments : (target?.comments && typeof target.comments === 'object' ? Object.values(target.comments) : []);
+    const nextComments = [...currentComments, newComment];
+    update(ref(db, `reports/${reportId}`), { comments: nextComments, updatedAt: new Date().toISOString() }).catch(err => console.error('Failed to add report comment in Firebase:', err));
+    setReports(prev => (prev || []).map(rep => {
+      if (rep.id !== reportId && rep._firebaseKey !== reportId) return rep;
+      return { ...rep, comments: nextComments };
     }));
   };
 
@@ -2262,7 +2355,10 @@ export const AppProvider = ({ children }) => {
       timestamp: new Date().toISOString()
     };
     
-    setInfractions(prev => [newInfraction, ...prev]);
+    const db = getDatabase(firebaseApp);
+    const cleanInf = JSON.parse(JSON.stringify(newInfraction));
+    update(ref(db, 'infractions'), { [newInfraction.id]: cleanInf }).catch(err => console.error('Failed to save infraction to Firebase:', err));
+    setInfractions(prev => [newInfraction, ...(prev || []).filter(i => i.id !== newInfraction.id)]);
     
     if (type === 'C5 Suspension') {
       // 2 days suspension = 48 hours
@@ -2395,12 +2491,14 @@ export const AppProvider = ({ children }) => {
   };
 
   const updateInfraction = (infId, updates) => {
-    setInfractions(prev => prev.map(inf => {
-      if (inf.id !== infId) return inf;
+    const db = getDatabase(firebaseApp);
+    const cleanUpdates = { ...updates, updatedAt: new Date().toISOString() };
+    update(ref(db, `infractions/${infId}`), cleanUpdates).catch(err => console.error('Failed to update infraction in Firebase:', err));
+    setInfractions(prev => (prev || []).map(inf => {
+      if (inf.id !== infId && inf._firebaseKey !== infId) return inf;
       return {
         ...inf,
-        ...updates,
-        updatedAt: new Date().toISOString()
+        ...cleanUpdates
       };
     }));
     logAction('infraction_updated', `Updated consequence ${infId}`, { infId, updates });
@@ -2409,17 +2507,21 @@ export const AppProvider = ({ children }) => {
   const deleteInfraction = (infId) => {
     if (getRankWeight(currentUser) < 80) return; 
 
-    setInfractions(prev => prev.filter(i => i.id !== infId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `infractions/${infId}`)).catch(err => console.error('Failed to delete infraction in Firebase:', err));
+    setInfractions(prev => (prev || []).filter(i => i.id !== infId && i._firebaseKey !== infId));
     logAction('infraction_deleted', `Removed infraction ${infId}`, { infId });
   };
 
   const deleteInformalSanction = (sancId) => {
     if (getRankWeight(currentUser) < 80) return; 
 
-    const sanction = informalSanctions.find(s => s.id === sancId);
+    const sanction = (informalSanctions || []).find(s => s.id === sancId || s._firebaseKey === sancId);
     if (!sanction) return;
 
-    setInformalSanctions(prev => prev.filter(s => s.id !== sancId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `informalSanctions/${sancId}`)).catch(err => console.error('Failed to delete informal sanction in Firebase:', err));
+    setInformalSanctions(prev => (prev || []).filter(s => s.id !== sancId && s._firebaseKey !== sancId));
 
     let shouldReturnPoints = false;
     const sancDate = new Date(sanction.timestamp);
@@ -2438,14 +2540,17 @@ export const AppProvider = ({ children }) => {
   };
 
   const appealInfraction = (infId, appealText) => {
-    setInfractions(prev => prev.map(inf => {
-      if (inf.id !== infId) return inf;
+    const db = getDatabase(firebaseApp);
+    const appealObj = {
+      text: appealText,
+      date: new Date().toISOString()
+    };
+    update(ref(db, `infractions/${infId}`), { appeal: appealObj, updatedAt: new Date().toISOString() }).catch(err => console.error('Failed to save appeal in Firebase:', err));
+    setInfractions(prev => (prev || []).map(inf => {
+      if (inf.id !== infId && inf._firebaseKey !== infId) return inf;
       return {
         ...inf,
-        appeal: {
-          text: appealText,
-          date: new Date().toISOString()
-        }
+        appeal: appealObj
       };
     }));
     logAction('infraction_appealed', `Appealed infraction ${infId}`, { infId });
@@ -2608,7 +2713,10 @@ useEffect(() => {
       authorName: `${currentUser.firstName} ${currentUser.lastName}`,
       timestamp: new Date().toISOString()
     };
-    setAnnouncements(prev => [newAnn, ...prev]);
+    const db = getDatabase(firebaseApp);
+    const cleanAnn = JSON.parse(JSON.stringify(newAnn));
+    update(ref(db, 'announcements'), { [newAnn.id]: cleanAnn }).catch(err => console.error('Failed to save announcement to Firebase:', err));
+    setAnnouncements(prev => [newAnn, ...(prev || []).filter(a => a.id !== newAnn.id)]);
     broadcastNotification(
       `New Announcement: ${newAnn.title || newAnn.type}`,
       newAnn.message.length > 60 ? newAnn.message.substring(0, 60) + '...' : newAnn.message,
@@ -2618,12 +2726,15 @@ useEffect(() => {
   };
 
   const deleteAnnouncement = (annId) => {
-    setAnnouncements(prev => prev.filter(a => a.id !== annId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `announcements/${annId}`)).catch(err => console.error('Failed to delete announcement from Firebase:', err));
+    setAnnouncements(prev => (prev || []).filter(a => a.id !== annId && a._firebaseKey !== annId));
   };
 
   const addTask = (taskData) => {
+    const id = makeId('task');
     const newTask = {
-      id: makeId('task'),
+      id,
       assignedByEmail: currentUser.email,
       assignedByName: `${currentUser.firstName} ${currentUser.lastName}`,
       assignedToEmail: taskData.assignedToEmail,
@@ -2633,7 +2744,10 @@ useEffect(() => {
       timestamp: new Date().toISOString(),
       completedAt: null
     };
-    setTasks(prev => [newTask, ...prev]);
+    const db = getDatabase(firebaseApp);
+    const cleanTask = JSON.parse(JSON.stringify(newTask));
+    update(ref(db, 'tasks'), { [id]: cleanTask }).catch(err => console.error('Failed to save task to Firebase:', err));
+    setTasks(prev => [newTask, ...(prev || []).filter(t => t.id !== id)]);
     if (newTask.assignedToEmail) {
       sendNotificationToUser(
         newTask.assignedToEmail,
@@ -2648,17 +2762,20 @@ useEffect(() => {
   const updateTaskStatus = (taskId, status) => {
     let taskAssignedTo = null;
     let isCompleted = status === 'Completed';
+    const db = getDatabase(firebaseApp);
+    const updates = { status, completedAt: isCompleted ? new Date().toISOString() : null, updatedAt: new Date().toISOString() };
+    update(ref(db, `tasks/${taskId}`), updates).catch(err => console.error('Failed to update task in Firebase:', err));
 
-    setTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
+    setTasks(prev => (prev || []).map(t => {
+      if (t.id === taskId || t._firebaseKey === taskId) {
         taskAssignedTo = t.assignedToEmail;
-        return { ...t, status, completedAt: isCompleted ? new Date().toISOString() : null };
+        return { ...t, ...updates };
       }
       return t;
     }));
 
     if (isCompleted && taskAssignedTo) {
-      setUsers(prev => prev.map(u => 
+      setUsers(prev => (prev || []).map(u => 
         u.email === taskAssignedTo 
           ? { ...u, points: Number(u.points || 0) + 3 } 
           : u
@@ -2668,7 +2785,9 @@ useEffect(() => {
   };
 
   const deleteTask = (taskId) => {
-    setTasks(prev => prev.filter(t => t.id !== taskId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `tasks/${taskId}`)).catch(err => console.error('Failed to delete task from Firebase:', err));
+    setTasks(prev => (prev || []).filter(t => t.id !== taskId && t._firebaseKey !== taskId));
   };
 
   const createTicket = (ticketData) => {
@@ -2676,8 +2795,9 @@ useEffect(() => {
       ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim()
       : (ticketData.authorName || 'Guest');
     const authorRole = currentUser?.role === 'passenger' ? 'Passenger' : (currentUser?.isAdmin ? 'Admin' : 'Staff');
+    const id = makeId('ticket');
     const newTicket = {
-      id: makeId('ticket'),
+      id,
       authorEmail: currentUser ? currentUser.email : null,
       authorName: authorName,
       authorType: ticketData.authorType || authorRole,
@@ -2690,7 +2810,11 @@ useEffect(() => {
       claimedAt: null,
       comments: []
     };
-    setTickets(prev => [newTicket, ...prev]);
+    const db = getDatabase(firebaseApp);
+    const cleanTicket = JSON.parse(JSON.stringify(newTicket));
+    update(ref(db, 'tickets'), { [id]: cleanTicket }).catch(err => console.error('Failed to save ticket to Firebase:', err));
+    setTickets(prev => [newTicket, ...(prev || []).filter(t => t.id !== id)]);
+
     // Notify admins of new support ticket
     (users || []).filter(u => u.isAdmin || u.siteRole === 'Admin' || u.siteRole === 'Owner').forEach(admin => {
       if (admin.email && admin.email !== currentUser?.email) {
@@ -2707,8 +2831,11 @@ useEffect(() => {
   };
 
   const updateTicketStatus = (ticketId, status) => {
-    setTickets(prev => prev.map(t => 
-      t.id === ticketId ? { ...t, status } : t
+    const db = getDatabase(firebaseApp);
+    const updates = { status, updatedAt: new Date().toISOString() };
+    update(ref(db, `tickets/${ticketId}`), updates).catch(err => console.error('Failed to update ticket in Firebase:', err));
+    setTickets(prev => (prev || []).map(t => 
+      (t.id === ticketId || t._firebaseKey === ticketId) ? { ...t, ...updates } : t
     ));
     logAction('ticket_status_updated', `Ticket ${ticketId} status changed to ${status}`, { ticketId, status });
   };
@@ -2726,15 +2853,25 @@ useEffect(() => {
       isSystem: true
     };
 
-    setTickets(prev => prev.map(t => {
-      if (t.id !== ticketId) return t;
+    const target = (tickets || []).find(t => t.id === ticketId || t._firebaseKey === ticketId);
+    const existingComments = Array.isArray(target?.comments) ? target.comments : (target?.comments && typeof target.comments === 'object' ? Object.values(target.comments) : []);
+    const nextComments = [...existingComments, systemComment];
+    const updates = {
+      status: target?.status === 'Closed' ? 'Open' : (target?.status || 'Open'),
+      claimedByEmail: currentUser.email,
+      claimedByName: adminName,
+      claimedAt: new Date().toISOString(),
+      comments: nextComments,
+      updatedAt: new Date().toISOString()
+    };
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `tickets/${ticketId}`), updates).catch(err => console.error('Failed to claim ticket in Firebase:', err));
+
+    setTickets(prev => (prev || []).map(t => {
+      if (t.id !== ticketId && t._firebaseKey !== ticketId) return t;
       return {
         ...t,
-        status: t.status === 'Closed' ? 'Open' : (t.status || 'Open'),
-        claimedByEmail: currentUser.email,
-        claimedByName: adminName,
-        claimedAt: new Date().toISOString(),
-        comments: [...(t.comments || []), systemComment]
+        ...updates
       };
     }));
 
@@ -2742,15 +2879,21 @@ useEffect(() => {
   };
 
   const escalateTicket = (ticketId) => {
-    setTickets(prev => prev.map(t => 
-      t.id === ticketId ? { ...t, status: 'Escalated' } : t
+    const db = getDatabase(firebaseApp);
+    const updates = { status: 'Escalated', updatedAt: new Date().toISOString() };
+    update(ref(db, `tickets/${ticketId}`), updates).catch(err => console.error('Failed to escalate ticket in Firebase:', err));
+    setTickets(prev => (prev || []).map(t => 
+      (t.id === ticketId || t._firebaseKey === ticketId) ? { ...t, ...updates } : t
     ));
     logAction('ticket_escalated', `Ticket ${ticketId} was escalated`, { ticketId });
   };
 
   const closeTicket = (ticketId) => {
-    setTickets(prev => prev.map(t => 
-      t.id === ticketId ? { ...t, status: 'Closed' } : t
+    const db = getDatabase(firebaseApp);
+    const updates = { status: 'Closed', closedAt: new Date().toISOString(), closedBy: currentUser?.email, updatedAt: new Date().toISOString() };
+    update(ref(db, `tickets/${ticketId}`), updates).catch(err => console.error('Failed to close ticket in Firebase:', err));
+    setTickets(prev => (prev || []).map(t => 
+      (t.id === ticketId || t._firebaseKey === ticketId) ? { ...t, ...updates } : t
     ));
     logAction('ticket_closed', `Ticket ${ticketId} was closed`, { ticketId });
   };
@@ -2767,27 +2910,34 @@ useEffect(() => {
       isAdmin: Boolean(currentUser.isAdmin || currentUser.siteRole === 'Admin' || currentUser.siteRole === 'Owner' || currentUser.siteRole === 'Moderator')
     };
 
+    const targetTicket = (tickets || []).find(t => t.id === ticketId || t._firebaseKey === ticketId);
+    const currentComments = Array.isArray(targetTicket?.comments) 
+      ? targetTicket.comments 
+      : (targetTicket?.comments && typeof targetTicket.comments === 'object' ? Object.values(targetTicket.comments) : []);
+    const nextComments = [...currentComments, newComment];
+
+    const isStaffOrAdmin = Boolean(currentUser.isAdmin || currentUser.siteRole === 'Admin' || currentUser.siteRole === 'Owner' || currentUser.siteRole === 'Moderator');
+    const updates = {
+      status: targetTicket?.status === 'Closed' ? 'Open' : (targetTicket?.status || 'Open'),
+      claimedByEmail: targetTicket?.claimedByEmail || (isStaffOrAdmin ? currentUser.email : null),
+      claimedByName: targetTicket?.claimedByName || (isStaffOrAdmin ? authorName : null),
+      comments: nextComments,
+      updatedAt: new Date().toISOString()
+    };
+
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `tickets/${ticketId}`), updates).catch(err => console.error('Failed to add ticket comment in Firebase:', err));
+
     setTickets(prev => (prev || []).map(t => {
-      if (t.id !== ticketId) return t;
-      const currentComments = Array.isArray(t.comments) 
-        ? t.comments 
-        : (t.comments && typeof t.comments === 'object' ? Object.values(t.comments) : []);
-
-      const isStaffOrAdmin = Boolean(currentUser.isAdmin || currentUser.siteRole === 'Admin' || currentUser.siteRole === 'Owner' || currentUser.siteRole === 'Moderator');
-
+      if (t.id !== ticketId && t._firebaseKey !== ticketId) return t;
       return {
         ...t,
-        status: t.status === 'Closed' ? 'Open' : (t.status || 'Open'),
-        claimedByEmail: t.claimedByEmail || (isStaffOrAdmin ? currentUser.email : null),
-        claimedByName: t.claimedByName || (isStaffOrAdmin ? authorName : null),
-        comments: [...currentComments, newComment],
-        updatedAt: new Date().toISOString()
+        ...updates
       };
     }));
 
     logAction('ticket_comment_added', `Added comment to ticket ${ticketId}`, { ticketId, text: text.trim() });
 
-    const targetTicket = (tickets || []).find(t => t.id === ticketId);
     if (targetTicket) {
       const recipientEmail = currentUser.email === targetTicket.authorEmail 
         ? targetTicket.claimedByEmail 
@@ -2823,6 +2973,9 @@ useEffect(() => {
       authorEmail: currentUser?.email || 'admin',
       timestamp: Date.now()
     };
+    const db = getDatabase(firebaseApp);
+    const cleanEvent = JSON.parse(JSON.stringify(newEvent));
+    update(ref(db, 'events'), { [newEvent.id]: cleanEvent }).catch(err => console.error('Failed to save event to Firebase:', err));
     setEvents(prev => [...prev, newEvent]);
     logAction('event_created', `Scheduled event: ${eventData.title}`);
     broadcastNotification(
@@ -2834,7 +2987,9 @@ useEffect(() => {
   };
 
   const deleteEvent = (eventId) => {
-    setEvents(prev => prev.filter(e => e.id !== eventId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `events/${eventId}`)).catch(err => console.error('Failed to delete event in Firebase:', err));
+    setEvents(prev => prev.filter(e => e.id !== eventId && e._firebaseKey !== eventId));
     logAction('event_deleted', `Deleted event: ${eventId}`);
   };
 
@@ -2845,6 +3000,9 @@ useEffect(() => {
       authorEmail: currentUser?.email || 'admin',
       timestamp: Date.now()
     };
+    const db = getDatabase(firebaseApp);
+    const cleanMeeting = JSON.parse(JSON.stringify(newMeeting));
+    update(ref(db, 'meetings'), { [newMeeting.id]: cleanMeeting }).catch(err => console.error('Failed to save meeting to Firebase:', err));
     setMeetings(prev => [...prev, newMeeting]);
     logAction('meeting_created', `Scheduled meeting: ${meetingData.title}`);
     broadcastNotification(
@@ -2856,7 +3014,9 @@ useEffect(() => {
   };
 
   const deleteMeeting = (meetingId) => {
-    setMeetings(prev => prev.filter(m => m.id !== meetingId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `meetings/${meetingId}`)).catch(err => console.error('Failed to delete meeting in Firebase:', err));
+    setMeetings(prev => prev.filter(m => m.id !== meetingId && m._firebaseKey !== meetingId));
     logAction('meeting_deleted', `Deleted meeting: ${meetingId}`);
   };
 
@@ -2938,8 +3098,9 @@ useEffect(() => {
 
 
   const addStaffNote = (staffEmail, type, text) => {
+    const id = makeId('note');
     const newNote = {
-      id: makeId('note'),
+      id,
       staffEmail,
       adminEmail: currentUser.email,
       adminName: `${currentUser.firstName} ${currentUser.lastName}`,
@@ -2947,11 +3108,16 @@ useEffect(() => {
       text,
       timestamp: new Date().toISOString()
     };
-    setStaffNotes(prev => [newNote, ...prev]);
+    const db = getDatabase(firebaseApp);
+    const cleanNote = JSON.parse(JSON.stringify(newNote));
+    update(ref(db, 'staffNotes'), { [id]: cleanNote }).catch(err => console.error('Failed to save staff note to Firebase:', err));
+    setStaffNotes(prev => [newNote, ...(prev || []).filter(n => n.id !== id)]);
   };
 
   const deleteStaffNote = (noteId) => {
-    setStaffNotes(prev => prev.filter(n => n.id !== noteId));
+    const db = getDatabase(firebaseApp);
+    remove(ref(db, `staffNotes/${noteId}`)).catch(err => console.error('Failed to delete staff note from Firebase:', err));
+    setStaffNotes(prev => (prev || []).filter(n => n.id !== noteId && n._firebaseKey !== noteId));
   };
 
   const awardMedal = (staffEmail, medalType) => {

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ClipboardList, PlusCircle, History, User, Users, Clipboard, Info, Calendar } from 'lucide-react';
+import { ClipboardList, PlusCircle, History, User, Users, Clipboard, Info, Calendar, Check, X } from 'lucide-react';
 import { compressImage } from '../utils/compressImage';
 
 const escapeEmail = (email) => email ? email.replace(/\./g, ',') : '';
 
 export default function FlightLogs() {
-  const { flightLogs, submitFlightLog, flights, currentUser } = useApp();
+  const { flightLogs, submitFlightLog, flights, currentUser, approveFlightLog, rejectFlightLog } = useApp();
   const [activeTab, setActiveTab] = useState('submit');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -297,6 +297,26 @@ export default function FlightLogs() {
                                   <span style={styles.submitterLabel}>
                                     Logged by: <strong>{log.submitterName}</strong> ({log.submitterEmail})
                                   </span>
+                                  {(currentUser?.isAdmin || currentUser?.siteRole === 'Admin' || currentUser?.siteRole === 'Owner') && log.status === 'Pending' && (
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => approveFlightLog(log.id)}
+                                        className="btn-success"
+                                        style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                      >
+                                        <Check size={14} /> Approve (+7 pts)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => rejectFlightLog(log.id)}
+                                        className="btn-danger"
+                                        style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                      >
+                                        <X size={14} /> Reject
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             ))}
@@ -364,6 +384,26 @@ export default function FlightLogs() {
                     <span style={styles.submitterLabel}>
                       Logged by: <strong>{log.submitterName}</strong> ({log.submitterEmail})
                     </span>
+                    {(currentUser?.isAdmin || currentUser?.siteRole === 'Admin' || currentUser?.siteRole === 'Owner') && log.status === 'Pending' && (
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => approveFlightLog(log.id)}
+                          className="btn-success"
+                          style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Check size={14} /> Approve (+7 pts)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => rejectFlightLog(log.id)}
+                          className="btn-danger"
+                          style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <X size={14} /> Reject
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
                           ))}
