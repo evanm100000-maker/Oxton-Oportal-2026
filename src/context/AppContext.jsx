@@ -8,6 +8,7 @@ import {
   getTimezoneAbbr, 
   parseDateTimeInTimezone 
 } from '../utils/timeUtils.js';
+import { CURRENT_APP_VERSION, normalizeVersion } from '../utils/versionUtils';
 import { playNotificationSound, isDndActive, setDndActive } from '../utils/notificationSound';
 const AppContext = createContext();
 
@@ -871,6 +872,71 @@ export const AppProvider = ({ children }) => {
     }
   }, [currentUser]);
 
+  // Charging Reminder Notification: Alerts user when battery reaches 50% or below while discharging
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('getBattery' in navigator)) return;
+
+    let batteryInstance = null;
+    let hasReminded = false;
+
+    const checkBatteryLevel = () => {
+      if (!batteryInstance) return;
+
+      // Filter out desktop simulated power status
+      const isDesktopSim = batteryInstance.charging &&
+        batteryInstance.chargingTime === 0 &&
+        batteryInstance.dischargingTime === Infinity &&
+        batteryInstance.level === 1;
+      if (isDesktopSim) return;
+
+      const pct = Math.round(batteryInstance.level * 100);
+      const isCharging = Boolean(batteryInstance.charging);
+
+      // Reset reminder flag if charging or battery charges back above 50%
+      if (isCharging || pct > 50) {
+        hasReminded = false;
+        try { sessionStorage.removeItem('oxton_battery_reminded_50'); } catch (e) {}
+        return;
+      }
+
+      // If discharging and battery is at 50% or below
+      if (!isCharging && pct <= 50) {
+        let alreadyNotified = hasReminded;
+        try {
+          if (sessionStorage.getItem('oxton_battery_reminded_50') === 'true') {
+            alreadyNotified = true;
+          }
+        } catch (e) {}
+
+        if (!alreadyNotified) {
+          hasReminded = true;
+          try { sessionStorage.setItem('oxton_battery_reminded_50', 'true'); } catch (e) {}
+
+          addNotification(
+            'Charging Reminder',
+            `Your battery is at ${pct}%. Please plug in your charger to avoid disruption.`,
+            'battery',
+            'general'
+          );
+        }
+      }
+    };
+
+    navigator.getBattery().then((battery) => {
+      batteryInstance = battery;
+      checkBatteryLevel();
+      battery.addEventListener('levelchange', checkBatteryLevel);
+      battery.addEventListener('chargingchange', checkBatteryLevel);
+    }).catch(() => {});
+
+    return () => {
+      if (batteryInstance) {
+        batteryInstance.removeEventListener('levelchange', checkBatteryLevel);
+        batteryInstance.removeEventListener('chargingchange', checkBatteryLevel);
+      }
+    };
+  }, [currentUser]);
+
   useEffect(() => {
     const db = getDatabase(firebaseApp);
     const siteVersionRef = ref(db, 'siteVersion');
@@ -879,7 +945,7 @@ export const AppProvider = ({ children }) => {
       if (data) {
         setSiteVersion(data);
       } else {
-        const initialVersion = '1.2.0';
+        const initialVersion = CURRENT_APP_VERSION;
         set(ref(db, 'users'), initialUsers);
         set(ref(db, 'flights'), initialFlights);
         set(ref(db, 'flightLogs'), initialFlightLogs);
@@ -1733,11 +1799,16 @@ export const AppProvider = ({ children }) => {
     logAction('maintenance_toggled', `Maintenance Mode set to ${isActive}`, { message });
   };
 
-  const publishUpdate = () => {
+  const updateRequiredVersion = (newVersion) => {
     const db = getDatabase(firebaseApp);
-    const newVersion = `1.2.0.${Date.now()}`;
-    set(ref(db, 'siteVersion'), newVersion);
-    logAction('site_updated', `Triggered global site update to ${newVersion}`);
+    const ver = newVersion ? String(newVersion).trim() : CURRENT_APP_VERSION;
+    set(ref(db, 'siteVersion'), ver);
+    setSiteVersion(ver);
+    logAction('site_version_updated', `Updated required portal version to ${ver}`);
+  };
+
+  const publishUpdate = (version = CURRENT_APP_VERSION) => {
+    updateRequiredVersion(version);
   };
 
   const addFlight = (flightData) => {
@@ -3281,6 +3352,7 @@ useEffect(() => {
         setWarning,
         setMaintenance,
         publishUpdate,
+        updateRequiredVersion,
         addFlight,
         editFlight,
         removeFlight,

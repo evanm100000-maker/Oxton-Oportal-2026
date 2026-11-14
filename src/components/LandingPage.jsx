@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plane, Users, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../context/AppContext';
+import { CURRENT_APP_VERSION } from '../utils/versionUtils';
 
 export default function LandingPage({ onSelectPortal }) {
   const [selectedCard, setSelectedCard] = useState(null);
@@ -70,7 +71,7 @@ export default function LandingPage({ onSelectPortal }) {
         </div>
       </div>
 
-      <div style={styles.versionText}>V2.1.5</div>
+      <div style={styles.versionText}>V{CURRENT_APP_VERSION}</div>
     </div>
   );
 }

@@ -13,16 +13,28 @@ import EmergencyAlertOverlay from './components/EmergencyAlertOverlay';
 import LandingPage from './components/LandingPage';
 import { useState } from 'react';
 import UpdateNotifier from './components/UpdateNotifier';
+import OutdatedVersionScreen from './components/OutdatedVersionScreen';
+import { CURRENT_APP_VERSION, isVersionOutdated } from './utils/versionUtils';
 import './utils/sirenAudio';
 import { CallProvider } from './context/CallContext';
 import VoiceCallOverlay from './components/VoiceCallOverlay';
 
 function MainApp() {
-  const { currentUser, maintenanceConfig, logout } = useApp();
+  const { currentUser, maintenanceConfig, logout, siteVersion } = useApp();
   const [bypassMaint, setBypassMaint] = useState(false);
   const [portalType, setPortalType] = useState(() => {
     return sessionStorage.getItem('oxton_portalType') || null;
   }); // 'passenger' | 'staff' | null
+
+  // Version Lockout: Block access if user's client is not on the newest required version set in Firebase
+  if (isVersionOutdated(CURRENT_APP_VERSION, siteVersion)) {
+    return (
+      <OutdatedVersionScreen
+        currentVersion={CURRENT_APP_VERSION}
+        requiredVersion={siteVersion}
+      />
+    );
+  }
 
   // Security: Auto-logout after 30 minutes of inactivity to protect unattended staff sessions
   React.useEffect(() => {

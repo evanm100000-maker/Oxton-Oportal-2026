@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { CURRENT_APP_VERSION } from '../utils/versionUtils';
 import { 
   LogIn, UserPlus, Key, Mail, User, ShieldAlert, Award, ChevronLeft, 
   Eye, EyeOff, Lock, CheckCircle, ShieldCheck, Clock
@@ -644,7 +645,7 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
           </div>
         )}
       </div>
-      <div style={styles.versionText}>V2.1.5</div>
+      <div style={styles.versionText}>V{CURRENT_APP_VERSION}</div>
     </div>
   );
 }

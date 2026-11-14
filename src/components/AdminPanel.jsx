@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { renderTextWithLinks, normalizeUrl } from '../utils/linkUtils';
 import { getTimezoneAbbr, parseDateTimeInTimezone, formatFlightForViewer, isLoaActive } from '../utils/timeUtils';
+import { CURRENT_APP_VERSION, normalizeVersion } from '../utils/versionUtils';
 
 const PAGE_TOGGLES_DEF = [
   // Operations & Flight Schedule
@@ -116,7 +117,9 @@ export default function AdminPanel() {
     clearEmergencyAlert,
     passDetention,
     failDetention,
-    rescheduleDetention
+    rescheduleDetention,
+    siteVersion,
+    updateRequiredVersion
   } = useApp();
 
   const [activeSubTab, setActiveSubTab] = useState('approvals');
@@ -207,6 +210,13 @@ export default function AdminPanel() {
   const [warnCountdownTarget, setWarnCountdownTarget] = useState(warningConfig?.countdownTarget || '');
   const [maintActive, setMaintActive] = useState(maintenanceConfig?.isActive || false);
   const [maintMessage, setMaintMessage] = useState(maintenanceConfig?.message || '');
+  const [adminRequiredVersion, setAdminRequiredVersion] = useState(siteVersion || CURRENT_APP_VERSION);
+
+  useEffect(() => {
+    if (siteVersion) {
+      setAdminRequiredVersion(siteVersion);
+    }
+  }, [siteVersion]);
 
   // Emergency Alert States
   const [alertHeader, setAlertHeader] = useState('Emergency Alert');
@@ -417,6 +427,15 @@ export default function AdminPanel() {
     setWarning(warnActive, warnTitle, warnMessage, warnType, warnCountdownEnabled, warnCountdownTarget);
     setMaintenance(maintActive, maintMessage);
     displaySuccess('System status configuration updated!');
+  };
+
+  const handleUpdateRequiredVersion = () => {
+    if (!adminRequiredVersion) return;
+    const clean = adminRequiredVersion.trim();
+    if (updateRequiredVersion) {
+      updateRequiredVersion(clean);
+      displaySuccess(`Portal version requirement updated to V${clean}! Any users on older versions will be prompted to update.`);
+    }
   };
 
   const copyToClipboard = (text, label = 'Copied to clipboard!') => {
@@ -1998,6 +2017,38 @@ export default function AdminPanel() {
               <div style={styles.inputWrapper}>
                 <label style={styles.label}>Maintenance Message</label>
                 <textarea value={maintMessage} onChange={e=>setMaintMessage(e.target.value)} className="input-field" rows="3" disabled={!maintActive} placeholder="The system is currently undergoing scheduled maintenance..." />
+              </div>
+            </div>
+
+            <div style={{ padding: '16px', background: 'rgba(96, 165, 250, 0.05)', borderRadius: '12px', border: '1px solid rgba(96, 165, 250, 0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h4 style={{ color: '#60a5fa', margin: 0, fontSize: '1rem', fontWeight: '700' }}>Portal Version Enforcement</h4>
+                <span style={{ fontSize: '0.78rem', padding: '3px 8px', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  Active Lockout Protection
+                </span>
+              </div>
+              <p style={{ fontSize: '0.84rem', color: '#94a3b8', margin: '0 0 12px 0' }}>
+                Users who are not on the newest version of the site cannot access it. If their version is older than this value, they will be blocked and asked to refresh or reopen the website.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={styles.label}>Newest Required Version in Firebase</label>
+                  <input
+                    type="text"
+                    value={adminRequiredVersion}
+                    onChange={e => setAdminRequiredVersion(e.target.value)}
+                    className="input-field"
+                    placeholder="2.1.51"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleUpdateRequiredVersion}
+                  className="btn-primary"
+                  style={{ alignSelf: 'flex-end', padding: '10px 18px', fontSize: '0.85rem' }}
+                >
+                  Save Required Version
+                </button>
               </div>
             </div>
 

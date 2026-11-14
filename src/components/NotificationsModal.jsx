@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { X, Bell, BellOff, Info, ShieldAlert, CheckCircle, Trash2, Award, Megaphone, Plane, Calendar, HelpCircle } from 'lucide-react';
+import { X, Bell, BellOff, Info, ShieldAlert, CheckCircle, Trash2, Award, Megaphone, Plane, Calendar, HelpCircle, BatteryWarning } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function NotificationsModal({ isOpen, onClose }) {
@@ -136,6 +136,10 @@ export default function NotificationsModal({ isOpen, onClose }) {
                     Icon = HelpCircle;
                     color = '#ec4899';
                     bg = 'rgba(236, 72, 153, 0.12)';
+                  } else if (notif.type === 'battery' || (notif.title && notif.title.toLowerCase().includes('charg')) || (notif.title && notif.title.toLowerCase().includes('battery'))) {
+                    Icon = BatteryWarning;
+                    color = '#f59e0b';
+                    bg = 'rgba(245, 158, 11, 0.15)';
                   }
 
                   return (

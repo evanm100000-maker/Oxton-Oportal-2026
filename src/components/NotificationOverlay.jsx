@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Bell, Info, ShieldAlert, CheckCircle, X, Award, Megaphone, Plane, Calendar, HelpCircle } from 'lucide-react';
+import { Bell, Info, ShieldAlert, CheckCircle, X, Award, Megaphone, Plane, Calendar, HelpCircle, BatteryWarning } from 'lucide-react';
 
 export default function NotificationOverlay() {
   const { notifications, removeNotification } = useApp();
@@ -50,6 +50,11 @@ export default function NotificationOverlay() {
           borderColor = 'rgba(236, 72, 153, 0.5)';
           bgGradient = 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(190, 24, 93, 0.25) 100%)';
           iconColor = '#f472b6';
+        } else if (notif.type === 'battery' || (notif.title && notif.title.toLowerCase().includes('charg')) || (notif.title && notif.title.toLowerCase().includes('battery'))) {
+          Icon = BatteryWarning;
+          borderColor = 'rgba(245, 158, 11, 0.7)';
+          bgGradient = 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(180, 83, 9, 0.35) 100%)';
+          iconColor = '#fbbf24';
         }
 
         return (
