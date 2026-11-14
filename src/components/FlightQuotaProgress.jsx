@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Plane, Users, CheckCircle, Clock, AlertCircle, RotateCcw, Search, User, Shield, Trophy, ExternalLink, Plus, Minus, X } from 'lucide-react';
+import { isUserOnActiveLoa } from '../utils/timeUtils';
 
 const escapeEmail = (email) => (email ? email.replace(/\./g, ',') : '');
 
@@ -75,7 +76,7 @@ export default function FlightQuotaProgress() {
       currentQuota = Number(user.quotaFlights);
     }
 
-    const isOnLoa = loaRequests.some(l => l.userEmail === email && l.status === 'Approved');
+    const isOnLoa = isUserOnActiveLoa(email, loaRequests);
     const isSuspended = user.suspendedUntil && new Date(user.suspendedUntil).getTime() > Date.now();
 
     return {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useCall } from '../context/CallContext';
 import { Users, User, Trophy, ShieldAlert, Award, FileText, Send, X, Trash2, Medal, Plane, CheckCircle, Clock, Phone } from 'lucide-react';
+import { isUserOnActiveLoa, cleanStaffName } from '../utils/timeUtils';
 
 export default function AllStaff() {
   const { 
@@ -104,7 +105,7 @@ export default function AllStaff() {
           const bronzeMedals = user.bronzeMedals || 0;
           const hasMedals = goldMedals > 0 || silverMedals > 0 || bronzeMedals > 0;
           const isSuspended = user.suspendedUntil && new Date(user.suspendedUntil).getTime() > Date.now();
-          const isOnLOA = loaRequests.some(loa => loa.userEmail === user.email && loa.status === 'Approved');
+          const isOnLOA = isUserOnActiveLoa(user.email, loaRequests);
           
           return (
             <div key={user.email} style={styles.card} className="glass-panel interactive-card">
@@ -140,7 +141,7 @@ export default function AllStaff() {
                 
                 <div style={styles.userInfo}>
                   <div style={styles.nameRow}>
-                    <strong style={styles.name}>{user.firstName} {user.lastName}</strong>
+                    <strong style={styles.name}>{cleanStaffName(`${user.firstName} ${user.lastName}`.trim(), isOnLOA)}</strong>
                     {isSuspended && (
                       <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'rgba(220, 38, 38, 0.2)', border: '1px solid #dc2626', color: '#f87171', fontSize: '0.7rem', fontWeight: 'bold' }}>SUSPENDED</span>
                     )}

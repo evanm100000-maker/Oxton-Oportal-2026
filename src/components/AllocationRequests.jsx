@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useCall } from '../context/CallContext';
 import { Plane, Calendar, Clock, MapPin, ExternalLink, Users, UserPlus, UserMinus, Trash2, Lock, Unlock, Link, Check, PhoneCall } from 'lucide-react';
 import { getRankWeight } from '../context/AppContext';
-import { formatFlightTimeLocal, formatFlightDateLocal } from '../utils/timeUtils';
+import { formatFlightTimeLocal, formatFlightDateLocal, formatFlightForViewer, getFlightUtcDate } from '../utils/timeUtils';
 
 const escapeEmail = (email) => email ? email.replace(/\./g, ',') : '';
 const unescapeEmail = (email) => email ? email.replace(/,/g, '.') : '';
@@ -49,15 +49,21 @@ export default function AllocationRequests() {
   const [absenceReason, setAbsenceReason] = useState('');
   const [viewReasonModal, setViewReasonModal] = useState({ show: false, email: null, reason: null });
 
-  // Calculate today's date in local time for fair comparison
+  // Dynamically filter upcoming vs previous flights based on exact UTC timing
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   const todayStr = `${year}-${month}-${day}`;
   
-  const upcomingFlights = flights.filter(f => f.date >= todayStr);
-  const previousFlights = flights.filter(f => f.date < todayStr);
+  const upcomingFlights = flights.filter(f => {
+    const timing = formatFlightForViewer(f);
+    if (timing.utcDate) {
+      return timing.utcDate.getTime() >= Date.now() - 4 * 60 * 60 * 1000;
+    }
+    return f.date >= todayStr;
+  });
+  const previousFlights = flights.filter(f => !upcomingFlights.includes(f));
   const displayedFlights = viewMode === 'upcoming' ? upcomingFlights : previousFlights;
 
   const targetFlightId = new URLSearchParams(window.location.search).get('flightId');
@@ -166,9 +172,12 @@ export default function AllocationRequests() {
       ) : (
         <div style={styles.flightGrid}>
           {[...displayedFlights].sort((a, b) => {
-             const diff = new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`);
+             const timeA = getFlightUtcDate(a)?.getTime() || new Date(`${a.date}T${a.time}`).getTime();
+             const timeB = getFlightUtcDate(b)?.getTime() || new Date(`${b.date}T${b.time}`).getTime();
+             const diff = timeA - timeB;
              return viewMode === 'upcoming' ? diff : -diff;
           }).map((flight) => {
+            const flightTiming = formatFlightForViewer(flight);
             const myStatus = getMyStatus(flight, currentUser.email);
             const currentSelected = selectedStatuses[flight.id] !== undefined
               ? selectedStatuses[flight.id]
@@ -235,11 +244,18 @@ export default function AllocationRequests() {
                 <div style={styles.detailsSection}>
                   <div style={styles.detailRow}>
                     <Calendar size={16} color="#3b82f6" />
-                    <span>{formatFlightDateLocal(flight.date, flight.time) || flight.date}</span>
+                    <span>{flightTiming.date}</span>
                   </div>
                   <div style={styles.detailRow}>
                     <Clock size={16} color="#3b82f6" />
-                    <span>{flight.time} BST</span>
+                    <span>
+                      {flightTiming.time} {flightTiming.timezone}
+                      {flightTiming.uploaderNote ? (
+                        <span style={{ fontSize: '0.76rem', color: '#9ca3af', marginLeft: '6px' }}>
+                          ({flightTiming.uploaderNote})
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                 </div>
 

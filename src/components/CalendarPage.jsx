@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, ChevronLeft, ChevronRight, X, Plane, Calendar as CalendarIcon, Users, AlertTriangle } from 'lucide-react';
+import { formatFlightForViewer } from '../utils/timeUtils';
 
 export default function CalendarPage() {
   const { flights = [], events = [], meetings = [], unavailableDates = [] } = useApp();
@@ -64,10 +65,11 @@ export default function CalendarPage() {
     // Process Flights
     if (flights && Array.isArray(flights)) {
       flights.forEach(f => {
-        const dStr = getDateString(f.date);
+        const timing = formatFlightForViewer(f);
+        const dStr = timing.dateIso || getDateString(f.date);
         if (dStr) {
           if (!map[dStr]) map[dStr] = { flights: [], events: [], meetings: [], unavailable: false };
-          map[dStr].flights.push(f);
+          map[dStr].flights.push({ ...f, _timing: timing });
         }
       });
     }
@@ -299,16 +301,19 @@ export default function CalendarPage() {
                   <div style={styles.activitySection}>
                     <h4 style={{...styles.sectionTitle, color: '#3b82f6'}}><Plane size={16} /> Scheduled Flights</h4>
                     <div style={styles.activityList}>
-                      {selectedData.flights.map(f => (
-                        <div key={f.id} onClick={() => handleNavigateToActivity('flight', f)} style={{...styles.activityCard, cursor: 'pointer'}}>
-                          <div style={styles.activityTop}>
-                            <span style={{fontWeight: 'bold', color: '#fff'}}>{f.flightCode}</span>
-                            <span style={{fontSize: '0.85rem', color: '#9ca3af'}}>{f.time}</span>
+                      {selectedData.flights.map(f => {
+                        const timing = f._timing || formatFlightForViewer(f);
+                        return (
+                          <div key={f.id} onClick={() => handleNavigateToActivity('flight', f)} style={{...styles.activityCard, cursor: 'pointer'}}>
+                            <div style={styles.activityTop}>
+                              <span style={{fontWeight: 'bold', color: '#fff'}}>{f.flightCode}</span>
+                              <span style={{fontSize: '0.85rem', color: '#9ca3af'}}>{timing.time} {timing.timezone}</span>
+                            </div>
+                            <div style={{fontSize: '0.85rem', color: '#cbd5e1', marginTop: '4px'}}>Host: {f.host}</div>
+                            <div style={{fontSize: '0.85rem', color: '#cbd5e1'}}>Location: {f.location}</div>
                           </div>
-                          <div style={{fontSize: '0.85rem', color: '#cbd5e1', marginTop: '4px'}}>Host: {f.host}</div>
-                          <div style={{fontSize: '0.85rem', color: '#cbd5e1'}}>Location: {f.location}</div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

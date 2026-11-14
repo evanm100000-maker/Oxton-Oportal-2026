@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Users, CheckCircle, XCircle, Clock, ShieldCheck, Plane, Search, Calendar, UserPlus, Trash2, RotateCcw, AlertTriangle, Check, Shield } from 'lucide-react';
+import { formatFlightForViewer, getFlightUtcDate } from '../utils/timeUtils';
 
 const escapeEmail = (email) => (email ? email.replace(/\./g, ',') : '');
 const unescapeEmail = (email) => (email ? email.replace(/,/g, '.') : '');
@@ -27,8 +28,8 @@ export default function FlightRegister() {
 
   // Sort flights descending by date/time
   const sortedFlights = [...flights].sort((a, b) => {
-    const da = new Date(`${a.date}T${a.time || '00:00'}`).getTime() || 0;
-    const db = new Date(`${b.date}T${b.time || '00:00'}`).getTime() || 0;
+    const da = getFlightUtcDate(a)?.getTime() || new Date(`${a.date}T${a.time || '00:00'}`).getTime() || 0;
+    const db = getFlightUtcDate(b)?.getTime() || new Date(`${b.date}T${b.time || '00:00'}`).getTime() || 0;
     return db - da;
   });
 
@@ -126,11 +127,14 @@ export default function FlightRegister() {
             className="input-field"
             style={styles.flightSelect}
           >
-            {sortedFlights.map(f => (
-              <option key={f.id} value={f.id}>
-                {f.flightCode} &mdash; {f.location} ({f.date} {f.time}) {f.registerSubmitted ? '✓ [Submitted]' : '[Draft]'}
-              </option>
-            ))}
+            {sortedFlights.map(f => {
+              const timing = formatFlightForViewer(f);
+              return (
+                <option key={f.id} value={f.id}>
+                  {f.flightCode} &mdash; {f.location} ({timing.date} {timing.time} {timing.timezone}) {f.registerSubmitted ? '✓ [Submitted]' : '[Draft]'}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>

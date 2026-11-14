@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ClipboardList, PlusCircle, History, User, Users, Clipboard, Info, Calendar, Check, X } from 'lucide-react';
 import { compressImage } from '../utils/compressImage';
+import { formatFlightForViewer } from '../utils/timeUtils';
 
 const escapeEmail = (email) => email ? email.replace(/\./g, ',') : '';
 
@@ -223,16 +224,19 @@ export default function FlightLogs() {
                       const group = groupedLogs[flightId];
                       return (
                         <div key={flightId} style={{ background: 'rgba(0,0,0,0.2)', padding: '24px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                          {flight && (
-                            <div style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                              <h4 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '4px' }}>Flight: {flight.flightCode}</h4>
-                              <div style={{ display: 'flex', gap: '16px', fontSize: '0.9rem', color: '#9ca3af' }}>
-                                <span><Calendar size={12} style={{marginRight:'4px'}} />{flight.date}</span>
-                                <span><ClipboardList size={12} style={{marginRight:'4px'}} />{flight.time} BST</span>
-                                {flight.host && <span><User size={12} style={{marginRight:'4px'}} />Host: {flight.host}</span>}
+                          {flight && (() => {
+                            const timing = formatFlightForViewer(flight);
+                            return (
+                              <div style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                <h4 style={{ color: '#fff', fontSize: '1.2rem', marginBottom: '4px' }}>Flight: {flight.flightCode}</h4>
+                                <div style={{ display: 'flex', gap: '16px', fontSize: '0.9rem', color: '#9ca3af' }}>
+                                  <span><Calendar size={12} style={{marginRight:'4px'}} />{timing.date}</span>
+                                  <span><ClipboardList size={12} style={{marginRight:'4px'}} />{timing.time} {timing.timezone}</span>
+                                  {flight.host && <span><User size={12} style={{marginRight:'4px'}} />Host: {flight.host}</span>}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             {group.map(log => (
                               <div key={log.id} style={styles.logCard} className="glass-panel">

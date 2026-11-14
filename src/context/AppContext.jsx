@@ -1,7 +1,13 @@
 import { createContext, useContext, useState, useEffect, useRef, useMemo } from 'react';
 import { db, storage, firebaseApp } from "../firebase"; 
 import { ref, onValue, set, runTransaction, push, get, remove, getDatabase, query, limitToLast, update, onDisconnect } from "firebase/database";
-import { getNextMondayMidnightUK } from '../utils/timeUtils.js';
+import { 
+  getNextMondayMidnightUK, 
+  isUserOnActiveLoa, 
+  isLoaActive, 
+  getTimezoneAbbr, 
+  parseDateTimeInTimezone 
+} from '../utils/timeUtils.js';
 import { playNotificationSound, isDndActive, setDndActive } from '../utils/notificationSound';
 const AppContext = createContext();
 
@@ -1203,7 +1209,31 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const cleanupExpiredItems = () => {
       const now = new Date();
-      // Keep LOA records intact for LOA history; do not auto-delete past leaves from Firebase
+      const localTodayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      // Automatically transition expired approved LOAs to 'Completed' in Firebase & state so they don't linger on staff
+      setLoaRequests(prev => {
+        if (!prev || !Array.isArray(prev)) return prev;
+        let changed = false;
+        const updated = prev.map(loa => {
+          if (loa && loa.status === 'Approved' && loa.endDate && loa.endDate < localTodayStr) {
+            changed = true;
+            const updates = { 
+              status: 'Completed', 
+              completedAt: now.toISOString(),
+              updatedAt: now.toISOString() 
+            };
+            const loaKey = loa.id || loa._firebaseKey;
+            if (loaKey) {
+              const rtdb = getDatabase(firebaseApp);
+              update(ref(rtdb, `loaRequests/${loaKey}`), updates).catch(err => console.error('Failed to mark expired LOA completed in Firebase:', err));
+            }
+            return { ...loa, ...updates };
+          }
+          return loa;
+        });
+        return changed ? updated : prev;
+      });
 
       setAnnouncements(prev => {
         if (!prev) return prev;
@@ -1647,7 +1677,7 @@ export const AppProvider = ({ children }) => {
 
   const logMissedFlight = (staffEmail) => {
     if (!staffEmail) return;
-    const isOnLoa = loaRequests.some(loa => loa.userEmail === staffEmail && loa.status === 'Approved');
+    const isOnLoa = isUserOnActiveLoa(staffEmail, loaRequests);
     if (!isOnLoa) {
       setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - 2 } : u));
       logPointsAction(staffEmail, -2, 'Missed Flight');
@@ -1711,6 +1741,15 @@ export const AppProvider = ({ children }) => {
   };
 
   const addFlight = (flightData) => {
+    const uploaderTimezone = flightData.uploaderTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
+    const uploaderTzAbbr = flightData.uploaderTzAbbr || getTimezoneAbbr(new Date(), uploaderTimezone);
+    let scheduledUtc = flightData.scheduledUtc;
+
+    if (!scheduledUtc && flightData.date && flightData.time) {
+      const parsed = parseDateTimeInTimezone(flightData.date, flightData.time, uploaderTimezone);
+      scheduledUtc = parsed ? parsed.toISOString() : null;
+    }
+
     const newFlight = {
       id: 'fl-' + Date.now(),
       flightCode: flightData.flightCode,
@@ -1719,6 +1758,9 @@ export const AppProvider = ({ children }) => {
       location: flightData.location,
       serverLink: flightData.serverLink,
       host: flightData.host || '',
+      scheduledUtc: scheduledUtc || null,
+      uploaderTimezone,
+      uploaderTzAbbr,
       locked: false,
       allocatedStaff: []
     };
@@ -1726,7 +1768,7 @@ export const AppProvider = ({ children }) => {
     logAction('flight_added', `Scheduled flight ${flightData.flightCode}`, { flightCode: flightData.flightCode });
     broadcastNotification(
       `New Flight to Allocate: ${newFlight.flightCode}`,
-      `Flight to ${newFlight.location} on ${newFlight.date} ${newFlight.time || ''} is now open for crew allocation!`,
+      `Flight to ${newFlight.location} on ${newFlight.date} ${newFlight.time || ''} ${uploaderTzAbbr} is now open for crew allocation!`,
       'flight',
       'general'
     );
@@ -1734,8 +1776,25 @@ export const AppProvider = ({ children }) => {
 
   const editFlight = (flightId, updatedData) => {
     setFlights(prev => prev.map(f => {
-      if (f.id !== flightId) return f;
-      return { ...f, ...updatedData };
+      if (f.id !== flightId && f._firebaseKey !== flightId) return f;
+      const uploaderTimezone = updatedData.uploaderTimezone || f.uploaderTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
+      const uploaderTzAbbr = updatedData.uploaderTzAbbr || f.uploaderTzAbbr || getTimezoneAbbr(new Date(), uploaderTimezone);
+      let scheduledUtc = updatedData.scheduledUtc;
+
+      const dateToUse = updatedData.date || f.date;
+      const timeToUse = updatedData.time || f.time;
+      if (!scheduledUtc && dateToUse && timeToUse) {
+        const parsed = parseDateTimeInTimezone(dateToUse, timeToUse, uploaderTimezone);
+        scheduledUtc = parsed ? parsed.toISOString() : null;
+      }
+
+      return { 
+        ...f, 
+        ...updatedData,
+        scheduledUtc: scheduledUtc || f.scheduledUtc || null,
+        uploaderTimezone,
+        uploaderTzAbbr
+      };
     }));
     logAction('flight_edited', `Edited flight ${updatedData.flightCode || flightId}`, { flightId });
   };

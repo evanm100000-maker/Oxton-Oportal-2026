@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Calendar, Send, Clock, CheckCircle, XCircle, AlertCircle, History, Filter } from 'lucide-react';
+import { isLoaActive } from '../utils/timeUtils';
 
 export default function LeaveOfAbsence() {
   const { loaRequests = [], submitLoaRequest, requestEndLoaEarly, currentUser } = useApp();
@@ -64,21 +65,18 @@ export default function LeaveOfAbsence() {
   // Partition into Active/Pending vs History
   const activeRequests = useMemo(() => {
     return userRequests.filter(req => {
-      if (req.status === 'Pending' || req.status === 'End Requested') return true;
-      if (req.status === 'Approved') {
-        return !req.endDate || req.endDate >= todayStr;
-      }
-      return false;
+      if (req.status === 'Pending') return true;
+      return isLoaActive(req);
     });
-  }, [userRequests, todayStr]);
+  }, [userRequests]);
 
   const historyRequests = useMemo(() => {
     return userRequests.filter(req => {
       if (req.status === 'Denied' || req.status === 'Ended Early' || req.status === 'Completed') return true;
-      if (req.status === 'Approved' && req.endDate && req.endDate < todayStr) return true;
+      if (req.status === 'Approved' && !isLoaActive(req)) return true;
       return false;
     });
-  }, [userRequests, todayStr]);
+  }, [userRequests]);
 
   // Filtered history list
   const filteredHistory = useMemo(() => {

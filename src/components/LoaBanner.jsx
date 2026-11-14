@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { Calendar, X } from 'lucide-react';
+import { isLoaActive } from '../utils/timeUtils';
 
 export default function LoaBanner() {
   const { currentUser, loaRequests, requestEndLoaEarly } = useApp();
@@ -10,19 +11,7 @@ export default function LoaBanner() {
   // Find if user has an active LOA
   const activeLoa = loaRequests.find(req => {
     if (req.userEmail !== currentUser.email) return false;
-    if (req.status !== 'Approved') return false;
-    
-    // Check if current date is within LOA dates
-    const now = new Date();
-    now.setHours(0, 0, 0, 0); // Normalize to midnight
-    
-    const start = new Date(req.startDate);
-    start.setHours(0, 0, 0, 0);
-    
-    const end = new Date(req.endDate);
-    end.setHours(23, 59, 59, 999);
-    
-    return now >= start && now <= end;
+    return isLoaActive(req);
   });
 
   if (!activeLoa) return null;

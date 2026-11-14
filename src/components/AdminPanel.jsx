@@ -11,6 +11,7 @@ import {
   Copy, RefreshCw
 } from 'lucide-react';
 import { renderTextWithLinks, normalizeUrl } from '../utils/linkUtils';
+import { getTimezoneAbbr, parseDateTimeInTimezone, formatFlightForViewer, isLoaActive } from '../utils/timeUtils';
 
 const PAGE_TOGGLES_DEF = [
   // Operations & Flight Schedule
@@ -232,16 +233,35 @@ export default function AdminPanel() {
 
 
 
+  const myTzAbbr = useMemo(() => getTimezoneAbbr(new Date()), []);
+
   const handleCreateFlight = (e) => {
     e.preventDefault();
     if (!flightCode || !date || !time || !location || !serverLink || !host) return;
     
+    const uploaderTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
+    const parsedUtc = parseDateTimeInTimezone(date, time, uploaderTimezone);
+    const scheduledUtc = parsedUtc ? parsedUtc.toISOString() : new Date(`${date}T${time}`).toISOString();
+    const uploaderTzAbbr = getTimezoneAbbr(parsedUtc || new Date(), uploaderTimezone);
+
+    const flightPayload = {
+      flightCode,
+      date,
+      time,
+      location,
+      serverLink,
+      host,
+      scheduledUtc,
+      uploaderTimezone,
+      uploaderTzAbbr
+    };
+
     if (editingFlightId) {
-      editFlight(editingFlightId, { flightCode, date, time, location, serverLink, host });
+      editFlight(editingFlightId, flightPayload);
       displaySuccess(`Flight ${flightCode} successfully updated!`);
       setEditingFlightId(null);
     } else {
-      addFlight({ flightCode, date, time, location, serverLink, host });
+      addFlight(flightPayload);
       displaySuccess(`Flight ${flightCode} successfully scheduled!`);
     }
     setFlightCode(''); setDate(''); setTime(''); setLocation(''); setServerLink(''); setHost('');
@@ -528,18 +548,14 @@ export default function AdminPanel() {
   const pendingLoas = useMemo(() => (loaRequests || []).filter(req => req && req.status === 'Pending'), [loaRequests]);
   const activeLoas = useMemo(() => (loaRequests || []).filter(req => {
     if (!req) return false;
-    if (req.status === 'End Requested') return true;
-    if (req.status === 'Approved') {
-      return !req.endDate || req.endDate >= todayDateStr;
-    }
-    return false;
-  }), [loaRequests, todayDateStr]);
+    return isLoaActive(req);
+  }), [loaRequests]);
   const pastLoas = useMemo(() => (loaRequests || []).filter(req => {
     if (!req) return false;
     if (req.status === 'Denied' || req.status === 'Ended Early' || req.status === 'Completed') return true;
-    if (req.status === 'Approved' && req.endDate && req.endDate < todayDateStr) return true;
+    if (req.status === 'Approved' && !isLoaActive(req)) return true;
     return false;
-  }), [loaRequests, todayDateStr]);
+  }), [loaRequests]);
   const pendingFlightLogs = useMemo(() => flightLogs.filter(log => log.status === 'Pending'), [flightLogs]);
   const pendingPasswords = useMemo(() => (passwordResets || []).filter(r => r.status === 'Pending'), [passwordResets]);
   const recentPasswords = useMemo(() => (passwordResets || []).filter(r => r.status === 'Approved' || r.status === 'Completed'), [passwordResets]);
@@ -1329,7 +1345,10 @@ export default function AdminPanel() {
             </div>
             <div style={styles.formRow}>
               <div style={styles.inputWrapper}><label style={styles.label}>Date *</label><input type="date" required value={date} onChange={e=>setDate(e.target.value)} className="input-field" /></div>
-              <div style={styles.inputWrapper}><label style={styles.label}>Time (LOCAL) *</label><input type="time" required value={time} onChange={e=>setTime(e.target.value)} className="input-field" /></div>
+              <div style={styles.inputWrapper}>
+                <label style={styles.label}>Time ({myTzAbbr || 'Local'}) *</label>
+                <input type="time" required value={time} onChange={e=>setTime(e.target.value)} className="input-field" />
+              </div>
             </div>
             <div style={styles.formRow}>
               <div style={styles.inputWrapper}>
@@ -1366,7 +1385,7 @@ export default function AdminPanel() {
                 <thead>
                   <tr style={styles.trHead}>
                     <th style={styles.th}>Flight Code</th>
-                    <th style={styles.th}>Date & Time (LOCAL)</th>
+                    <th style={styles.th}>Date & Time ({myTzAbbr || 'Local'})</th>
                     <th style={styles.th}>Host</th>
                     <th style={styles.th}>Actions</th>
                   </tr>
@@ -1374,10 +1393,14 @@ export default function AdminPanel() {
                 <tbody>
                   {flights.map(flight => {
                     const hostUser = users.find(u => u.email === flight.host);
+                    const timing = formatFlightForViewer(flight);
                     return (
                       <tr key={flight.id} style={styles.trBody}>
                         <td style={styles.td}><strong>{flight.flightCode}</strong><br/><span style={{fontSize:'0.8rem', color:'#9ca3af'}}>{flight.location}</span></td>
-                        <td style={styles.td}>{flight.date} at {flight.time}</td>
+                        <td style={styles.td}>
+                          {timing.date} at {timing.time} {timing.timezone}
+                          {timing.uploaderNote ? <span style={{fontSize: '0.75rem', color: '#9ca3af', display: 'block'}}>({timing.uploaderNote})</span> : null}
+                        </td>
                         <td style={styles.td}>{hostUser ? `${hostUser.firstName} ${hostUser.lastName}` : flight.host}</td>
                         <td style={styles.td}>
                           <div style={styles.actionRow}>
