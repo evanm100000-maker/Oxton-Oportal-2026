@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import fs from 'fs'
 
 const BUILD_TIME = Date.now();
-const APP_VERSION = '2.1.3';
+const APP_VERSION = '2.1.4';
 
 // Plugin to write public/version.json on build
 function versionEmitterPlugin() {
@@ -32,7 +32,7 @@ export default defineConfig({
     versionEmitterPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'logo.png', 'captcha/**/*'],
+      includeAssets: ['favicon.svg', 'logo.png'],
       manifest: {
         name: 'Oxton Oportal',
         short_name: 'Oxton',
@@ -70,17 +70,6 @@ export default defineConfig({
           {
             urlPattern: /version\.json/,
             handler: 'NetworkOnly'
-          },
-          {
-            urlPattern: /\/captcha\/.*\.(?:jpg|jpeg|png|svg)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'captcha-cache',
-              expiration: {
-                maxEntries: 60,
-                maxAgeSeconds: 30 * 24 * 60 * 60
-              }
-            }
           }
         ]
       }

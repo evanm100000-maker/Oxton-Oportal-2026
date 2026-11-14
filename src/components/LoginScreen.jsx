@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import Captcha from './Captcha';
 import { 
   LogIn, UserPlus, Key, Mail, User, ShieldAlert, Award, ChevronLeft, 
   Eye, EyeOff, Lock, CheckCircle, ShieldCheck, Clock
@@ -83,9 +82,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Captcha verification state
-  const [captchaVerified, setCaptchaVerified] = useState(false);
-
   // Security Lockout State
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
 
@@ -143,7 +139,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
     setIsChangingPassword(false);
     setError('');
     setSuccess('');
-    setCaptchaVerified(false);
   };
 
   const handleNewPasswordSubmit = async (e) => {
@@ -181,11 +176,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
       return;
     }
 
-    if (!captchaVerified) {
-      setError('Please complete the security check (I\'m not a robot) to continue.');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -194,7 +184,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
         await requestPasswordReset(email);
         setSuccess('Password reset request submitted. An administrator will review your request and issue a temporary password.');
         setIsForgotPassword(false);
-        setCaptchaVerified(false);
       } else if (isLogin) {
         const cleanEmail = email.toLowerCase().trim();
         const lk = getLockout(cleanEmail);
@@ -212,7 +201,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
             setIsChangingPassword(true);
             setPassword('');
             setSuccess('Temporary password verified. Please choose your new permanent password below.');
-            setCaptchaVerified(false);
           }
         } catch (loginErr) {
           if (loginErr.message === 'Incorrect password.') {
@@ -240,7 +228,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
         setSuccess('Registration successful! Your account is pending admin approval.');
         setIsLogin(true);
         setPassword('');
-        setCaptchaVerified(false);
       }
     } catch (err) {
       setError(err.message);
@@ -600,15 +587,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                 </div>
               )}
 
-              {/* Realistic reCAPTCHA Component */}
-              <Captcha 
-                verified={captchaVerified} 
-                onVerify={() => {
-                  setCaptchaVerified(true);
-                  setError('');
-                }} 
-              />
-
               <button
                 type="submit"
                 disabled={loading || (isLogin && lockoutRemaining > 0)}
@@ -643,7 +621,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                     setIsForgotPassword(true); 
                     setError(''); 
                     setSuccess(''); 
-                    setCaptchaVerified(false);
                   }} 
                   style={styles.subtleLinkBtn}
                 >
@@ -657,7 +634,6 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
                     setIsForgotPassword(false); 
                     setError(''); 
                     setSuccess(''); 
-                    setCaptchaVerified(false);
                   }} 
                   style={styles.subtleLinkBtn}
                 >
@@ -668,7 +644,7 @@ export default function LoginScreen({ onBack, initialChangePasswordEmail = null 
           </div>
         )}
       </div>
-      <div style={styles.versionText}>V2.1.3</div>
+      <div style={styles.versionText}>V2.1.4</div>
     </div>
   );
 }
