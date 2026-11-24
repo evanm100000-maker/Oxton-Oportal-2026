@@ -815,7 +815,11 @@ export default function AdminPanel() {
               <p style={{color: '#9ca3af', margin: 0}}>No staff are currently suspended.</p>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-                {approvedUsers.filter(u => u.suspendedUntil && new Date(u.suspendedUntil).getTime() > Date.now()).map(user => (
+                {approvedUsers.filter(u => u.suspendedUntil && new Date(u.suspendedUntil).getTime() > Date.now()).map(user => {
+                  const latestAppeal = user.suspensionAppeal || (infractions || [])
+                    .filter(inf => inf && inf.staffEmail?.toLowerCase().trim() === user.email?.toLowerCase().trim() && (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) && inf.appeal)
+                    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))[0]?.appeal;
+                  return (
                   <div key={user.email} style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
@@ -830,8 +834,15 @@ export default function AdminPanel() {
                         Lift
                       </button>
                     </div>
+                    {latestAppeal?.text && (
+                      <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.12)', borderLeft: '3px solid #3b82f6' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#60a5fa', textTransform: 'uppercase' }}>Staff Appeal Submitted</div>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#dbeafe', whiteSpace: 'pre-wrap' }}>{latestAppeal.text}</p>
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -2039,7 +2050,7 @@ export default function AdminPanel() {
                     value={adminRequiredVersion}
                     onChange={e => setAdminRequiredVersion(e.target.value)}
                     className="input-field"
-                    placeholder="2.1.53"
+                    placeholder="2.1.54"
                   />
                 </div>
                 <button

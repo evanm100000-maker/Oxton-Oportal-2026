@@ -1252,7 +1252,7 @@ export const AppProvider = ({ children }) => {
     const updatedUsers = users.map(user => {
       if (user.suspendedUntil && new Date(user.suspendedUntil).getTime() <= now) {
         changed = true;
-        return { ...user, suspendedUntil: null, needsRehabilitation: true };
+        return { ...user, suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true };
       }
       return user;
     });
@@ -1262,7 +1262,7 @@ export const AppProvider = ({ children }) => {
     }
     
     if (currentUser?.suspendedUntil && new Date(currentUser.suspendedUntil).getTime() <= now) {
-      const updatedCurrent = { ...currentUser, suspendedUntil: null, needsRehabilitation: true };
+      const updatedCurrent = { ...currentUser, suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true };
       setCurrentUser(updatedCurrent);
       const isRemembered = localStorage.getItem('oxton_current_user') !== null;
       if (isRemembered) {
@@ -1756,7 +1756,7 @@ export const AppProvider = ({ children }) => {
   const unsuspendUser = (email) => {
     const targetUser = users.find(u => u.email === email);
     if (!canTakeAction(currentUser, targetUser)) return;
-    setUsers(prev => prev.map(u => u.email === email ? { ...u, suspendedUntil: null, suspendedReason: null, needsRehabilitation: true } : u));
+    setUsers(prev => prev.map(u => u.email === email ? { ...u, suspendedUntil: null, suspendedReason: null, suspensionAppeal: null, needsRehabilitation: true } : u));
     logAction('user_unsuspended', `Unsuspended ${email}`, { email });
   };
 
@@ -1765,11 +1765,11 @@ export const AppProvider = ({ children }) => {
     const normalized = email.toLowerCase().trim();
     setUsers(prev => (prev || []).map(u =>
       u.email?.toLowerCase().trim() === normalized
-        ? { ...u, suspendedUntil: null, needsRehabilitation: true }
+        ? { ...u, suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true }
         : u
     ));
     if (currentUser?.email?.toLowerCase().trim() === normalized) {
-      const updatedCurrent = { ...currentUser, suspendedUntil: null, needsRehabilitation: true };
+      const updatedCurrent = { ...currentUser, suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true };
       setCurrentUser(updatedCurrent);
       const isRemembered = localStorage.getItem('oxton_current_user') !== null;
       if (isRemembered) {
@@ -1778,6 +1778,52 @@ export const AppProvider = ({ children }) => {
         sessionStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
       }
     }
+  };
+
+  const submitSuspensionAppeal = (appealText) => {
+    const cleanText = (appealText || '').trim();
+    if (!cleanText || !currentUser?.email) return false;
+
+    const normalized = currentUser.email.toLowerCase().trim();
+    const appealObj = {
+      text: cleanText,
+      date: new Date().toISOString(),
+      status: 'Pending'
+    };
+
+    // Attach appeal to the latest C5 / suspension infraction if one exists
+    const latestSuspensionInf = (infractions || [])
+      .filter(inf =>
+        inf &&
+        inf.staffEmail?.toLowerCase().trim() === normalized &&
+        (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension'))
+      )
+      .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))[0];
+
+    if (latestSuspensionInf) {
+      const infKey = latestSuspensionInf.id || latestSuspensionInf._firebaseKey;
+      if (infKey) {
+        appealInfraction(infKey, cleanText);
+      }
+    }
+
+    setUsers(prev => (prev || []).map(u =>
+      u.email?.toLowerCase().trim() === normalized
+        ? { ...u, suspensionAppeal: appealObj }
+        : u
+    ));
+
+    const updatedCurrent = { ...currentUser, suspensionAppeal: appealObj };
+    setCurrentUser(updatedCurrent);
+    const isRemembered = localStorage.getItem('oxton_current_user') !== null;
+    if (isRemembered) {
+      localStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
+    } else {
+      sessionStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
+    }
+
+    logAction('suspension_appealed', `${currentUser.email} submitted a suspension appeal`, { email: currentUser.email, text: cleanText });
+    return true;
   };
 
   const completeRehabilitation = (signatureName) => {
@@ -2569,7 +2615,7 @@ export const AppProvider = ({ children }) => {
     
     if (isSuspension) {
       const suspendedUntil = new Date(Date.now() + suspensionDurationHours * 60 * 60 * 1000).toISOString();
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, suspendedReason: mainMessage, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } : u));
+      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, suspendedReason: mainMessage, suspensionAppeal: null, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } : u));
     } else if (!infData.skipUserSuspension) {
       const deduction = type.startsWith('C4') ? 10 : (type.startsWith('C3') ? 5 : 2);
       setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - deduction, lastInfractionDate: new Date().toISOString() } : u));
@@ -2671,7 +2717,7 @@ export const AppProvider = ({ children }) => {
       // Apply 48-hour suspension to user
       setUsers(prev => (prev || []).map(u => 
         u.email === target.staffEmail 
-          ? { ...u, suspendedUntil, suspendedReason: escalationReason, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } 
+          ? { ...u, suspendedUntil, suspendedReason: escalationReason, suspensionAppeal: null, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } 
           : u
       ));
       logAction('detention_escalated', `Detention escalated to 2-day C5A Suspension for ${target.staffEmail}`, { targetId: infractionId });
@@ -3429,6 +3475,7 @@ useEffect(() => {
         suspendUser,
         unsuspendUser,
         liftExpiredSuspension,
+        submitSuspensionAppeal,
         completeRehabilitation,
         setWarning,
         setMaintenance,
