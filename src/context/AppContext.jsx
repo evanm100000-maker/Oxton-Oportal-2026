@@ -2608,6 +2608,7 @@ export const AppProvider = ({ children }) => {
       ),
       detentionLocation: infData.detentionLocation || (isBehavioralCourse ? 'Behavioral Course' : isDetention ? 'Hall' : null),
       detentionStatus: isScheduledSanction ? 'Scheduled' : null, // 'Scheduled' | 'Passed' | 'Failed'
+      courseUnlocked: isBehavioralCourse ? false : null,
       courseCompleted: isBehavioralCourse ? false : null,
       suspensionDurationHours,
       suspensionDurationLabel,
@@ -2660,6 +2661,24 @@ export const AppProvider = ({ children }) => {
       return { ...inf, ...updates };
     }));
     logAction('behavioral_course_completed', `Completed C6 behavioral course ${infractionId}`, { infractionId });
+  };
+
+  const setBehavioralCourseAccess = (infractionId, allowed = true) => {
+    if (!infractionId) return;
+    const nowIso = new Date().toISOString();
+    const updates = {
+      courseUnlocked: Boolean(allowed),
+      courseUnlockedAt: allowed ? nowIso : null,
+      courseUnlockedBy: allowed ? (currentUser?.email || null) : null,
+      updatedAt: nowIso
+    };
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `infractions/${infractionId}`), updates).catch(err => console.error('Failed to update C6 behavioral course access in Firebase:', err));
+    setInfractions(prev => (prev || []).map(inf => {
+      if (inf.id !== infractionId && inf._firebaseKey !== infractionId) return inf;
+      return { ...inf, ...updates };
+    }));
+    logAction('behavioral_course_access_updated', `${allowed ? 'Allowed' : 'Locked'} C6 behavioral course access for ${infractionId}`, { infractionId, allowed });
   };
 
   const failDetention = (infractionId) => {
@@ -3611,6 +3630,7 @@ useEffect(() => {
         failDetention,
         rescheduleDetention,
         completeBehavioralCourse,
+        setBehavioralCourseAccess,
         updateInfraction,
         informalSanctions,
         addInformalSanction,

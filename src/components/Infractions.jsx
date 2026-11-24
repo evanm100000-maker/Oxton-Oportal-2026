@@ -22,6 +22,7 @@ export default function Infractions() {
     addInfraction, 
     updateInfraction,
     completeBehavioralCourse,
+    setBehavioralCourseAccess,
     informalSanctions = [], 
     deleteInformalSanction, 
     users = [],
@@ -514,23 +515,37 @@ export default function Infractions() {
                           <span style={styles.detentionTitleTextDark}>{titleText}</span>
                           
                           {isC6 && (
-                            <button
-                              type="button"
-                              onClick={() => setActiveCourseSanction(sanc)}
-                              className="btn-primary"
-                              style={{
-                                padding: '5px 12px',
-                                fontSize: '0.78rem',
+                            <>
+                              <span style={{
+                                fontSize: '0.72rem',
                                 fontWeight: '700',
+                                padding: '3px 8px',
                                 borderRadius: '6px',
-                                background: 'linear-gradient(135deg, #a855f7, #7e22ce)',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px'
-                              }}
-                            >
-                              <BookOpen size={14} /> Start Behavioral Course
-                            </button>
+                                background: sanc.courseUnlocked ? 'rgba(16, 185, 129, 0.16)' : 'rgba(245, 158, 11, 0.15)',
+                                color: sanc.courseUnlocked ? '#34d399' : '#fbbf24',
+                                border: `1px solid ${sanc.courseUnlocked ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
+                              }}>
+                                {sanc.courseUnlocked ? 'Access Allowed' : 'Locked Until In Meeting'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setActiveCourseSanction(sanc)}
+                                className="btn-primary"
+                                style={{
+                                  padding: '5px 12px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: '700',
+                                  borderRadius: '6px',
+                                  background: sanc.courseUnlocked ? 'linear-gradient(135deg, #a855f7, #7e22ce)' : 'rgba(148, 163, 184, 0.2)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                {sanc.courseUnlocked ? <BookOpen size={14} /> : <Lock size={14} />}
+                                {sanc.courseUnlocked ? 'Start Behavioral Course' : 'Open Behavioral Course'}
+                              </button>
+                            </>
                           )}
 
                           {isAdminOrMod && (
@@ -687,14 +702,30 @@ export default function Infractions() {
                           <span style={{ fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
                             <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate || 'Scheduled'} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
                           </span>
+                          {isC6 && isAdminOrMod && inf.detentionStatus !== 'Passed' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextAllowed = !inf.courseUnlocked;
+                                setBehavioralCourseAccess(inf.id || inf._firebaseKey, nextAllowed);
+                                setLogSuccess(nextAllowed ? 'C6 Behavioral Course access allowed for staff member.' : 'C6 Behavioral Course access locked.');
+                                setTimeout(() => setLogSuccess(''), 3500);
+                              }}
+                              className={inf.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
+                              style={{ padding: '4px 10px', fontSize: '0.75rem', borderRadius: '6px' }}
+                            >
+                              {inf.courseUnlocked ? 'Access Allowed (Lock)' : 'Allow Course Access'}
+                            </button>
+                          )}
                           {isC6 && inf.detentionStatus !== 'Passed' && (
                             <button
                               type="button"
                               onClick={() => setActiveCourseSanction(inf)}
                               className="btn-primary"
-                              style={{ padding: '4px 10px', fontSize: '0.76rem', borderRadius: '6px', background: 'linear-gradient(135deg, #a855f7, #7e22ce)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                              style={{ padding: '4px 10px', fontSize: '0.76rem', borderRadius: '6px', background: inf.courseUnlocked ? 'linear-gradient(135deg, #a855f7, #7e22ce)' : 'rgba(148, 163, 184, 0.2)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                             >
-                              <BookOpen size={13} /> Complete Behavioral Course
+                              {inf.courseUnlocked ? <BookOpen size={13} /> : <Lock size={13} />}
+                              {inf.courseUnlocked ? 'Complete Behavioral Course' : 'Open Behavioral Course'}
                             </button>
                           )}
                           {isAdminOrMod && (
@@ -947,6 +978,21 @@ export default function Infractions() {
                           <span style={{ fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
                             <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate || 'Scheduled'} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
                           </span>
+                          {isC6 && isAdminOrMod && inf.detentionStatus !== 'Passed' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextAllowed = !inf.courseUnlocked;
+                                setBehavioralCourseAccess(inf.id || inf._firebaseKey, nextAllowed);
+                                setLogSuccess(nextAllowed ? 'C6 Behavioral Course access allowed for staff member.' : 'C6 Behavioral Course access locked.');
+                                setTimeout(() => setLogSuccess(''), 3500);
+                              }}
+                              className={inf.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
+                              style={{ padding: '4px 10px', fontSize: '0.75rem', borderRadius: '6px' }}
+                            >
+                              {inf.courseUnlocked ? 'Access Allowed (Lock)' : 'Allow Course Access'}
+                            </button>
+                          )}
                           {isAdminOrMod && (
                             <button
                               type="button"

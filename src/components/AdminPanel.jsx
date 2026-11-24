@@ -126,6 +126,7 @@ export default function AdminPanel() {
     passDetention,
     failDetention,
     rescheduleDetention,
+    setBehavioralCourseAccess,
     siteVersion,
     updateRequiredVersion
   } = useApp();
@@ -1013,11 +1014,25 @@ export default function AdminPanel() {
                                 <td style={styles.td}>
                                   <div style={{ marginBottom: '6px', lineHeight: '1.4' }}>{isInformal ? inf.reason : inf.mainMessage}</div>
                                   {(isC4 || isC6) && (
-                                    <div style={{ fontSize: '0.8rem', color: isC6 ? '#d8b4fe' : '#fcd34d', margin: '4px 0', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    <div style={{ fontSize: '0.8rem', color: isC6 ? '#d8b4fe' : '#fcd34d', margin: '4px 0', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                       <Clock size={13} />
                                       <span>
                                         <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)} (Status: {inf.detentionStatus || 'Scheduled'})
                                       </span>
+                                      {isC6 && inf.detentionStatus !== 'Passed' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const nextAllowed = !inf.courseUnlocked;
+                                            setBehavioralCourseAccess(inf.id || inf._firebaseKey, nextAllowed);
+                                            displaySuccess(nextAllowed ? `Allowed C6 Behavioral Course access for ${group.name}.` : `Locked C6 Behavioral Course access for ${group.name}.`);
+                                          }}
+                                          className={inf.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
+                                          style={{ padding: '3px 8px', fontSize: '0.74rem', borderRadius: '6px' }}
+                                        >
+                                          {inf.courseUnlocked ? 'Access Allowed (Lock)' : 'Allow Access'}
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                   {inf.appeal && (
@@ -1181,15 +1196,41 @@ export default function AdminPanel() {
                               </span>
                             )}
                             {isScheduled && (
-                              <span style={{ color: isC6 ? '#c084fc' : '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Clock size={14} /> Scheduled
-                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                <span style={{ color: isC6 ? '#c084fc' : '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Clock size={14} /> Scheduled
+                                </span>
+                                {isC6 && (
+                                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: item.courseUnlocked ? '#34d399' : '#94a3b8' }}>
+                                    {item.courseUnlocked ? 'Course Access Allowed' : 'Locked (Needs Meeting)'}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td style={{ ...styles.td, textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', gap: '6px' }}>
+                            <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                               {isScheduled ? (
                                 <>
+                                  {isC6 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextAllowed = !item.courseUnlocked;
+                                        setBehavioralCourseAccess(item.id || item._firebaseKey, nextAllowed);
+                                        displaySuccess(nextAllowed ? `Allowed C6 Behavioral Course access for ${item.staffName}.` : `Locked C6 Behavioral Course access for ${item.staffName}.`);
+                                      }}
+                                      className={item.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
+                                      style={{
+                                        ...styles.loaActionBtn,
+                                        background: item.courseUnlocked ? undefined : 'linear-gradient(135deg, #a855f7, #7e22ce)'
+                                      }}
+                                      title={item.courseUnlocked ? 'Lock course access' : 'Allow staff member into C6 course'}
+                                    >
+                                      {item.courseUnlocked ? <Lock size={14} /> : <Check size={14} />}
+                                      {item.courseUnlocked ? 'Lock Access' : 'Allow Access'}
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2078,7 +2119,7 @@ export default function AdminPanel() {
                     value={adminRequiredVersion}
                     onChange={e => setAdminRequiredVersion(e.target.value)}
                     className="input-field"
-                    placeholder="2.1.55"
+                    placeholder="2.1.56"
                   />
                 </div>
                 <button
