@@ -6,6 +6,7 @@ import WarningBanner from './components/WarningBanner';
 import UpdateBanner from './components/UpdateBanner';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import SuspendedScreen from './components/SuspendedScreen';
+import RehabilitationScreen from './components/RehabilitationScreen';
 import NotificationOverlay from './components/NotificationOverlay';
 import LoaBanner from './components/LoaBanner';
 import BypassOverlay from './components/BypassOverlay';
@@ -103,6 +104,11 @@ function MainApp() {
         <NotificationOverlay />
       </>
     );
+  }
+
+  // Post-suspension rehabilitation meeting
+  if (currentUser?.needsRehabilitation) {
+    return <RehabilitationScreen />;
   }
 
   // Landing Page Selection

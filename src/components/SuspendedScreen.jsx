@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Lock, LogOut } from 'lucide-react';
 
 export default function SuspendedScreen() {
-  const { currentUser, logout } = useApp();
+  const { currentUser, logout, liftExpiredSuspension } = useApp();
   const [timeLeft, setTimeLeft] = useState('');
 
   useEffect(() => {
@@ -14,20 +14,25 @@ export default function SuspendedScreen() {
       const diff = suspendTime - now;
 
       if (diff <= 0) {
-        // Automatically reload to lift suspension if timer expired
-        window.location.reload();
+        if (liftExpiredSuspension && currentUser?.email) {
+          liftExpiredSuspension(currentUser.email);
+        } else {
+          window.location.reload();
+        }
       } else {
-        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const totalHours = Math.floor(diff / (1000 * 60 * 60));
+        const days = Math.floor(totalHours / 24);
+        const hours = totalHours % 24;
         const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
         const secs = Math.floor((diff % (1000 * 60)) / 1000);
-        setTimeLeft(`${hours}h ${mins}m ${secs}s`);
+        setTimeLeft(days > 0 ? `${days}d ${hours}h ${mins}m ${secs}s` : `${hours}h ${mins}m ${secs}s`);
       }
     };
 
     updateTimeLeft();
     const interval = setInterval(updateTimeLeft, 1000);
     return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, liftExpiredSuspension]);
 
   return (
     <div style={styles.container}>

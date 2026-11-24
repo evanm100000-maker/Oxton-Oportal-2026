@@ -1252,7 +1252,7 @@ export const AppProvider = ({ children }) => {
     const updatedUsers = users.map(user => {
       if (user.suspendedUntil && new Date(user.suspendedUntil).getTime() <= now) {
         changed = true;
-        return { ...user, suspendedUntil: null };
+        return { ...user, suspendedUntil: null, needsRehabilitation: true };
       }
       return user;
     });
@@ -1262,12 +1262,13 @@ export const AppProvider = ({ children }) => {
     }
     
     if (currentUser?.suspendedUntil && new Date(currentUser.suspendedUntil).getTime() <= now) {
-      setCurrentUser({ ...currentUser, suspendedUntil: null });
+      const updatedCurrent = { ...currentUser, suspendedUntil: null, needsRehabilitation: true };
+      setCurrentUser(updatedCurrent);
       const isRemembered = localStorage.getItem('oxton_current_user') !== null;
       if (isRemembered) {
-         localStorage.setItem('oxton_current_user', JSON.stringify({ ...currentUser, suspendedUntil: null }));
+         localStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
       } else {
-         sessionStorage.setItem('oxton_current_user', JSON.stringify({ ...currentUser, suspendedUntil: null }));
+         sessionStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
       }
     }
   }, [users, currentUser, setUsers, setCurrentUser]);
@@ -1714,7 +1715,8 @@ export const AppProvider = ({ children }) => {
       staffEmail: email,
       type: 'Suspension',
       mainMessage: `Suspended for ${hours} hours. Reason: ${reason}`,
-      confidentialMessage: `Expires ${new Date(suspendedUntil).toLocaleString()}`
+      confidentialMessage: `Expires ${new Date(suspendedUntil).toLocaleString()}`,
+      skipUserSuspension: true
     });
   };
 
@@ -1754,8 +1756,65 @@ export const AppProvider = ({ children }) => {
   const unsuspendUser = (email) => {
     const targetUser = users.find(u => u.email === email);
     if (!canTakeAction(currentUser, targetUser)) return;
-    setUsers(prev => prev.map(u => u.email === email ? { ...u, suspendedUntil: null } : u));
+    setUsers(prev => prev.map(u => u.email === email ? { ...u, suspendedUntil: null, suspendedReason: null, needsRehabilitation: true } : u));
     logAction('user_unsuspended', `Unsuspended ${email}`, { email });
+  };
+
+  const liftExpiredSuspension = (email) => {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+    setUsers(prev => (prev || []).map(u =>
+      u.email?.toLowerCase().trim() === normalized
+        ? { ...u, suspendedUntil: null, needsRehabilitation: true }
+        : u
+    ));
+    if (currentUser?.email?.toLowerCase().trim() === normalized) {
+      const updatedCurrent = { ...currentUser, suspendedUntil: null, needsRehabilitation: true };
+      setCurrentUser(updatedCurrent);
+      const isRemembered = localStorage.getItem('oxton_current_user') !== null;
+      if (isRemembered) {
+        localStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
+      } else {
+        sessionStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
+      }
+    }
+  };
+
+  const completeRehabilitation = (signatureName) => {
+    if (!currentUser?.email) return;
+    const normalized = currentUser.email.toLowerCase().trim();
+    const completedAt = new Date().toISOString();
+    const sig = (signatureName || '').trim();
+
+    setUsers(prev => (prev || []).map(u =>
+      u.email?.toLowerCase().trim() === normalized
+        ? {
+            ...u,
+            needsRehabilitation: false,
+            suspendedUntil: null,
+            suspendedReason: null,
+            lastRehabilitationCompletedAt: completedAt,
+            lastRehabilitationSignature: sig
+          }
+        : u
+    ));
+
+    const updatedCurrent = {
+      ...currentUser,
+      needsRehabilitation: false,
+      suspendedUntil: null,
+      suspendedReason: null,
+      lastRehabilitationCompletedAt: completedAt,
+      lastRehabilitationSignature: sig
+    };
+    setCurrentUser(updatedCurrent);
+    const isRemembered = localStorage.getItem('oxton_current_user') !== null;
+    if (isRemembered) {
+      localStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
+    } else {
+      sessionStorage.setItem('oxton_current_user', JSON.stringify(updatedCurrent));
+    }
+    logAction('rehabilitation_completed', `${currentUser.email} signed rehabilitation agreement`, { email: currentUser.email, signature: sig, completedAt });
   };
 
   const changeSiteRole = (email, newRole) => {
@@ -2452,7 +2511,23 @@ export const AppProvider = ({ children }) => {
 
     const type = infData.type || 'C1 Warning';
     const isDetention = type.startsWith('C4');
+    const isSuspension = !infData.skipUserSuspension && (type.startsWith('C5') || type.toLowerCase().includes('suspension'));
     const detentionDate = infData.detentionDate || (isDetention ? new Date(Date.now() + 86400000).toISOString().split('T')[0] : null);
+
+    let suspensionDurationHours = null;
+    let suspensionDurationLabel = null;
+    if (isSuspension) {
+      if (Number(infData.suspensionDurationHours) > 0) {
+        suspensionDurationHours = Number(infData.suspensionDurationHours);
+      } else if (type.startsWith('C5B') || type.includes('7 Day')) {
+        suspensionDurationHours = 168; // 7 days
+      } else {
+        suspensionDurationHours = 48; // 2 days (C5A default)
+      }
+      suspensionDurationLabel = infData.suspensionDurationLabel || (
+        suspensionDurationHours === 168 ? '7 Days' : suspensionDurationHours === 48 ? '2 Days' : `${suspensionDurationHours} Hours`
+      );
+    }
 
     // Prevent duplicate C4 for the same user on the same date
     if (isDetention && detentionDate) {
@@ -2479,6 +2554,8 @@ export const AppProvider = ({ children }) => {
       detentionTime: infData.detentionTime || (isDetention ? (type.includes('C4B') ? '14:55 - 15:35' : '14:55 - 15:15') : null),
       detentionLocation: infData.detentionLocation || (isDetention ? 'Hall' : null),
       detentionStatus: isDetention ? 'Scheduled' : null, // 'Scheduled' | 'Passed' | 'Failed'
+      suspensionDurationHours,
+      suspensionDurationLabel,
       isEscalation: !!infData.isEscalation,
       issuedByEmail: currentUser.email,
       issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
@@ -2490,11 +2567,10 @@ export const AppProvider = ({ children }) => {
     update(ref(db, 'infractions'), { [newInfraction.id]: cleanInf }).catch(err => console.error('Failed to save infraction to Firebase:', err));
     setInfractions(prev => [newInfraction, ...(prev || []).filter(i => i.id !== newInfraction.id)]);
     
-    if (type === 'C5 Suspension') {
-      // 2 days suspension = 48 hours
-      const suspendedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, lastInfractionDate: new Date().toISOString() } : u));
-    } else {
+    if (isSuspension) {
+      const suspendedUntil = new Date(Date.now() + suspensionDurationHours * 60 * 60 * 1000).toISOString();
+      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, suspendedReason: mainMessage, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } : u));
+    } else if (!infData.skipUserSuspension) {
       const deduction = type.startsWith('C4') ? 10 : (type.startsWith('C3') ? 5 : 2);
       setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - deduction, lastInfractionDate: new Date().toISOString() } : u));
       logPointsAction(staffEmail, -deduction, `Sanction ${type}: ${mainMessage}`);
@@ -2564,16 +2640,19 @@ export const AppProvider = ({ children }) => {
         pointsAdded: 4
       };
     } else {
-      // Escalate from C4B (+4 pts) to C5 Suspension (+5 pts) => total 13 points
+      // Escalate from C4B (+4 pts) to C5A 2-Day Suspension (+5 pts) => total 13 points
       const suspendedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      const escalationReason = `2-Day Suspension: Escalated from failed C4B detention. Original reason: ${target.mainMessage}`;
       escalatedInfraction = {
         id: makeId('inf'),
         staffEmail: target.staffEmail,
         staffName: target.staffName,
-        type: 'C5 Suspension',
-        mainMessage: `2-Day Suspension: Escalated from failed C4B detention. Original reason: ${target.mainMessage}`,
+        type: 'C5A - 2 Day Suspension',
+        mainMessage: escalationReason,
         confidentialMessage: `Expires ${new Date(suspendedUntil).toLocaleString()}`,
         detentionStatus: null,
+        suspensionDurationHours: 48,
+        suspensionDurationLabel: '2 Days',
         isEscalation: true,
         issuedByEmail: currentUser.email,
         issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
@@ -2592,13 +2671,13 @@ export const AppProvider = ({ children }) => {
       // Apply 48-hour suspension to user
       setUsers(prev => (prev || []).map(u => 
         u.email === target.staffEmail 
-          ? { ...u, suspendedUntil, lastInfractionDate: new Date().toISOString() } 
+          ? { ...u, suspendedUntil, suspendedReason: escalationReason, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } 
           : u
       ));
-      logAction('detention_escalated', `Detention escalated to 2-day C5 Suspension for ${target.staffEmail}`, { targetId: infractionId });
+      logAction('detention_escalated', `Detention escalated to 2-day C5A Suspension for ${target.staffEmail}`, { targetId: infractionId });
 
       return {
-        escalatedType: 'C5 Suspension',
+        escalatedType: 'C5A - 2 Day Suspension',
         staffEmail: target.staffEmail,
         staffName: target.staffName,
         pointsAdded: 5
@@ -3349,6 +3428,8 @@ useEffect(() => {
         setCustomRole,
         suspendUser,
         unsuspendUser,
+        liftExpiredSuspension,
+        completeRehabilitation,
         setWarning,
         setMaintenance,
         publishUpdate,

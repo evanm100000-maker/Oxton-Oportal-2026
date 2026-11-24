@@ -9,6 +9,120 @@ import {
  * Point scale: C1 = 1pt, C2 = 2pts, C3 = 3pts, C4 = 4pts, C5 = 5pts.
  * Termination limit: 35 points.
  */
+export const C5_OPTIONS = [
+  { value: 'C5A - 2 Day Suspension', label: 'C5A - 2 Day Suspension (5 pts)', hours: 48, durationLabel: '2 Days' },
+  { value: 'C5B - 7 Day Suspension', label: 'C5B - 7 Day Suspension (5 pts)', hours: 168, durationLabel: '7 Days' },
+  { value: 'C5 - Custom Suspension', label: 'C5 - Custom Suspension (5 pts)', isCustom: true },
+];
+
+export function resolveC5Suspension(selectedType, customValue, customUnit = 'days') {
+  if (selectedType === 'C5 - Custom Suspension') {
+    const num = parseFloat(customValue);
+    if (!Number.isFinite(num) || num <= 0) {
+      return { valid: false, error: 'Please enter a valid custom suspension duration.' };
+    }
+    const isDays = customUnit === 'days';
+    const hours = isDays ? num * 24 : num;
+    const unitLabel = isDays ? (num === 1 ? 'Day' : 'Days') : (num === 1 ? 'Hour' : 'Hours');
+    const durationLabel = `${num} ${unitLabel}`;
+    return {
+      valid: true,
+      type: `C5 - Custom Suspension (${durationLabel})`,
+      suspensionDurationHours: hours,
+      suspensionDurationLabel: durationLabel,
+    };
+  }
+  const preset = C5_OPTIONS.find(opt => opt.value === selectedType);
+  if (preset) {
+    return {
+      valid: true,
+      type: preset.value,
+      suspensionDurationHours: preset.hours,
+      suspensionDurationLabel: preset.durationLabel,
+    };
+  }
+  return { valid: true, type: selectedType, suspensionDurationHours: null, suspensionDurationLabel: null };
+}
+
+export function CustomSuspensionFields({ durationValue, onDurationChange, durationUnit, onUnitChange }) {
+  const numericVal = parseFloat(durationValue);
+  const hasValidPreview = Number.isFinite(numericVal) && numericVal > 0;
+  const totalHours = hasValidPreview ? (durationUnit === 'days' ? numericVal * 24 : numericVal) : 0;
+
+  return (
+    <div style={{ background: 'rgba(239, 68, 68, 0.06)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(239, 68, 68, 0.3)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171', fontWeight: 'bold', fontSize: '0.9rem' }}>
+        <Clock size={16} />
+        <span>Custom Suspension Duration</span>
+      </div>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {[
+          { label: '12 Hours', value: '12', unit: 'hours' },
+          { label: '1 Day', value: '1', unit: 'days' },
+          { label: '3 Days', value: '3', unit: 'days' },
+          { label: '5 Days', value: '5', unit: 'days' },
+          { label: '14 Days', value: '14', unit: 'days' },
+        ].map(preset => {
+          const isActive = String(durationValue) === preset.value && durationUnit === preset.unit;
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => {
+                onDurationChange(preset.value);
+                onUnitChange(preset.unit);
+              }}
+              style={{
+                padding: '3px 8px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                border: '1px solid',
+                borderColor: isActive ? '#ef4444' : 'rgba(255,255,255,0.1)',
+                background: isActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)',
+                color: isActive ? '#fca5a5' : '#d1d5db',
+                cursor: 'pointer'
+              }}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '0.82rem', fontWeight: '600', color: '#d1d5db' }}>Duration *</label>
+          <input
+            type="number"
+            required
+            min="0.5"
+            step="any"
+            value={durationValue}
+            onChange={e => onDurationChange(e.target.value)}
+            placeholder="e.g. 3"
+            className="input-field"
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '0.82rem', fontWeight: '600', color: '#d1d5db' }}>Unit</label>
+          <select
+            value={durationUnit}
+            onChange={e => onUnitChange(e.target.value)}
+            className="input-field"
+          >
+            <option value="days">Days</option>
+            <option value="hours">Hours</option>
+          </select>
+        </div>
+      </div>
+      {hasValidPreview && (
+        <div style={{ fontSize: '0.78rem', color: '#fca5a5' }}>
+          Staff member will be suspended for <strong>{numericVal} {durationUnit === 'days' ? (numericVal === 1 ? 'Day' : 'Days') : (numericVal === 1 ? 'Hour' : 'Hours')}</strong> ({totalHours} hours).
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function computeStaffConsequenceStats(staffEmail, infractions = [], informalSanctions = [], additionalNewType = null) {
   if (!staffEmail) {
     return {
@@ -223,6 +337,13 @@ export default function ConsequenceLoggedModal({
             </div>
           )}
 
+          {loggedConsequence?.suspensionDurationLabel && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontSize: '0.85rem', color: '#fca5a5' }}>
+              <Clock size={14} />
+              <span><strong>Suspension Duration:</strong> {loggedConsequence.suspensionDurationLabel}</span>
+            </div>
+          )}
+
           {loggedConsequence?.mainMessage && (
             <p style={{ margin: '8px 0 0 0', fontSize: '0.85rem', color: '#e2e8f0', lineHeight: '1.4' }}>
               <strong>Details:</strong> {loggedConsequence.mainMessage}
@@ -405,7 +526,7 @@ export default function ConsequenceLoggedModal({
                 {stats?.c5Count ?? 0}
               </div>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                2-Day Lockouts ({(stats?.c5Count ?? 0) * 5} pts)
+                2-Day / 7-Day / Custom ({(stats?.c5Count ?? 0) * 5} pts)
               </div>
             </div>
           </div>

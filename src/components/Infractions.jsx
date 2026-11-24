@@ -1,7 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3 } from 'lucide-react';
-import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
+import ConsequenceLoggedModal, {
+  computeStaffConsequenceStats,
+  C5_OPTIONS,
+  resolveC5Suspension,
+  CustomSuspensionFields
+} from './ConsequenceLoggedModal';
 
 export default function Infractions() {
   const { 
@@ -38,6 +43,8 @@ export default function Infractions() {
   const [logDetentionLocation, setLogDetentionLocation] = useState('Hall');
   const [logDetentionDate, setLogDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [logDetentionTime, setLogDetentionTime] = useState('14:55 - 15:15');
+  const [logCustomSuspensionValue, setLogCustomSuspensionValue] = useState('');
+  const [logCustomSuspensionUnit, setLogCustomSuspensionUnit] = useState('days');
   const [logSuccess, setLogSuccess] = useState('');
 
   // New Consequence count summary UI modal for admin
@@ -128,6 +135,13 @@ export default function Infractions() {
     const isDetention = logType.startsWith('C4');
     const targetEmail = logStaffEmail;
 
+    const c5Resolved = resolveC5Suspension(logType, logCustomSuspensionValue, logCustomSuspensionUnit);
+    if (!c5Resolved.valid) {
+      alert(c5Resolved.error);
+      return;
+    }
+    const resolvedType = c5Resolved.type;
+
     // Check duplicate C4 for this user on this date
     if (isDetention) {
       const scheduledDate = (logDetentionDate || '').trim();
@@ -146,25 +160,29 @@ export default function Infractions() {
 
     const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
     const consequenceData = {
-      type: logType,
+      type: resolvedType,
       mainMessage: `[${logCategory}] ${logMainMessage}`,
       confidentialMessage: logConfidential,
       detentionLocation: isDetention ? (logDetentionLocation || 'Hall') : null,
       detentionDate: isDetention ? logDetentionDate : null,
-      detentionTime: isDetention ? logDetentionTime : null
+      detentionTime: isDetention ? logDetentionTime : null,
+      suspensionDurationHours: c5Resolved.suspensionDurationHours,
+      suspensionDurationLabel: c5Resolved.suspensionDurationLabel
     };
 
     // Calculate new stats including this consequence before clearing form
-    const newStats = computeStaffConsequenceStats(targetEmail, safeInfractions, safeInformalSanctions, logType);
+    const newStats = computeStaffConsequenceStats(targetEmail, safeInfractions, safeInformalSanctions, resolvedType);
 
     const wasAdded = addInfraction({
       staffEmail: targetEmail,
-      type: logType,
+      type: resolvedType,
       mainMessage: consequenceData.mainMessage,
       confidentialMessage: logConfidential,
       detentionDate: consequenceData.detentionDate,
       detentionTime: consequenceData.detentionTime,
-      detentionLocation: consequenceData.detentionLocation
+      detentionLocation: consequenceData.detentionLocation,
+      suspensionDurationHours: c5Resolved.suspensionDurationHours,
+      suspensionDurationLabel: c5Resolved.suspensionDurationLabel
     });
 
     if (wasAdded === false) {
@@ -187,6 +205,8 @@ export default function Infractions() {
     setLogConfidential('');
     setLogDetentionLocation('Hall');
     setLogDetentionTime('14:55 - 15:15');
+    setLogCustomSuspensionValue('');
+    setLogCustomSuspensionUnit('days');
     setShowLogModal(false);
     setLogSuccess('Consequence logged successfully!');
     setTimeout(() => setLogSuccess(''), 4000);
@@ -419,7 +439,7 @@ export default function Infractions() {
               </div>
               <div style={{ fontSize: '2.2rem', color: '#ef4444', fontWeight: '800', margin: '8px 0 4px' }}>{c5Count}</div>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                2-Day Lockouts
+                2-Day / 7-Day / Custom
               </div>
             </div>
           </div>
@@ -1021,9 +1041,20 @@ export default function Infractions() {
                   <option value="C3 Informal Sanction">C3 - Informal Sanction (3 pts)</option>
                   <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention (4 pts)</option>
                   <option value="C4B - 40m Detention">C4B - 40 minute Detention (4 pts)</option>
-                  <option value="C5 Suspension">C5 - Suspension (2 Days) (5 pts)</option>
+                  {C5_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
+
+              {logType === 'C5 - Custom Suspension' && (
+                <CustomSuspensionFields
+                  durationValue={logCustomSuspensionValue}
+                  onDurationChange={setLogCustomSuspensionValue}
+                  durationUnit={logCustomSuspensionUnit}
+                  onUnitChange={setLogCustomSuspensionUnit}
+                />
+              )}
 
               {logType.startsWith('C4') && (
                 <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.25)', display: 'flex', flexDirection: 'column', gap: '12px' }}>

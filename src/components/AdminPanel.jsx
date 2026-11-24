@@ -2,7 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp, canTakeAction, getRankWeight } from '../context/AppContext';
 import FlightRegister from './FlightRegister';
 import FlightQuotaProgress from './FlightQuotaProgress';
-import ConsequenceLoggedModal, { computeStaffConsequenceStats } from './ConsequenceLoggedModal';
+import ConsequenceLoggedModal, {
+  computeStaffConsequenceStats,
+  C5_OPTIONS,
+  resolveC5Suspension,
+  CustomSuspensionFields
+} from './ConsequenceLoggedModal';
 import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
@@ -63,7 +68,6 @@ export default function AdminPanel() {
     addPoints,
     changeSiteRole,
     setCustomRole,
-    suspendUser,
     unsuspendUser,
     infractions,
     addInfraction,
@@ -170,11 +174,6 @@ export default function AdminPanel() {
   // Roles state
   const [roleInputs, setRoleInputs] = useState({});
 
-  // Suspensions state
-  const [suspendModalUser, setSuspendModalUser] = useState(null);
-  const [suspendModalHours, setSuspendModalHours] = useState('');
-  const [suspendModalReason, setSuspendModalReason] = useState('');
-  
   // Infractions / Consequences state
   const [showInfractionModal, setShowInfractionModal] = useState(false);
   const [infStaffEmail, setInfStaffEmail] = useState('');
@@ -184,6 +183,8 @@ export default function AdminPanel() {
   const [infDetentionLocation, setInfDetentionLocation] = useState('Hall');
   const [infDetentionTime, setInfDetentionTime] = useState('14:55 - 15:15');
   const [infDetentionDate, setInfDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+  const [infCustomSuspensionValue, setInfCustomSuspensionValue] = useState('');
+  const [infCustomSuspensionUnit, setInfCustomSuspensionUnit] = useState('days');
   const [expandedInfractions, setExpandedInfractions] = useState({});
 
   // Consequence count summary UI modal for admin
@@ -331,23 +332,19 @@ export default function AdminPanel() {
     displaySuccess(`Role updated to ${role}`);
   };
 
-  const handleSuspend = (e) => {
-    e.preventDefault();
-    const hours = parseFloat(suspendModalHours);
-    if (!hours || hours <= 0 || !suspendModalReason.trim()) return alert('Please enter valid hours and a reason.');
-    suspendUser(suspendModalUser.email, hours, suspendModalReason);
-    setSuspendModalUser(null);
-    setSuspendModalHours('');
-    setSuspendModalReason('');
-    displaySuccess(`User suspended for ${hours} hours.`);
-  };
-
   const handleAddInfraction = (e) => {
     e.preventDefault();
     if (!infStaffEmail || !infMainMessage.trim()) return;
 
     const targetEmail = infStaffEmail;
     const isDetention = infType.startsWith('C4');
+
+    const c5Resolved = resolveC5Suspension(infType, infCustomSuspensionValue, infCustomSuspensionUnit);
+    if (!c5Resolved.valid) {
+      alert(c5Resolved.error);
+      return;
+    }
+    const resolvedType = c5Resolved.type;
 
     // Prevent duplicate C4 on the same date for this user
     if (isDetention) {
@@ -367,18 +364,20 @@ export default function AdminPanel() {
 
     const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
     const consequenceData = {
-      type: infType,
+      type: resolvedType,
       mainMessage: `[${infCategory}] ${infMainMessage}`,
       confidentialMessage: infConfidentialMessage,
       detentionLocation: isDetention ? (infDetentionLocation || 'Hall') : null,
       detentionDate: isDetention ? infDetentionDate : null,
-      detentionTime: isDetention ? infDetentionTime : null
+      detentionTime: isDetention ? infDetentionTime : null,
+      suspensionDurationHours: c5Resolved.suspensionDurationHours,
+      suspensionDurationLabel: c5Resolved.suspensionDurationLabel
     };
 
     // Calculate new stats including this consequence before clearing form
-    const newStats = computeStaffConsequenceStats(targetEmail, infractions, informalSanctions, infType);
+    const newStats = computeStaffConsequenceStats(targetEmail, infractions, informalSanctions, resolvedType);
 
-    if (infType === 'Informal Sanction') {
+    if (resolvedType === 'Informal Sanction') {
       const wasLogged = addInformalSanction({
         staffEmail: targetEmail,
         reason: infMainMessage
@@ -390,12 +389,14 @@ export default function AdminPanel() {
     } else {
       const wasLogged = addInfraction({ 
         staffEmail: targetEmail, 
-        type: infType, 
+        type: resolvedType, 
         mainMessage: consequenceData.mainMessage, 
         confidentialMessage: infConfidentialMessage,
         detentionDate: consequenceData.detentionDate,
         detentionTime: consequenceData.detentionTime,
-        detentionLocation: consequenceData.detentionLocation
+        detentionLocation: consequenceData.detentionLocation,
+        suspensionDurationHours: c5Resolved.suspensionDurationHours,
+        suspensionDurationLabel: c5Resolved.suspensionDurationLabel
       });
       if (!wasLogged) {
         alert('The consequence could not be logged. Please check the staff member and message.');
@@ -418,6 +419,8 @@ export default function AdminPanel() {
     setInfConfidentialMessage('');
     setInfDetentionLocation('Hall');
     setInfDetentionTime('14:55 - 15:15');
+    setInfCustomSuspensionValue('');
+    setInfCustomSuspensionUnit('days');
     setShowInfractionModal(false);
     displaySuccess('Consequence successfully logged against staff member.');
   };
@@ -1023,7 +1026,7 @@ export default function AdminPanel() {
             <div>
               <h3 style={styles.panelTitle}>Detention Register</h3>
               <p style={{ color: '#9ca3af', fontSize: '0.9rem', margin: '4px 0 0 0' }}>
-                Manage scheduled C4 detentions (C4A 20 min, C4B 40 min). Pass completes the sanction on log, Fail escalates to C4B or 2-day C5 suspension.
+                Manage scheduled C4 detentions (C4A 20 min, C4B 40 min). Pass completes the sanction on log, Fail escalates to C4B or 2-day C5A suspension.
               </p>
             </div>
 
@@ -1165,9 +1168,9 @@ export default function AdminPanel() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (window.confirm(`Fail detention for ${item.staffName}? This will escalate to ${isC4b ? '2-day C5 Suspension' : 'C4B (40m detention)'}.`)) {
+                                      if (window.confirm(`Fail detention for ${item.staffName}? This will escalate to ${isC4b ? '2-day C5A Suspension' : 'C4B (40m detention)'}.`)) {
                                         const res = failDetention(item.id);
-                                        const escalatedTo = isC4b ? 'C5 Suspension' : 'C4B - 40m Detention';
+                                        const escalatedTo = isC4b ? 'C5A - 2 Day Suspension' : 'C4B - 40m Detention';
                                         const updatedStats = computeStaffConsequenceStats(item.staffEmail, infractions, informalSanctions, escalatedTo);
                                         displaySuccess(`Failed detention for ${item.staffName}. Escalated to ${escalatedTo}! Consequence points: ${updatedStats.totalPoints}/35 points.`);
                                       }
@@ -1313,12 +1316,10 @@ export default function AdminPanel() {
                             Missed Flight
                           </button>
 
-                          {isSuspended ? (
+                          {isSuspended && (
                             <button type="button" disabled={!canTakeAction(currentUser, user)} onClick={() => {unsuspendUser(user.email); displaySuccess('User unsuspended.');}} className="btn-success" style={{padding: '6px 10px', fontSize: '0.8rem', opacity: (!canTakeAction(currentUser, user)) ? 0.5 : 1}}>
                               Unsuspend
                             </button>
-                          ) : (
-                            <button type="button" disabled={!canTakeAction(currentUser, user)} onClick={() => setSuspendModalUser(user)} className="btn-danger" style={{padding: '6px 10px', fontSize: '0.8rem', opacity: (!canTakeAction(currentUser, user)) ? 0.5 : 1}}>Suspend</button>
                           )}
 
                           {user.email !== currentUser.email && canTakeAction(currentUser, user) && (
@@ -2836,29 +2837,6 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Suspend User Modal */}
-      {suspendModalUser && (
-        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setSuspendModalUser(null); }}>
-          <div className="glass-panel" style={{...styles.modal, width: '400px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0}}>
-               <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0}}>Suspend {suspendModalUser.firstName}</h3>
-               <button type="button" onClick={() => setSuspendModalUser(null)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer', padding: '4px'}}><X size={20}/></button>
-            </div>
-            <form onSubmit={handleSuspend} style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-               <div style={styles.inputWrapper}>
-                 <label style={styles.label}>Duration (Hours) *</label>
-                 <input type="number" required min="1" value={suspendModalHours} onChange={e => setSuspendModalHours(e.target.value)} className="input-field" />
-               </div>
-               <div style={styles.inputWrapper}>
-                 <label style={styles.label}>Reason for Suspension *</label>
-                 <textarea required value={suspendModalReason} onChange={e => setSuspendModalReason(e.target.value)} className="input-field" rows="3" placeholder="Explain the reason for this suspension..."></textarea>
-               </div>
-               <button type="submit" className="btn-danger" style={{padding: '10px', borderRadius: '8px', cursor: 'pointer'}}>Confirm Suspension</button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Infraction Modal */}
       {showInfractionModal && (
         <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setShowInfractionModal(false); }}>
@@ -2896,9 +2874,20 @@ export default function AdminPanel() {
                   <option value="C3 Informal Sanction">C3 - Informal Sanction</option>
                   <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention</option>
                   <option value="C4B - 40m Detention">C4B - 40 minute Detention</option>
-                  <option value="C5 Suspension">C5 - Suspension (2 Days)</option>
+                  {C5_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
+
+              {infType === 'C5 - Custom Suspension' && (
+                <CustomSuspensionFields
+                  durationValue={infCustomSuspensionValue}
+                  onDurationChange={setInfCustomSuspensionValue}
+                  durationUnit={infCustomSuspensionUnit}
+                  onUnitChange={setInfCustomSuspensionUnit}
+                />
+              )}
 
               {infType.startsWith('C4') && (
                 <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.25)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
