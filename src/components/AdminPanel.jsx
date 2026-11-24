@@ -5,8 +5,12 @@ import FlightQuotaProgress from './FlightQuotaProgress';
 import ConsequenceLoggedModal, {
   computeStaffConsequenceStats,
   C5_OPTIONS,
+  C6_OPTION,
+  isC6Consequence,
+  formatUpcomingSanctionTime,
   resolveC5Suspension,
-  CustomSuspensionFields
+  CustomSuspensionFields,
+  SanctionScheduleFields
 } from './ConsequenceLoggedModal';
 import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
@@ -181,7 +185,7 @@ export default function AdminPanel() {
   const [infMainMessage, setInfMainMessage] = useState('');
   const [infConfidentialMessage, setInfConfidentialMessage] = useState('');
   const [infDetentionLocation, setInfDetentionLocation] = useState('Hall');
-  const [infDetentionTime, setInfDetentionTime] = useState('14:55 - 15:15');
+  const [infDetentionTime, setInfDetentionTime] = useState('17:15 - 17:35');
   const [infDetentionDate, setInfDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
   const [infCustomSuspensionValue, setInfCustomSuspensionValue] = useState('');
   const [infCustomSuspensionUnit, setInfCustomSuspensionUnit] = useState('days');
@@ -338,6 +342,8 @@ export default function AdminPanel() {
 
     const targetEmail = infStaffEmail;
     const isDetention = infType.startsWith('C4');
+    const isCourse = isC6Consequence(infType);
+    const isScheduled = isDetention || isCourse;
 
     const c5Resolved = resolveC5Suspension(infType, infCustomSuspensionValue, infCustomSuspensionUnit);
     if (!c5Resolved.valid) {
@@ -367,9 +373,9 @@ export default function AdminPanel() {
       type: resolvedType,
       mainMessage: `[${infCategory}] ${infMainMessage}`,
       confidentialMessage: infConfidentialMessage,
-      detentionLocation: isDetention ? (infDetentionLocation || 'Hall') : null,
-      detentionDate: isDetention ? infDetentionDate : null,
-      detentionTime: isDetention ? infDetentionTime : null,
+      detentionLocation: isScheduled ? (infDetentionLocation || (isCourse ? 'Behavioral Course' : 'Hall')) : null,
+      detentionDate: isScheduled ? infDetentionDate : null,
+      detentionTime: isScheduled ? infDetentionTime : null,
       suspensionDurationHours: c5Resolved.suspensionDurationHours,
       suspensionDurationLabel: c5Resolved.suspensionDurationLabel
     };
@@ -418,7 +424,7 @@ export default function AdminPanel() {
     setInfMainMessage('');
     setInfConfidentialMessage('');
     setInfDetentionLocation('Hall');
-    setInfDetentionTime('14:55 - 15:15');
+    setInfDetentionTime('17:15 - 17:35');
     setInfCustomSuspensionValue('');
     setInfCustomSuspensionUnit('days');
     setShowInfractionModal(false);
@@ -934,6 +940,19 @@ export default function AdminPanel() {
                       }}>
                         {group.stats?.c5Count || 0} C5s
                       </span>
+
+                      {/* C6 Behavioral Courses */}
+                      <span style={{
+                        background: 'rgba(168, 85, 247, 0.12)',
+                        color: '#c084fc',
+                        border: '1px solid rgba(168, 85, 247, 0.28)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.78rem',
+                        fontWeight: '600'
+                      }}>
+                        {group.stats?.c6Count || 0} C6s
+                      </span>
                     </div>
                   </div>
                   
@@ -952,21 +971,24 @@ export default function AdminPanel() {
                           <tbody>
                             {group.items.map(inf => {
                               const isInformal = !inf.type && inf.reason;
+                              const isC6 = isC6Consequence(inf.type);
                               const isC5 = inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension');
                               const isC4 = inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention');
                               const isC3 = isInformal || inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal');
                               const isC2 = inf.type?.startsWith('C2');
                               const isC1 = inf.type?.startsWith('C1');
 
-                              const badgeBg = isC5 
+                              const badgeBg = isC6
+                                ? 'rgba(168, 85, 247, 0.18)'
+                                : isC5 
                                 ? 'rgba(239, 68, 68, 0.18)' 
                                 : isC4 
                                 ? 'rgba(245, 158, 11, 0.18)' 
                                 : isC3 
                                 ? 'rgba(234, 179, 8, 0.18)' 
                                 : 'rgba(59, 130, 246, 0.18)';
-                              const badgeColor = isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#60a5fa';
-                              const badgeBorder = isC5 ? 'rgba(239, 68, 68, 0.35)' : isC4 ? 'rgba(245, 158, 11, 0.35)' : isC3 ? 'rgba(234, 179, 8, 0.35)' : 'rgba(59, 130, 246, 0.35)';
+                              const badgeColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#60a5fa';
+                              const badgeBorder = isC6 ? 'rgba(168, 85, 247, 0.35)' : isC5 ? 'rgba(239, 68, 68, 0.35)' : isC4 ? 'rgba(245, 158, 11, 0.35)' : isC3 ? 'rgba(234, 179, 8, 0.35)' : 'rgba(59, 130, 246, 0.35)';
                               const displayType = isInformal ? 'C3 Informal Sanction' : (inf.type || 'C1 Warning');
 
                               return (
@@ -990,10 +1012,12 @@ export default function AdminPanel() {
                                 </td>
                                 <td style={styles.td}>
                                   <div style={{ marginBottom: '6px', lineHeight: '1.4' }}>{isInformal ? inf.reason : inf.mainMessage}</div>
-                                  {isC4 && (
-                                    <div style={{ fontSize: '0.8rem', color: '#fcd34d', margin: '4px 0', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                  {(isC4 || isC6) && (
+                                    <div style={{ fontSize: '0.8rem', color: isC6 ? '#d8b4fe' : '#fcd34d', margin: '4px 0', display: 'flex', gap: '8px', alignItems: 'center' }}>
                                       <Clock size={13} />
-                                      <span><strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate} &bull; {inf.detentionTime || '14:55'} (Status: {inf.detentionStatus || 'Scheduled'})</span>
+                                      <span>
+                                        <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)} (Status: {inf.detentionStatus || 'Scheduled'})
+                                      </span>
                                     </div>
                                   )}
                                   {inf.appeal && (
@@ -1035,9 +1059,9 @@ export default function AdminPanel() {
         <div style={styles.panelSection}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
             <div>
-              <h3 style={styles.panelTitle}>Detention Register</h3>
+              <h3 style={styles.panelTitle}>Detention & Behavioral Course Register</h3>
               <p style={{ color: '#9ca3af', fontSize: '0.9rem', margin: '4px 0 0 0' }}>
-                Manage scheduled C4 detentions (C4A 20 min, C4B 40 min). Pass completes the sanction on log, Fail escalates to C4B or 2-day C5A suspension.
+                Manage scheduled C4 detentions (C4A 20 min, C4B 40 min) and C6 Behavioral Courses starting from 17:15 (5:15 PM). Pass completes the sanction on log; failing a C4 escalates to C4B or 2-day C5A suspension.
               </p>
             </div>
 
@@ -1069,7 +1093,7 @@ export default function AdminPanel() {
           {/* Detention List */}
           {(() => {
             const filteredDetentions = infractions.filter(inf => {
-              const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus;
+              const isDetention = inf.type?.startsWith('C4') || isC6Consequence(inf.type) || inf.detentionStatus;
               if (!isDetention) return false;
               if (detentionDateFilter === 'all') return true;
               return inf.detentionDate === detentionDateFilter;
@@ -1079,7 +1103,7 @@ export default function AdminPanel() {
               return (
                 <div style={styles.emptyGrid}>
                   <Clock size={40} color="rgba(255,255,255,0.15)" />
-                  <p style={styles.emptyText}>No C4 detentions scheduled for {new Date(detentionDateFilter).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}.</p>
+                  <p style={styles.emptyText}>No scheduled C4 detentions or C6 courses for {new Date(detentionDateFilter).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}.</p>
                 </div>
               );
             }
@@ -1102,7 +1126,9 @@ export default function AdminPanel() {
                       const isPassed = item.detentionStatus === 'Passed';
                       const isFailed = item.detentionStatus === 'Failed';
                       const isScheduled = !isPassed && !isFailed;
+                      const isC6 = isC6Consequence(item.type);
                       const isC4b = item.type?.includes('C4B') || item.type?.toLowerCase().includes('40m');
+                      const resolvedTime = formatUpcomingSanctionTime(item.detentionTime, item.type);
 
                       return (
                         <tr key={item.id} style={styles.trBody}>
@@ -1114,11 +1140,11 @@ export default function AdminPanel() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{
                                 ...styles.infractionBadge,
-                                background: isC4b ? 'rgba(245, 158, 11, 0.2)' : 'rgba(59, 130, 246, 0.2)',
-                                color: isC4b ? '#f59e0b' : '#60a5fa',
-                                borderColor: isC4b ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)'
+                                background: isC6 ? 'rgba(168, 85, 247, 0.2)' : isC4b ? 'rgba(245, 158, 11, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                                color: isC6 ? '#c084fc' : isC4b ? '#f59e0b' : '#60a5fa',
+                                borderColor: isC6 ? 'rgba(168, 85, 247, 0.4)' : isC4b ? 'rgba(245, 158, 11, 0.4)' : 'rgba(59, 130, 246, 0.4)'
                               }}>
-                                {isC4b ? 'C4B (40m)' : 'C4A (20m)'}
+                                {isC6 ? 'C6 Course' : isC4b ? 'C4B (40m)' : 'C4A (20m)'}
                               </span>
                               {item.isEscalation && (
                                 <span style={{
@@ -1135,9 +1161,9 @@ export default function AdminPanel() {
                             </div>
                           </td>
                           <td style={styles.td}>
-                            <div><strong>{item.detentionLocation || 'Hall'}</strong></div>
+                            <div><strong>{item.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')}</strong></div>
                             <span style={{ fontSize: '0.82rem', color: '#9ca3af' }}>
-                              {item.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15')}
+                              {resolvedTime}
                             </span>
                           </td>
                           <td style={styles.td}>
@@ -1146,7 +1172,7 @@ export default function AdminPanel() {
                           <td style={styles.td}>
                             {isPassed && (
                               <span style={{ color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Check size={14} /> Passed (Complete)
+                                <Check size={14} /> {isC6 && item.courseCompleted ? 'Passed (Course Completed)' : 'Passed (Complete)'}
                               </span>
                             )}
                             {isFailed && (
@@ -1155,7 +1181,7 @@ export default function AdminPanel() {
                               </span>
                             )}
                             {isScheduled && (
-                              <span style={{ color: '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ color: isC6 ? '#c084fc' : '#f59e0b', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <Clock size={14} /> Scheduled
                               </span>
                             )}
@@ -1168,7 +1194,7 @@ export default function AdminPanel() {
                                     type="button"
                                     onClick={() => {
                                       passDetention(item.id);
-                                      displaySuccess(`Passed detention for ${item.staffName}. Marked as Complete.`);
+                                      displaySuccess(`Passed ${isC6 ? 'C6 Behavioral Course' : 'detention'} for ${item.staffName}. Marked as Complete.`);
                                     }}
                                     className="btn-success"
                                     style={styles.loaActionBtn}
@@ -1176,33 +1202,35 @@ export default function AdminPanel() {
                                   >
                                     <Check size={14} /> Pass
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`Fail detention for ${item.staffName}? This will escalate to ${isC4b ? '2-day C5A Suspension' : 'C4B (40m detention)'}.`)) {
-                                        const res = failDetention(item.id);
-                                        const escalatedTo = isC4b ? 'C5A - 2 Day Suspension' : 'C4B - 40m Detention';
-                                        const updatedStats = computeStaffConsequenceStats(item.staffEmail, infractions, informalSanctions, escalatedTo);
-                                        displaySuccess(`Failed detention for ${item.staffName}. Escalated to ${escalatedTo}! Consequence points: ${updatedStats.totalPoints}/35 points.`);
-                                      }
-                                    }}
-                                    className="btn-danger"
-                                    style={styles.loaActionBtn}
-                                    title="Mark Failed & Escalate"
-                                  >
-                                    <X size={14} /> Fail
-                                  </button>
+                                  {!isC6 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm(`Fail detention for ${item.staffName}? This will escalate to ${isC4b ? '2-day C5A Suspension' : 'C4B (40m detention)'}.`)) {
+                                          const res = failDetention(item.id);
+                                          const escalatedTo = isC4b ? 'C5A - 2 Day Suspension' : 'C4B - 40m Detention';
+                                          const updatedStats = computeStaffConsequenceStats(item.staffEmail, infractions, informalSanctions, escalatedTo);
+                                          displaySuccess(`Failed detention for ${item.staffName}. Escalated to ${escalatedTo}! Consequence points: ${updatedStats.totalPoints}/35 points.`);
+                                        }
+                                      }}
+                                      className="btn-danger"
+                                      style={styles.loaActionBtn}
+                                      title="Mark Failed & Escalate"
+                                    >
+                                      <X size={14} /> Fail
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setRescheduleModalItem(item);
                                       setRescheduleNewDate(item.detentionDate || detentionDateFilter);
-                                      setRescheduleNewTime(item.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15'));
-                                      setRescheduleNewLocation(item.detentionLocation || 'Hall');
+                                      setRescheduleNewTime(resolvedTime);
+                                      setRescheduleNewLocation(item.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall'));
                                     }}
                                     className="btn-secondary"
                                     style={{ ...styles.loaActionBtn, color: 'var(--color-text-main)' }}
-                                    title="Reschedule Detention"
+                                    title="Reschedule"
                                   >
                                     Reschedule
                                   </button>
@@ -1213,12 +1241,12 @@ export default function AdminPanel() {
                                   onClick={() => {
                                     setRescheduleModalItem(item);
                                     setRescheduleNewDate(item.detentionDate || detentionDateFilter);
-                                    setRescheduleNewTime(item.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15'));
-                                    setRescheduleNewLocation(item.detentionLocation || 'Hall');
+                                    setRescheduleNewTime(resolvedTime);
+                                    setRescheduleNewLocation(item.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall'));
                                   }}
                                   className="btn-secondary"
                                   style={{ ...styles.loaActionBtn, color: 'var(--color-text-main)' }}
-                                  title="Reschedule Detention"
+                                  title="Reschedule"
                                 >
                                   Reschedule
                                 </button>
@@ -2050,7 +2078,7 @@ export default function AdminPanel() {
                     value={adminRequiredVersion}
                     onChange={e => setAdminRequiredVersion(e.target.value)}
                     className="input-field"
-                    placeholder="2.1.54"
+                    placeholder="2.1.55"
                   />
                 </div>
                 <button
@@ -2874,10 +2902,15 @@ export default function AdminPanel() {
                 <select value={infType} onChange={e => {
                   const val = e.target.value;
                   setInfType(val);
-                  if (val.includes('C4B')) {
-                    setInfDetentionTime('14:55 - 15:35');
+                  if (isC6Consequence(val)) {
+                    setInfDetentionTime('17:15 - 18:00');
+                    setInfDetentionLocation('Behavioral Course');
+                  } else if (val.includes('C4B')) {
+                    setInfDetentionTime('17:15 - 17:55');
+                    setInfDetentionLocation('Hall');
                   } else if (val.includes('C4A')) {
-                    setInfDetentionTime('14:55 - 15:15');
+                    setInfDetentionTime('17:15 - 17:35');
+                    setInfDetentionLocation('Hall');
                   }
                 }} className="input-field">
                   <option value="C1 Warning">C1 - Warning</option>
@@ -2888,6 +2921,7 @@ export default function AdminPanel() {
                   {C5_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
+                  <option value={C6_OPTION.value}>{C6_OPTION.label}</option>
                 </select>
               </div>
 
@@ -2900,73 +2934,16 @@ export default function AdminPanel() {
                 />
               )}
 
-              {infType.startsWith('C4') && (
-                <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.25)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    <Clock size={16} />
-                    <span>Detention Schedule & Location</span>
-                  </div>
-                  <div style={styles.inputWrapper}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label style={styles.label}>Location on C4 (Replaces "Hall") *</label>
-                      <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: '600' }}>Editable</span>
-                    </div>
-                    <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0 0 6px 0' }}>
-                      Controls the location displayed on the C4 sanction (e.g. C4A (Location) / C4B (Location))
-                    </p>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                      {['HQ', 'Discord', 'Hall', 'N/A'].map(loc => (
-                        <button
-                          key={loc}
-                          type="button"
-                          onClick={() => setInfDetentionLocation(loc)}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            border: '1px solid',
-                            borderColor: infDetentionLocation === loc ? '#f59e0b' : 'rgba(255,255,255,0.1)',
-                            background: infDetentionLocation === loc ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
-                            color: infDetentionLocation === loc ? '#f59e0b' : '#d1d5db',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {loc}
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={infDetentionLocation}
-                      onChange={e => setInfDetentionLocation(e.target.value)}
-                      placeholder="e.g. HQ, Discord, Hall, N/A"
-                      className="input-field"
-                    />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div style={styles.inputWrapper}>
-                      <label style={styles.label}>Scheduled Date *</label>
-                      <input
-                        type="date"
-                        required
-                        value={infDetentionDate}
-                        onChange={e => setInfDetentionDate(e.target.value)}
-                        className="input-field"
-                      />
-                    </div>
-                    <div style={styles.inputWrapper}>
-                      <label style={styles.label}>Time Slot</label>
-                      <input
-                        type="text"
-                        value={infDetentionTime}
-                        onChange={e => setInfDetentionTime(e.target.value)}
-                        placeholder="e.g. 14:55 - 15:15"
-                        className="input-field"
-                      />
-                    </div>
-                  </div>
-                </div>
+              {(infType.startsWith('C4') || isC6Consequence(infType)) && (
+                <SanctionScheduleFields
+                  isC6={isC6Consequence(infType)}
+                  locationValue={infDetentionLocation}
+                  onLocationChange={setInfDetentionLocation}
+                  dateValue={infDetentionDate}
+                  onDateChange={setInfDetentionDate}
+                  timeValue={infDetentionTime}
+                  onTimeChange={setInfDetentionTime}
+                />
               )}
 
               <div style={styles.inputWrapper}>
@@ -3073,7 +3050,7 @@ export default function AdminPanel() {
                   required
                   value={rescheduleNewTime}
                   onChange={e => setRescheduleNewTime(e.target.value)}
-                  placeholder="e.g. 14:55 - 15:35"
+                  placeholder="e.g. 17:15 - 17:55"
                   className="input-field"
                 />
               </div>

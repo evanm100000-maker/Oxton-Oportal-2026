@@ -2557,8 +2557,10 @@ export const AppProvider = ({ children }) => {
 
     const type = infData.type || 'C1 Warning';
     const isDetention = type.startsWith('C4');
+    const isBehavioralCourse = type.startsWith('C6') || type.toLowerCase().includes('behavioral course');
+    const isScheduledSanction = isDetention || isBehavioralCourse;
     const isSuspension = !infData.skipUserSuspension && (type.startsWith('C5') || type.toLowerCase().includes('suspension'));
-    const detentionDate = infData.detentionDate || (isDetention ? new Date(Date.now() + 86400000).toISOString().split('T')[0] : null);
+    const detentionDate = infData.detentionDate || (isScheduledSanction ? new Date(Date.now() + 86400000).toISOString().split('T')[0] : null);
 
     let suspensionDurationHours = null;
     let suspensionDurationLabel = null;
@@ -2597,9 +2599,16 @@ export const AppProvider = ({ children }) => {
       mainMessage,
       confidentialMessage: infData.confidentialMessage?.trim() || '',
       detentionDate: detentionDate,
-      detentionTime: infData.detentionTime || (isDetention ? (type.includes('C4B') ? '14:55 - 15:35' : '14:55 - 15:15') : null),
-      detentionLocation: infData.detentionLocation || (isDetention ? 'Hall' : null),
-      detentionStatus: isDetention ? 'Scheduled' : null, // 'Scheduled' | 'Passed' | 'Failed'
+      detentionTime: infData.detentionTime || (
+        isBehavioralCourse
+          ? '17:15 - 18:00'
+          : isDetention
+            ? (type.includes('C4B') ? '17:15 - 17:55' : '17:15 - 17:35')
+            : null
+      ),
+      detentionLocation: infData.detentionLocation || (isBehavioralCourse ? 'Behavioral Course' : isDetention ? 'Hall' : null),
+      detentionStatus: isScheduledSanction ? 'Scheduled' : null, // 'Scheduled' | 'Passed' | 'Failed'
+      courseCompleted: isBehavioralCourse ? false : null,
       suspensionDurationHours,
       suspensionDurationLabel,
       isEscalation: !!infData.isEscalation,
@@ -2617,7 +2626,7 @@ export const AppProvider = ({ children }) => {
       const suspendedUntil = new Date(Date.now() + suspensionDurationHours * 60 * 60 * 1000).toISOString();
       setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, suspendedReason: mainMessage, suspensionAppeal: null, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } : u));
     } else if (!infData.skipUserSuspension) {
-      const deduction = type.startsWith('C4') ? 10 : (type.startsWith('C3') ? 5 : 2);
+      const deduction = isBehavioralCourse ? 15 : type.startsWith('C4') ? 10 : (type.startsWith('C3') ? 5 : 2);
       setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - deduction, lastInfractionDate: new Date().toISOString() } : u));
       logPointsAction(staffEmail, -deduction, `Sanction ${type}: ${mainMessage}`);
     }
@@ -2632,6 +2641,25 @@ export const AppProvider = ({ children }) => {
       return { ...inf, detentionStatus: 'Passed', completedAt: new Date().toISOString() };
     }));
     logAction('detention_passed', `Detention marked passed for ${infractionId}`, { infractionId });
+  };
+
+  const completeBehavioralCourse = (infractionId) => {
+    if (!infractionId) return;
+    const nowIso = new Date().toISOString();
+    const updates = {
+      detentionStatus: 'Passed',
+      courseCompleted: true,
+      courseCompletedAt: nowIso,
+      completedAt: nowIso,
+      updatedAt: nowIso
+    };
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `infractions/${infractionId}`), updates).catch(err => console.error('Failed to update C6 behavioral course completion in Firebase:', err));
+    setInfractions(prev => (prev || []).map(inf => {
+      if (inf.id !== infractionId && inf._firebaseKey !== infractionId) return inf;
+      return { ...inf, ...updates };
+    }));
+    logAction('behavioral_course_completed', `Completed C6 behavioral course ${infractionId}`, { infractionId });
   };
 
   const failDetention = (infractionId) => {
@@ -2652,7 +2680,7 @@ export const AppProvider = ({ children }) => {
         mainMessage: `Escalated from failed C4A detention. Original reason: ${target.mainMessage}`,
         confidentialMessage: `Escalated from detention #${target.id}`,
         detentionDate: nextDate,
-        detentionTime: '14:55 - 15:35',
+        detentionTime: '17:15 - 17:55',
         detentionLocation: target.detentionLocation || 'Hall',
         detentionStatus: 'Scheduled',
         isEscalation: true,
@@ -3582,6 +3610,7 @@ useEffect(() => {
         passDetention,
         failDetention,
         rescheduleDetention,
+        completeBehavioralCourse,
         updateInfraction,
         informalSanctions,
         addInformalSanction,

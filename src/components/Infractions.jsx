@@ -1,12 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3 } from 'lucide-react';
+import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3, BookOpen } from 'lucide-react';
 import ConsequenceLoggedModal, {
   computeStaffConsequenceStats,
   C5_OPTIONS,
+  C6_OPTION,
+  isC6Consequence,
+  isScheduledSanctionType,
+  formatUpcomingSanctionTime,
   resolveC5Suspension,
-  CustomSuspensionFields
+  CustomSuspensionFields,
+  SanctionScheduleFields
 } from './ConsequenceLoggedModal';
+import BehavioralCourseModal from './BehavioralCourseModal';
 
 export default function Infractions() {
   const { 
@@ -15,6 +21,7 @@ export default function Infractions() {
     appealInfraction, 
     addInfraction, 
     updateInfraction,
+    completeBehavioralCourse,
     informalSanctions = [], 
     deleteInformalSanction, 
     users = [],
@@ -42,10 +49,13 @@ export default function Infractions() {
   const [logConfidential, setLogConfidential] = useState('');
   const [logDetentionLocation, setLogDetentionLocation] = useState('Hall');
   const [logDetentionDate, setLogDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-  const [logDetentionTime, setLogDetentionTime] = useState('14:55 - 15:15');
+  const [logDetentionTime, setLogDetentionTime] = useState('17:15 - 17:35');
   const [logCustomSuspensionValue, setLogCustomSuspensionValue] = useState('');
   const [logCustomSuspensionUnit, setLogCustomSuspensionUnit] = useState('days');
   const [logSuccess, setLogSuccess] = useState('');
+
+  // Active C6 behavioral course modal
+  const [activeCourseSanction, setActiveCourseSanction] = useState(null);
 
   // New Consequence count summary UI modal for admin
   const [showLoggedSummaryModal, setShowLoggedSummaryModal] = useState(false);
@@ -74,12 +84,13 @@ export default function Infractions() {
     c3Count,
     c4Count,
     c5Count,
+    c6Count,
     totalWeightedPoints,
     myUpcomingSanctions
   } = useMemo(() => {
     const logs = safeInfractions.filter(inf => inf && inf.staffEmail === myEmail);
     const informal = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail === myEmail);
-    let c1 = 0, c2 = 0, gen = 0, c3 = 0, c4 = 0, c5 = 0;
+    let c1 = 0, c2 = 0, gen = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0;
     const upcoming = [];
     logs.forEach(inf => {
       if (!inf) return;
@@ -89,15 +100,16 @@ export default function Infractions() {
       else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) c3++;
       else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) c4++;
       else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) c5++;
+      else if (isC6Consequence(inf.type)) c6++;
 
-      const isDetention = inf.type?.startsWith('C4') || inf.detentionStatus === 'Scheduled';
-      if (isDetention && inf.detentionStatus !== 'Passed') {
+      const isScheduled = isScheduledSanctionType(inf.type) || inf.detentionStatus === 'Scheduled';
+      if (isScheduled && inf.detentionStatus !== 'Passed') {
         upcoming.push(inf);
       }
     });
     c3 += informal.length;
     const combined = c1 + c2 + gen;
-    const weighted = (c1 * 1) + (c2 * 2) + (gen * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5);
+    const weighted = (c1 * 1) + (c2 * 2) + (gen * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5) + (c6 * 6);
 
     return {
       myLogs: logs,
@@ -109,6 +121,7 @@ export default function Infractions() {
       c3Count: c3,
       c4Count: c4,
       c5Count: c5,
+      c6Count: c6,
       totalWeightedPoints: weighted,
       myUpcomingSanctions: upcoming
     };
@@ -133,6 +146,8 @@ export default function Infractions() {
     }
 
     const isDetention = logType.startsWith('C4');
+    const isCourse = isC6Consequence(logType);
+    const isScheduled = isDetention || isCourse;
     const targetEmail = logStaffEmail;
 
     const c5Resolved = resolveC5Suspension(logType, logCustomSuspensionValue, logCustomSuspensionUnit);
@@ -163,9 +178,9 @@ export default function Infractions() {
       type: resolvedType,
       mainMessage: `[${logCategory}] ${logMainMessage}`,
       confidentialMessage: logConfidential,
-      detentionLocation: isDetention ? (logDetentionLocation || 'Hall') : null,
-      detentionDate: isDetention ? logDetentionDate : null,
-      detentionTime: isDetention ? logDetentionTime : null,
+      detentionLocation: isScheduled ? (logDetentionLocation || (isCourse ? 'Behavioral Course' : 'Hall')) : null,
+      detentionDate: isScheduled ? logDetentionDate : null,
+      detentionTime: isScheduled ? logDetentionTime : null,
       suspensionDurationHours: c5Resolved.suspensionDurationHours,
       suspensionDurationLabel: c5Resolved.suspensionDurationLabel
     };
@@ -204,7 +219,7 @@ export default function Infractions() {
     setLogMainMessage('');
     setLogConfidential('');
     setLogDetentionLocation('Hall');
-    setLogDetentionTime('14:55 - 15:15');
+    setLogDetentionTime('17:15 - 17:35');
     setLogCustomSuspensionValue('');
     setLogCustomSuspensionUnit('days');
     setShowLogModal(false);
@@ -225,6 +240,7 @@ export default function Infractions() {
       else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) pts = 3;
       else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) pts = 4;
       else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) pts = 5;
+      else if (isC6Consequence(inf.type)) pts = 6;
       map.set(email, (map.get(email) || 0) + pts);
     });
     safeInformalSanctions.forEach(s => {
@@ -255,6 +271,7 @@ export default function Infractions() {
       if (tierFilter === 'c3') return inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal');
       if (tierFilter === 'c4') return inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention');
       if (tierFilter === 'c5') return inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension');
+      if (tierFilter === 'c6') return isC6Consequence(inf.type);
       return true;
     });
   }, [safeInfractions, searchStaff, tierFilter]);
@@ -391,7 +408,7 @@ export default function Infractions() {
               </div>
               <div style={styles.totalScoreVal}>{totalWeightedPoints}</div>
               <div style={styles.totalScoreSub}>
-                Weighted Points (C1=1, C2=2, C3=3, C4=4, C5=5)
+                Weighted Points (C1=1, C2=2, C3=3, C4=4, C5=5, C6=6)
               </div>
             </div>
 
@@ -442,6 +459,18 @@ export default function Infractions() {
                 2-Day / 7-Day / Custom
               </div>
             </div>
+
+            {/* C6 Behavioral Course */}
+            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(168, 85, 247, 0.35)' }}>
+              <div style={styles.statHeaderRow}>
+                <span style={{ color: '#d8b4fe', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C6 Course</span>
+                <span style={styles.weightBadgePurple}>6 pts each</span>
+              </div>
+              <div style={{ fontSize: '2.2rem', color: '#a855f7', fontWeight: '800', margin: '8px 0 4px' }}>{c6Count}</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                Full Behavioral Course
+              </div>
+            </div>
           </div>
 
           {/* 2. UPCOMING SANCTIONS: Rendered UNDER the stats, matching the portal dark glass theme */}
@@ -465,11 +494,12 @@ export default function Infractions() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   {myUpcomingSanctions.map(sanc => {
+                    const isC6 = isC6Consequence(sanc.type);
                     const isC4b = sanc.type?.includes('C4B') || sanc.type?.toLowerCase().includes('40m');
-                    const badgeText = isC4b ? 'C4b' : 'C4a';
-                    const locationName = sanc.detentionLocation || 'Hall';
-                    const titleText = `${isC4b ? 'C4B' : 'C4A'} (${locationName})`;
-                    const timeText = sanc.detentionTime || (isC4b ? '14:55 - 15:35' : '14:55 - 15:15');
+                    const badgeText = isC6 ? 'C6' : isC4b ? 'C4b' : 'C4a';
+                    const locationName = sanc.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall');
+                    const titleText = isC6 ? `C6 Behavioral Course (${locationName})` : `${isC4b ? 'C4B' : 'C4A'} (${locationName})`;
+                    const timeText = formatUpcomingSanctionTime(sanc.detentionTime, sanc.type);
 
                     return (
                       <div key={sanc.id} style={styles.upcomingItemDark}>
@@ -477,12 +507,32 @@ export default function Infractions() {
                           {formatSanctionDate(sanc.detentionDate || sanc.timestamp)}
                         </div>
                         <div style={styles.upcomingRowDark}>
-                          <span style={styles.c4BadgeDark}>{badgeText}</span>
+                          <span style={isC6 ? styles.c6BadgeDark : styles.c4BadgeDark}>{badgeText}</span>
                           {sanc.isEscalation && (
                             <span style={styles.escalationBadgeDark}>Escalation</span>
                           )}
                           <span style={styles.detentionTitleTextDark}>{titleText}</span>
                           
+                          {isC6 && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveCourseSanction(sanc)}
+                              className="btn-primary"
+                              style={{
+                                padding: '5px 12px',
+                                fontSize: '0.78rem',
+                                fontWeight: '700',
+                                borderRadius: '6px',
+                                background: 'linear-gradient(135deg, #a855f7, #7e22ce)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <BookOpen size={14} /> Start Behavioral Course
+                            </button>
+                          )}
+
                           {isAdminOrMod && (
                             <button
                               type="button"
@@ -603,12 +653,13 @@ export default function Infractions() {
           ) : (
             <div style={styles.list}>
               {myLogs.map(inf => {
+                const isC6 = isC6Consequence(inf.type);
                 const isC5 = inf.type?.startsWith('C5') || inf.type?.includes('Suspension');
                 const isC4 = inf.type?.startsWith('C4') || inf.type?.includes('Detention');
                 const isC3 = inf.type?.startsWith('C3') || inf.type?.includes('Informal');
-                const badgeColor = isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#3b82f6';
-                const badgeBg = isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
-                const badgeBorder = isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+                const badgeColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#3b82f6';
+                const badgeBg = isC6 ? 'rgba(168, 85, 247, 0.15)' : isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
+                const badgeBorder = isC6 ? 'rgba(168, 85, 247, 0.35)' : isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
 
                 return (
                   <div key={inf.id} style={styles.infractionCard} className="glass-panel">
@@ -629,13 +680,23 @@ export default function Infractions() {
                       <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
                     </div>
 
-                    {isC4 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                    {(isC4 || isC6) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: isC6 ? 'rgba(168, 85, 247, 0.08)' : 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${isC6 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(245, 158, 11, 0.2)'}` }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                          <Clock size={16} color="#f59e0b" />
-                          <span style={{ fontSize: '0.85rem', color: '#fcd34d' }}>
-                            <strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate || 'Scheduled'} &bull; {inf.detentionTime || '14:55'}
+                          <Clock size={16} color={isC6 ? '#c084fc' : '#f59e0b'} />
+                          <span style={{ fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
+                            <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate || 'Scheduled'} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
                           </span>
+                          {isC6 && inf.detentionStatus !== 'Passed' && (
+                            <button
+                              type="button"
+                              onClick={() => setActiveCourseSanction(inf)}
+                              className="btn-primary"
+                              style={{ padding: '4px 10px', fontSize: '0.76rem', borderRadius: '6px', background: 'linear-gradient(135deg, #a855f7, #7e22ce)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                            >
+                              <BookOpen size={13} /> Complete Behavioral Course
+                            </button>
+                          )}
                           {isAdminOrMod && (
                             <button
                               type="button"
@@ -802,7 +863,8 @@ export default function Infractions() {
                 { id: 'c1c2', label: 'C1/C2 Warnings' },
                 { id: 'c3', label: 'C3 Informal' },
                 { id: 'c4', label: 'C4 Detentions' },
-                { id: 'c5', label: 'C5 Suspensions' }
+                { id: 'c5', label: 'C5 Suspensions' },
+                { id: 'c6', label: 'C6 Courses' }
               ].map(f => (
                 <button
                   key={f.id}
@@ -831,12 +893,13 @@ export default function Infractions() {
           ) : (
             <div style={styles.list}>
               {filteredAllStaffLogs.map(inf => {
+                const isC6 = isC6Consequence(inf.type);
                 const isC5 = inf.type?.startsWith('C5') || inf.type?.includes('Suspension');
                 const isC4 = inf.type?.startsWith('C4') || inf.type?.includes('Detention');
                 const isC3 = inf.type?.startsWith('C3') || inf.type?.includes('Informal');
-                const badgeColor = isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#3b82f6';
-                const badgeBg = isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
-                const badgeBorder = isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+                const badgeColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#3b82f6';
+                const badgeBg = isC6 ? 'rgba(168, 85, 247, 0.15)' : isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
+                const badgeBorder = isC6 ? 'rgba(168, 85, 247, 0.35)' : isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
 
                 const staffPts = calculateStaffPoints(inf.staffEmail);
 
@@ -877,12 +940,12 @@ export default function Infractions() {
                       </div>
                     </div>
 
-                    {isC4 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                    {(isC4 || isC6) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: isC6 ? 'rgba(168, 85, 247, 0.08)' : 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${isC6 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(245, 158, 11, 0.2)'}` }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                          <Clock size={16} color="#f59e0b" />
-                          <span style={{ fontSize: '0.85rem', color: '#fcd34d' }}>
-                            <strong>Detention:</strong> {inf.detentionLocation || 'Hall'} &bull; {inf.detentionDate || 'Scheduled'} &bull; {inf.detentionTime || '14:55'}
+                          <Clock size={16} color={isC6 ? '#c084fc' : '#f59e0b'} />
+                          <span style={{ fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
+                            <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate || 'Scheduled'} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
                           </span>
                           {isAdminOrMod && (
                             <button
@@ -1027,11 +1090,17 @@ export default function Infractions() {
                 <select 
                   value={logType} 
                   onChange={e => {
-                    setLogType(e.target.value);
-                    if (e.target.value.includes('C4B')) {
-                      setLogDetentionTime('14:55 - 15:35');
-                    } else if (e.target.value.includes('C4A')) {
-                      setLogDetentionTime('14:55 - 15:15');
+                    const val = e.target.value;
+                    setLogType(val);
+                    if (isC6Consequence(val)) {
+                      setLogDetentionTime('17:15 - 18:00');
+                      setLogDetentionLocation('Behavioral Course');
+                    } else if (val.includes('C4B')) {
+                      setLogDetentionTime('17:15 - 17:55');
+                      setLogDetentionLocation('Hall');
+                    } else if (val.includes('C4A')) {
+                      setLogDetentionTime('17:15 - 17:35');
+                      setLogDetentionLocation('Hall');
                     }
                   }} 
                   className="input-field"
@@ -1044,6 +1113,7 @@ export default function Infractions() {
                   {C5_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
+                  <option value={C6_OPTION.value}>{C6_OPTION.label}</option>
                 </select>
               </div>
 
@@ -1056,75 +1126,16 @@ export default function Infractions() {
                 />
               )}
 
-              {logType.startsWith('C4') && (
-                <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.25)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    <Clock size={16} />
-                    <span>Detention Schedule Parameters</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={styles.inputWrapper}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <label style={styles.label}>Location on C4 (Replaces "Hall") *</label>
-                        <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: '600' }}>Editable</span>
-                      </div>
-                      <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0 0 6px 0' }}>
-                        Controls the location shown on the C4 sanction (e.g. C4A (Location) / C4B (Location))
-                      </p>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                        {['HQ', 'Discord', 'Hall', 'N/A'].map(loc => (
-                          <button
-                            key={loc}
-                            type="button"
-                            onClick={() => setLogDetentionLocation(loc)}
-                            style={{
-                              padding: '3px 8px',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              border: '1px solid',
-                              borderColor: logDetentionLocation === loc ? '#f59e0b' : 'rgba(255,255,255,0.1)',
-                              background: logDetentionLocation === loc ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.05)',
-                              color: logDetentionLocation === loc ? '#f59e0b' : '#d1d5db',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {loc}
-                          </button>
-                        ))}
-                      </div>
-                      <input 
-                        type="text" 
-                        required 
-                        value={logDetentionLocation} 
-                        onChange={e => setLogDetentionLocation(e.target.value)} 
-                        placeholder="e.g. HQ, Discord, Hall, N/A"
-                        className="input-field"
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div style={styles.inputWrapper}>
-                      <label style={styles.label}>Detention Date *</label>
-                      <input 
-                        type="date" 
-                        required 
-                        value={logDetentionDate} 
-                        onChange={e => setLogDetentionDate(e.target.value)} 
-                        className="input-field"
-                      />
-                    </div>
-                  </div>
-                  <div style={styles.inputWrapper}>
-                    <label style={styles.label}>Time Slot</label>
-                    <input 
-                      type="text" 
-                      value={logDetentionTime} 
-                      onChange={e => setLogDetentionTime(e.target.value)} 
-                      placeholder="e.g. 14:55 - 15:35"
-                      className="input-field"
-                    />
-                  </div>
-                </div>
+              {(logType.startsWith('C4') || isC6Consequence(logType)) && (
+                <SanctionScheduleFields
+                  isC6={isC6Consequence(logType)}
+                  locationValue={logDetentionLocation}
+                  onLocationChange={setLogDetentionLocation}
+                  dateValue={logDetentionDate}
+                  onDateChange={setLogDetentionDate}
+                  timeValue={logDetentionTime}
+                  onTimeChange={setLogDetentionTime}
+                />
               )}
 
               <div style={styles.inputWrapper}>
@@ -1185,6 +1196,21 @@ export default function Infractions() {
         loggedConsequence={loggedSummaryData?.loggedConsequence}
         stats={loggedSummaryData?.stats}
         onViewAll={() => setActiveTab('all')}
+      />
+
+      {/* Modal: Full C6 Behavioral Course */}
+      <BehavioralCourseModal
+        isOpen={Boolean(activeCourseSanction)}
+        onClose={() => setActiveCourseSanction(null)}
+        sanction={activeCourseSanction}
+        onComplete={(sanctionId) => {
+          if (completeBehavioralCourse) {
+            completeBehavioralCourse(sanctionId);
+          }
+          setActiveCourseSanction(null);
+          setLogSuccess('Behavioral Course completed and marked Passed!');
+          setTimeout(() => setLogSuccess(''), 4000);
+        }}
       />
     </div>
   );
@@ -1323,6 +1349,14 @@ const styles = {
     color: '#fca5a5',
     fontWeight: '700',
   },
+  weightBadgePurple: {
+    fontSize: '0.7rem',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    background: 'rgba(168, 85, 247, 0.2)',
+    color: '#d8b4fe',
+    fontWeight: '700',
+  },
 
   // 2. UPCOMING SANCTIONS: PORTAL THEME MATCH
   upcomingThemeCard: {
@@ -1389,6 +1423,16 @@ const styles = {
     background: 'rgba(245, 158, 11, 0.25)',
     color: '#fbbf24',
     border: '1px solid rgba(245, 158, 11, 0.45)',
+    fontWeight: '800',
+    fontSize: '0.75rem',
+    padding: '3px 8px',
+    borderRadius: '6px',
+    letterSpacing: '0.02em',
+  },
+  c6BadgeDark: {
+    background: 'rgba(168, 85, 247, 0.25)',
+    color: '#d8b4fe',
+    border: '1px solid rgba(168, 85, 247, 0.45)',
     fontWeight: '800',
     fontSize: '0.75rem',
     padding: '3px 8px',

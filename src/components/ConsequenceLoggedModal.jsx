@@ -6,7 +6,7 @@ import {
 
 /**
  * Computes individual consequence tier counts and weighted points total.
- * Point scale: C1 = 1pt, C2 = 2pts, C3 = 3pts, C4 = 4pts, C5 = 5pts.
+ * Point scale: C1 = 1pt, C2 = 2pts, C3 = 3pts, C4 = 4pts, C5 = 5pts, C6 = 6pts.
  * Termination limit: 35 points.
  */
 export const C5_OPTIONS = [
@@ -14,6 +14,33 @@ export const C5_OPTIONS = [
   { value: 'C5B - 7 Day Suspension', label: 'C5B - 7 Day Suspension (5 pts)', hours: 168, durationLabel: '7 Days' },
   { value: 'C5 - Custom Suspension', label: 'C5 - Custom Suspension (5 pts)', isCustom: true },
 ];
+
+export const C6_OPTION = {
+  value: 'C6 - Behavioral Course',
+  label: 'C6 - Behavioral Course (6 pts)',
+};
+
+export function isC6Consequence(type) {
+  return Boolean(type && (type.startsWith('C6') || type.toLowerCase().includes('behavioral course')));
+}
+
+export function isScheduledSanctionType(type) {
+  return Boolean(type && (type.startsWith('C4') || isC6Consequence(type) || type.toLowerCase().includes('detention')));
+}
+
+export function formatUpcomingSanctionTime(rawTime, type) {
+  const isC6 = isC6Consequence(type);
+  const isC4b = Boolean(type && (type.includes('C4B') || type.toLowerCase().includes('40m')));
+  if (!rawTime) {
+    return isC6 ? '17:15 - 18:00' : isC4b ? '17:15 - 17:55' : '17:15 - 17:35';
+  }
+  const trimmed = String(rawTime).trim();
+  if (trimmed === '14:55 - 15:15') return '17:15 - 17:35';
+  if (trimmed === '14:55 - 15:35') return '17:15 - 17:55';
+  if (trimmed === '14:55') return '17:15';
+  if (trimmed.startsWith('14:55')) return trimmed.replace(/^14:55/, '17:15');
+  return trimmed;
+}
 
 export function resolveC5Suspension(selectedType, customValue, customUnit = 'days') {
   if (selectedType === 'C5 - Custom Suspension') {
@@ -123,6 +150,95 @@ export function CustomSuspensionFields({ durationValue, onDurationChange, durati
   );
 }
 
+export function SanctionScheduleFields({
+  isC6,
+  locationValue,
+  onLocationChange,
+  dateValue,
+  onDateChange,
+  timeValue,
+  onTimeChange
+}) {
+  const accent = isC6 ? '#a855f7' : '#f59e0b';
+  const presets = isC6 ? ['Behavioral Course', 'Training Room', 'Discord', 'Hall'] : ['HQ', 'Discord', 'Hall', 'N/A'];
+
+  return (
+    <div style={{
+      background: isC6 ? 'rgba(168, 85, 247, 0.06)' : 'rgba(245, 158, 11, 0.05)',
+      padding: '14px',
+      borderRadius: '10px',
+      border: `1px solid ${isC6 ? 'rgba(168, 85, 247, 0.3)' : 'rgba(245, 158, 11, 0.25)'}`,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: accent, fontWeight: 'bold', fontSize: '0.9rem' }}>
+        <Clock size={16} />
+        <span>{isC6 ? 'Behavioral Course Schedule Parameters' : 'Detention Schedule Parameters'}</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#d1d5db' }}>
+            {isC6 ? 'Course Location / Format *' : 'Location on C4 (Replaces "Hall") *'}
+          </label>
+          <span style={{ fontSize: '0.72rem', color: accent, fontWeight: '600' }}>Editable</span>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '4px' }}>
+          {presets.map(loc => (
+            <button
+              key={loc}
+              type="button"
+              onClick={() => onLocationChange(loc)}
+              style={{
+                padding: '3px 8px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                border: '1px solid',
+                borderColor: locationValue === loc ? accent : 'rgba(255,255,255,0.1)',
+                background: locationValue === loc ? (isC6 ? 'rgba(168, 85, 247, 0.22)' : 'rgba(245, 158, 11, 0.2)') : 'rgba(255,255,255,0.05)',
+                color: locationValue === loc ? accent : '#d1d5db',
+                cursor: 'pointer'
+              }}
+            >
+              {loc}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          required
+          value={locationValue}
+          onChange={e => onLocationChange(e.target.value)}
+          placeholder={isC6 ? 'e.g. Behavioral Course, Training Room' : 'e.g. HQ, Discord, Hall, N/A'}
+          className="input-field"
+        />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#d1d5db' }}>Scheduled Date *</label>
+          <input
+            type="date"
+            required
+            value={dateValue}
+            onChange={e => onDateChange(e.target.value)}
+            className="input-field"
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: '600', color: '#d1d5db' }}>Time Slot (Starts 17:15)</label>
+          <input
+            type="text"
+            value={timeValue}
+            onChange={e => onTimeChange(e.target.value)}
+            placeholder={isC6 ? 'e.g. 17:15 - 18:00' : 'e.g. 17:15 - 17:35'}
+            className="input-field"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function computeStaffConsequenceStats(staffEmail, infractions = [], informalSanctions = [], additionalNewType = null) {
   if (!staffEmail) {
     return {
@@ -133,6 +249,7 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
       c3Count: 0,
       c4Count: 0,
       c5Count: 0,
+      c6Count: 0,
       totalCount: 0,
       previousPoints: 0,
       pointsAdded: 0,
@@ -153,13 +270,17 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
   let c3 = staffLogs.filter(inf => inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')).length + staffInformal.length;
   let c4 = staffLogs.filter(inf => inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')).length;
   let c5 = staffLogs.filter(inf => inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')).length;
+  let c6 = staffLogs.filter(inf => isC6Consequence(inf.type)).length;
 
-  const previousPoints = (c1 * 1) + (c2 * 2) + (genericWarn * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5);
+  const previousPoints = (c1 * 1) + (c2 * 2) + (genericWarn * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5) + (c6 * 6);
 
   let pointsAdded = 0;
   if (additionalNewType) {
     const t = additionalNewType;
-    if (t.startsWith('C5') || t.toLowerCase().includes('suspension')) {
+    if (isC6Consequence(t)) {
+      c6 += 1;
+      pointsAdded = 6;
+    } else if (t.startsWith('C5') || t.toLowerCase().includes('suspension')) {
       c5 += 1;
       pointsAdded = 5;
     } else if (t.startsWith('C4') || t.toLowerCase().includes('detention')) {
@@ -178,8 +299,8 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
   }
 
   const c1c2CombinedCount = c1 + c2 + genericWarn;
-  const totalCount = c1c2CombinedCount + c3 + c4 + c5;
-  const totalPoints = (c1 * 1) + (c2 * 2) + (genericWarn * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5);
+  const totalCount = c1c2CombinedCount + c3 + c4 + c5 + c6;
+  const totalPoints = (c1 * 1) + (c2 * 2) + (genericWarn * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5) + (c6 * 6);
   const thresholdLimit = 35;
   const thresholdPercent = Math.min(100, Math.max(2, Math.round((totalPoints / thresholdLimit) * 100)));
   const isTerminated = totalPoints >= thresholdLimit;
@@ -193,6 +314,7 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
     c3Count: c3,
     c4Count: c4,
     c5Count: c5,
+    c6Count: c6,
     totalCount,
     previousPoints,
     pointsAdded,
@@ -223,16 +345,17 @@ export default function ConsequenceLoggedModal({
   const roleDisplay = targetUser?.customRole || targetUser?.siteRole || 'Staff Member';
 
   const type = loggedConsequence?.type || 'Consequence';
+  const isC6 = isC6Consequence(type);
   const isC5 = type.startsWith('C5') || type.toLowerCase().includes('suspension');
   const isC4 = type.startsWith('C4') || type.toLowerCase().includes('detention');
   const isC3 = type.startsWith('C3') || type.toLowerCase().includes('informal');
   const isC2 = type.startsWith('C2');
 
-  const tierColor = isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : isC2 ? '#3b82f6' : '#60a5fa';
-  const tierBg = isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
-  const tierBorder = isC5 ? 'rgba(239, 68, 68, 0.4)' : isC4 ? 'rgba(245, 158, 11, 0.4)' : isC3 ? 'rgba(234, 179, 8, 0.4)' : 'rgba(59, 130, 246, 0.4)';
+  const tierColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : isC2 ? '#3b82f6' : '#60a5fa';
+  const tierBg = isC6 ? 'rgba(168, 85, 247, 0.15)' : isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
+  const tierBorder = isC6 ? 'rgba(168, 85, 247, 0.4)' : isC5 ? 'rgba(239, 68, 68, 0.4)' : isC4 ? 'rgba(245, 158, 11, 0.4)' : isC3 ? 'rgba(234, 179, 8, 0.4)' : 'rgba(59, 130, 246, 0.4)';
 
-  const pointsBadgeColor = isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#60a5fa';
+  const pointsBadgeColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#60a5fa';
 
   const totalPoints = stats?.totalPoints ?? 0;
   const previousPoints = stats?.previousPoints ?? 0;
@@ -331,9 +454,11 @@ export default function ConsequenceLoggedModal({
           </div>
 
           {loggedConsequence?.detentionLocation && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontSize: '0.85rem', color: '#fcd34d' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
               <Clock size={14} />
-              <span><strong>Detention Location:</strong> {loggedConsequence.detentionLocation} &bull; {loggedConsequence.detentionTime || '14:55'} &bull; {loggedConsequence.detentionDate || 'Scheduled'}</span>
+              <span>
+                <strong>{isC6 ? 'Behavioral Course' : 'Detention Location'}:</strong> {loggedConsequence.detentionLocation} &bull; {formatUpcomingSanctionTime(loggedConsequence.detentionTime, type)} &bull; {loggedConsequence.detentionDate || 'Scheduled'}
+              </span>
             </div>
           )}
 
@@ -527,6 +652,20 @@ export default function ConsequenceLoggedModal({
               </div>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
                 2-Day / 7-Day / Custom ({(stats?.c5Count ?? 0) * 5} pts)
+              </div>
+            </div>
+
+            {/* C6 Behavioral Courses */}
+            <div style={{ ...modalStyles.breakdownCard, borderColor: 'rgba(168, 85, 247, 0.35)' }}>
+              <div style={modalStyles.breakdownCardHeader}>
+                <span style={{ color: '#d8b4fe', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>C6 Course</span>
+                <span style={modalStyles.pillPurple}>6 pts each</span>
+              </div>
+              <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#a855f7', margin: '4px 0' }}>
+                {stats?.c6Count ?? 0}
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                Behavioral Course ({(stats?.c6Count ?? 0) * 6} pts)
               </div>
             </div>
           </div>
@@ -773,6 +912,14 @@ const modalStyles = {
     fontWeight: '700',
     background: 'rgba(239, 68, 68, 0.2)',
     color: '#fca5a5',
+    padding: '2px 6px',
+    borderRadius: '4px',
+  },
+  pillPurple: {
+    fontSize: '0.68rem',
+    fontWeight: '700',
+    background: 'rgba(168, 85, 247, 0.2)',
+    color: '#d8b4fe',
     padding: '2px 6px',
     borderRadius: '4px',
   },
