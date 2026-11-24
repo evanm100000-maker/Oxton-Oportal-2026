@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Briefcase,
   Scale,
+  AlertTriangle,
   Sparkles,
   Clock,
   Lock,
@@ -17,85 +18,136 @@ import {
   LogOut
 } from 'lucide-react';
 
-const PAGE_LOCK_SECONDS = 15;
+const PAGE_LOCK_SECONDS = 10;
 
 export const REHAB_PAGES = [
   {
     id: 'respect',
-    title: 'Respect',
-    subtitle: 'Courtesy, Composure & Teamwork',
+    stepLabel: 'Respect',
+    title: 'Respect & Workplace Conduct',
+    subtitle: 'Maintaining courtesy, patience, and composure with everyone',
     icon: HeartHandshake,
-    color: '#38bdf8',
-    bg: 'rgba(56, 189, 248, 0.14)',
-    border: 'rgba(56, 189, 248, 0.35)',
-    body: 'I will show complete respect to passengers, staff, and management at Oxton Airways. Respect means speaking politely, controlling my tone of voice, and listening to instructions without arguing. I understand that disrespect degrades the flight environment and damages our team spirit, so I am committed to handling every interaction with courtesy and professionalism.',
-    keyTakeaway: 'Treat passengers, peers, and supervisors with courtesy and listen without arguing.'
+    accent: '#38bdf8',
+    accentSoft: 'rgba(56, 189, 248, 0.12)',
+    accentBorder: 'rgba(56, 189, 248, 0.32)',
+    body: 'Every smooth operation at Luma Airways starts with how we treat the people around us. Passengers, fellow crew members, and supervisors all deserve calm, polite, and patient communication—especially when situations get tense. Disagreeing respectfully and listening to direction without pushback keeps flights welcoming and preserves a healthy team culture.',
+    standards: [
+      'Speak calmly and professionally in every interaction, even under pressure.',
+      'Listen to instructions from supervisors without arguing or escalating tension.',
+      'Treat passengers and teammates with consistent courtesy at all times.'
+    ]
   },
   {
     id: 'accountability',
-    title: 'Accountability',
-    subtitle: 'Owning Mistakes & Growing',
+    stepLabel: 'Accountability',
+    title: 'Accountability & Ownership',
+    subtitle: 'Owning decisions honestly and acting on feedback',
     icon: CheckCircle2,
-    color: '#a78bfa',
-    bg: 'rgba(167, 139, 250, 0.14)',
-    border: 'rgba(167, 139, 250, 0.35)',
-    body: 'I am fully accountable for my own actions, choices, and mistakes while on duty at Oxton Airways. Accountability means taking ownership when I mess up instead of making excuses, pointing fingers, or lying to supervisors. I understand that admitting my mistakes is necessary for growth, and I commit to accepting constructive feedback and correcting my behavior immediately.',
-    keyTakeaway: 'Take honest ownership of mistakes and act on constructive feedback right away.'
-  },
-  {
-    id: 'determination',
-    title: 'Determination',
-    subtitle: 'Effort & Resilience Under Pressure',
-    icon: Target,
-    color: '#f59e0b',
-    bg: 'rgba(245, 158, 11, 0.14)',
-    border: 'rgba(245, 158, 11, 0.35)',
-    body: 'I will remain determined and put full effort into every shift, flight operation, and assigned task. Determination means staying focused at my post, upholding high service standards even during busy flights, and not giving up when situations become challenging. I commit to showing up with energy and dedicating my best effort to help Oxton Airways succeed.',
-    keyTakeaway: 'Stay focused, bring full effort to every shift, and uphold standards during busy flights.'
+    accent: '#a78bfa',
+    accentSoft: 'rgba(167, 139, 250, 0.12)',
+    accentBorder: 'rgba(167, 139, 250, 0.32)',
+    body: 'Mistakes happen, but how you respond to them defines your character as a staff member. At Luma Airways, accountability means stepping up and owning what went wrong rather than shifting blame, making excuses, or withholding facts from leadership. Welcoming feedback and adjusting right away shows real maturity and keeps small errors from repeating.',
+    standards: [
+      'Acknowledge missteps openly instead of deflecting blame onto others.',
+      'Provide truthful, complete context when asked by management.',
+      'Apply constructive feedback immediately on your very next shift.'
+    ]
   },
   {
     id: 'responsibility',
-    title: 'Responsibility',
-    subtitle: 'Reliability & Role Standards',
+    stepLabel: 'Responsibility',
+    title: 'Responsibility & Reliability',
+    subtitle: 'Meeting daily operational expectations without reminders',
     icon: ClipboardCheck,
-    color: '#10b981',
-    bg: 'rgba(16, 185, 129, 0.14)',
-    border: 'rgba(16, 185, 129, 0.35)',
-    body: 'I am responsible for fulfilling all expectations of my staff role, including wearing the correct uniform, using proper grammar, and staying at my assigned station. Being responsible means being reliable so that my team and supervisors can count on me during flights. I commit to staying on top of my duties and carrying out my assignment without needing constant reminders.',
-    keyTakeaway: 'Follow uniform, grammar, and station expectations reliably without needing reminders.'
+    accent: '#10b981',
+    accentSoft: 'rgba(16, 185, 129, 0.12)',
+    accentBorder: 'rgba(16, 185, 129, 0.32)',
+    body: 'Your team depends on you to carry out your assigned role consistently. Responsibility means showing up prepared—in the proper uniform, using clear and proper grammar, and staying attentive at your station throughout operations. When every staff member handles their duties reliably, supervisors can focus on running great flights instead of chasing reminders.',
+    standards: [
+      'Wear the approved staff uniform and maintain clean, proper grammar.',
+      'Remain at your assigned post and stay engaged throughout each flight.',
+      'Complete assigned duties proactively without needing repeated prompts.'
+    ]
+  },
+  {
+    id: 'determination',
+    stepLabel: 'Determination',
+    title: 'Determination & Work Ethic',
+    subtitle: 'Bringing consistent focus and effort through busy operations',
+    icon: Target,
+    accent: '#f59e0b',
+    accentSoft: 'rgba(245, 158, 11, 0.12)',
+    accentBorder: 'rgba(245, 158, 11, 0.32)',
+    body: 'High-volume flights and unexpected delays test every crew. Determination is choosing to stay locked in, keep your service quality high, and push through challenging moments rather than checking out or giving minimum effort. Showing up with energy and commitment lifts the entire team and helps Luma Airways deliver a standout passenger experience.',
+    standards: [
+      'Give full effort across every briefing, shift, and flight assignment.',
+      'Stay steady and solution-focused when operations become demanding.',
+      'Support teammates actively so the crew succeeds together.'
+    ]
   },
   {
     id: 'professionalism',
-    title: 'Professionalism',
-    subtitle: 'Mature Conduct Everywhere',
+    stepLabel: 'Professionalism',
+    title: 'Professionalism Across All Spaces',
+    subtitle: 'Representing Luma Airways with maturity on and off duty',
     icon: Briefcase,
-    color: '#60a5fa',
-    bg: 'rgba(96, 165, 250, 0.14)',
-    border: 'rgba(96, 165, 250, 0.35)',
-    body: 'I will maintain strict professionalism at all times across all Oxton Airways airports, games, and communications. Professionalism means keeping my composure under pressure, avoiding drama, and representing the airline in a way that makes our community proud. I commit to keeping all public and private interactions mature, composed, and aligned with company guidelines.',
-    keyTakeaway: 'Keep composure under pressure, avoid drama, and represent Oxton Airways maturely.'
+    accent: '#60a5fa',
+    accentSoft: 'rgba(96, 165, 250, 0.12)',
+    accentBorder: 'rgba(96, 165, 250, 0.32)',
+    body: 'Whether you are in an airport server, on a flight, or chatting in staff channels, you represent Luma Airways. Professionalism means keeping personal drama out of the workplace, controlling how you react in public and private chats, and upholding company guidelines even when things feel frustrating.',
+    standards: [
+      'Keep all airport, in-game, and portal communications mature and composed.',
+      'Avoid gossip, public arguments, and unnecessary workplace drama.',
+      'Represent Luma Airways in a manner that reflects pride in our community.'
+    ]
   },
   {
     id: 'integrity',
-    title: 'Integrity',
-    subtitle: 'Honesty & Ethical Standards',
+    stepLabel: 'Integrity',
+    title: 'Integrity & Ethical Standards',
+    subtitle: 'Doing what is right even when nobody is watching',
     icon: Scale,
-    color: '#ec4899',
-    bg: 'rgba(236, 72, 153, 0.14)',
-    border: 'rgba(236, 72, 153, 0.35)',
-    body: 'I will act with total integrity and honesty in every aspect of my work at Oxton Airways, even when no supervisors are watching. Integrity means following all airline policies, being truthful in server reports, and never exploiting my staff power or privileges for personal gain. I commit to doing the right thing at all times and holding myself to the highest moral and ethical standard.',
-    keyTakeaway: 'Do the right thing even when unsupervised and never misuse staff permissions.'
+    accent: '#ec4899',
+    accentSoft: 'rgba(236, 72, 153, 0.12)',
+    accentBorder: 'rgba(236, 72, 153, 0.32)',
+    body: 'Trust is earned through consistent honesty. Integrity means following airline rules even when no supervisor is nearby, logging accurate information in reports and registers, and never using staff tools or permissions for personal benefit. Upholding ethical standards protects both our passengers and the credibility of the entire staff team.',
+    standards: [
+      'Follow every policy consistently, whether supervised or working independently.',
+      'Submit truthful, accurate details in all logs and incident reports.',
+      'Never misuse staff authority, tools, or privileges for personal gain.'
+    ]
+  },
+  {
+    id: 'consequences',
+    stepLabel: 'Consequences',
+    title: 'Rule Breaking Adds Up',
+    subtitle: 'Understanding how repeated infractions affect your standing',
+    icon: AlertTriangle,
+    accent: '#ef4444',
+    accentSoft: 'rgba(239, 68, 68, 0.12)',
+    accentBorder: 'rgba(239, 68, 68, 0.35)',
+    body: 'No rule violation exists in isolation. Under Luma Airways policy, each consequence—from C1/C2 warnings and C3 informal sanctions to C4 detentions and C5 suspensions—adds weighted points to your permanent staff record. Reaching 35 consequence points results in automatic dismissal from the staff team, and repeated infractions also impact supervisor trust and promotion eligibility. Taking accountability now prevents small habits from costing you your role.',
+    standards: [
+      'Every logged consequence stays on record and adds toward the 35-point termination limit.',
+      'Repeated rule breaking escalates penalties from warnings to detentions and suspensions.',
+      'Protect your future on the team by correcting patterns early and following guidelines.'
+    ]
   },
   {
     id: 'reflection',
-    title: 'Reflection & Agreement',
-    subtitle: 'Commitment Moving Forward',
+    stepLabel: 'Agreement',
+    title: 'Reflection & Reinstatement Agreement',
+    subtitle: 'Acknowledging lessons learned and committing to a fresh start',
     icon: Sparkles,
-    color: '#34d399',
-    bg: 'rgba(52, 211, 153, 0.14)',
-    border: 'rgba(52, 211, 153, 0.35)',
-    body: 'I understand that my actions were wrong and will strive to be my best self in everything that I do within Oxton Airways.',
-    keyTakeaway: 'Reflect honestly, learn from the past, and commit to being your best going forward.',
+    accent: '#34d399',
+    accentSoft: 'rgba(52, 211, 153, 0.12)',
+    accentBorder: 'rgba(52, 211, 153, 0.35)',
+    body: 'Returning from a suspension is an opportunity to reset and prove your reliability. Before stepping back into active service, take a moment to reflect honestly on the behavior that led here and commit to holding yourself to Luma Airways standards moving forward.',
+    standards: [
+      'I recognize why my previous actions fell short of Luma Airways expectations.',
+      'I commit to applying Respect, Accountability, Responsibility, and Integrity on every shift.',
+      'I am determined to contribute positively and be my best self going forward.'
+    ],
     isFinal: true
   }
 ];
@@ -153,7 +205,7 @@ export default function RehabilitationScreen() {
     e.preventDefault();
     if (!isPageUnlocked) return;
     if (!agreed) {
-      setErrorMsg('Please confirm the agreement checkbox before signing.');
+      setErrorMsg('Please check the confirmation box before signing.');
       return;
     }
     if (!signature.trim() || signature.trim().length < 2) {
@@ -164,104 +216,141 @@ export default function RehabilitationScreen() {
   };
 
   const staffFullName = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || currentUser?.robloxUsername || 'Staff Member';
+  const todayFormatted = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   const timerPercent = Math.round(((PAGE_LOCK_SECONDS - secondsLeft) / PAGE_LOCK_SECONDS) * 100);
-  const overallPercent = Math.round(((currentPageIndex + (isPageUnlocked ? 1 : 0)) / REHAB_PAGES.length) * 100);
+  const completedCount = completedPages.length;
+  const overallPercent = Math.round((completedCount / REHAB_PAGES.length) * 100);
 
   return (
     <div style={styles.container}>
-      <div className="glass-panel" style={styles.card}>
-        {/* Top Header */}
-        <div style={styles.topHeader}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={styles.headerBadgeIcon}>
-              <ShieldCheck size={24} color="#34d399" />
+      <div className="glass-panel-glow" style={styles.shell}>
+        {/* Top Progress Strip */}
+        <div style={styles.topProgressStrip}>
+          <div style={{ ...styles.topProgressFill, width: `${overallPercent}%` }} />
+        </div>
+
+        {/* Executive Header */}
+        <div style={styles.header}>
+          <div style={styles.brandRow}>
+            <div style={styles.logoWrap}>
+              <img src="./logo.png" alt="Luma Airways" style={styles.logoImg} />
             </div>
             <div>
-              <span style={styles.kicker}>Post-Suspension Rehabilitation Meeting</span>
-              <h1 style={styles.mainTitle}>Welcome Back, {currentUser?.firstName || 'Staff'}</h1>
+              <div style={styles.badgeRow}>
+                <span style={styles.docBadge}>Luma Airways · Staff Reinstatement</span>
+                <span style={styles.stepCountBadge}>
+                  Module {currentPageIndex + 1} / {REHAB_PAGES.length}
+                </span>
+              </div>
+              <h1 style={styles.mainTitle}>Rehabilitation & Conduct Briefing</h1>
             </div>
           </div>
+
           <button type="button" onClick={logout} className="btn-secondary" style={styles.logoutBtn}>
-            <LogOut size={15} /> Sign Out
+            <LogOut size={15} />
+            <span>Sign Out</span>
           </button>
         </div>
 
-        <p style={styles.introText}>
-          Your suspension has ended. Before returning to active duty at <strong>Oxton Airways</strong>, please read each core standard below carefully. Each page requires a <strong>15-second review</strong> before you can continue.
-        </p>
-
-        {/* Stepper / Progress Pills */}
-        <div style={styles.stepperWrapper}>
-          <div style={styles.stepperHeader}>
-            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8' }}>
-              Page {currentPageIndex + 1} of {REHAB_PAGES.length}: <strong style={{ color: page.color }}>{page.title}</strong>
-            </span>
-            <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#34d399' }}>
-              {overallPercent}% Complete
-            </span>
+        {/* Staff Context Bar */}
+        <div style={styles.contextBar}>
+          <div style={styles.contextItem}>
+            <span style={styles.contextLabel}>Staff Member</span>
+            <strong style={styles.contextValue}>{staffFullName}</strong>
           </div>
-          <div style={styles.stepsGrid}>
-            {REHAB_PAGES.map((p, idx) => {
-              const isDone = completedPages.includes(idx);
-              const isCurrent = idx === currentPageIndex;
-              const canJump = isDone || idx < currentPageIndex;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  disabled={!canJump}
-                  onClick={() => canJump && setCurrentPageIndex(idx)}
-                  title={p.title}
-                  style={{
-                    ...styles.stepPill,
-                    background: isCurrent ? p.bg : isDone ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255,255,255,0.04)',
-                    borderColor: isCurrent ? p.color : isDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255,255,255,0.08)',
-                    color: isCurrent ? p.color : isDone ? '#34d399' : '#64748b',
-                    cursor: canJump ? 'pointer' : 'not-allowed',
-                    opacity: !canJump && !isCurrent ? 0.6 : 1
-                  }}
-                >
-                  <span>{idx + 1}. {p.title.split(' ')[0]}</span>
-                </button>
-              );
-            })}
+          <div style={styles.contextDivider} />
+          <div style={styles.contextItem}>
+            <span style={styles.contextLabel}>Briefing Date</span>
+            <strong style={styles.contextValue}>{todayFormatted}</strong>
+          </div>
+          <div style={styles.contextDivider} />
+          <div style={styles.contextItem}>
+            <span style={styles.contextLabel}>Progress</span>
+            <strong style={{ ...styles.contextValue, color: '#34d399' }}>{completedCount} of {REHAB_PAGES.length} Completed</strong>
           </div>
         </div>
 
-        {/* Active Page Content */}
-        <div style={{ ...styles.pageBox, borderColor: page.border, background: 'rgba(15, 23, 42, 0.55)' }}>
-          <div style={styles.pageTitleRow}>
-            <div style={{ ...styles.pageIconCircle, background: page.bg, borderColor: page.border }}>
-              <PageIcon size={24} color={page.color} />
+        {/* Stepper Navigation Pills */}
+        <div style={styles.stepperGrid}>
+          {REHAB_PAGES.map((p, idx) => {
+            const isDone = completedPages.includes(idx);
+            const isCurrent = idx === currentPageIndex;
+            const canJump = isDone || idx < currentPageIndex;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                disabled={!canJump}
+                onClick={() => canJump && setCurrentPageIndex(idx)}
+                title={p.title}
+                style={{
+                  ...styles.stepPill,
+                  background: isCurrent
+                    ? p.accentSoft
+                    : isDone
+                      ? 'rgba(16, 185, 129, 0.1)'
+                      : 'rgba(148, 163, 184, 0.06)',
+                  borderColor: isCurrent
+                    ? p.accent
+                    : isDone
+                      ? 'rgba(16, 185, 129, 0.35)'
+                      : 'var(--color-border)',
+                  color: isCurrent ? p.accent : isDone ? '#34d399' : 'var(--color-text-muted)',
+                  cursor: canJump ? 'pointer' : 'not-allowed',
+                  opacity: !canJump && !isCurrent ? 0.55 : 1,
+                }}
+              >
+                <span style={{ opacity: 0.75 }}>{String(idx + 1).padStart(2, '0')}</span>
+                <span>{p.stepLabel}</span>
+                {isDone && !isCurrent && <CheckCircle2 size={12} />}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Active Module Card */}
+        <div style={{ ...styles.moduleCard, borderColor: page.accentBorder }}>
+          <div style={styles.moduleHeader}>
+            <div style={{ ...styles.moduleIconBox, background: page.accentSoft, borderColor: page.accentBorder }}>
+              <PageIcon size={24} color={page.accent} />
             </div>
-            <div>
-              <h2 style={{ ...styles.pageTitle, color: page.color }}>{page.title}</h2>
-              <div style={styles.pageSubtitle}>{page.subtitle}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: '800', letterSpacing: '0.08em', textTransform: 'uppercase', color: page.accent }}>
+                Section {String(currentPageIndex + 1).padStart(2, '0')} · {page.stepLabel}
+              </div>
+              <h2 style={styles.moduleTitle}>{page.title}</h2>
+              <p style={styles.moduleSubtitle}>{page.subtitle}</p>
             </div>
           </div>
 
-          <p style={styles.pageBody}>{page.body}</p>
+          <p style={styles.moduleBody}>{page.body}</p>
 
-          <div style={{ ...styles.takeawayBox, borderColor: page.border, background: page.bg }}>
-            <strong style={{ color: page.color, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Core Expectation
-            </strong>
-            <div style={{ color: '#e2e8f0', fontSize: '0.9rem', marginTop: '4px' }}>
-              {page.keyTakeaway}
+          {/* Key Commitments List */}
+          <div style={{ ...styles.standardsBox, borderColor: page.accentBorder, background: page.accentSoft }}>
+            <div style={{ fontSize: '0.76rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.06em', color: page.accent, marginBottom: '8px' }}>
+              Key Standards & Expectations
             </div>
+            <ul style={styles.standardsList}>
+              {page.standards.map((item, i) => (
+                <li key={i} style={styles.standardItem}>
+                  <span style={{ ...styles.bulletDot, background: page.accent }} />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </div>
 
-          {/* 15-Second Unskippable Timer Bar */}
-          <div style={styles.timerSection}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginBottom: '6px' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: isPageUnlocked ? '#34d399' : '#fbbf24', fontWeight: '700' }}>
+          {/* 10-Second Unskippable Timer */}
+          <div style={styles.timerBox}>
+            <div style={styles.timerMeta}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontWeight: '700', color: isPageUnlocked ? '#34d399' : '#fbbf24' }}>
                 {isPageUnlocked ? <CheckCircle2 size={15} /> : <Lock size={15} />}
                 {isPageUnlocked
-                  ? 'Review complete — you may proceed'
-                  : `Reading lock active — please wait ${secondsLeft}s`}
+                  ? 'Section reviewed — ready to continue'
+                  : `Mandatory review timer — ${secondsLeft}s remaining`}
               </span>
-              <span style={{ color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-                {isPageUnlocked ? '15s / 15s' : `${PAGE_LOCK_SECONDS - secondsLeft}s / ${PAGE_LOCK_SECONDS}s`}
+              <span style={{ color: 'var(--color-text-muted)', fontVariantNumeric: 'tabular-nums', fontWeight: '600' }}>
+                {isPageUnlocked ? `${PAGE_LOCK_SECONDS}s / ${PAGE_LOCK_SECONDS}s` : `${PAGE_LOCK_SECONDS - secondsLeft}s / ${PAGE_LOCK_SECONDS}s`}
               </span>
             </div>
             <div style={styles.timerTrack}>
@@ -269,26 +358,31 @@ export default function RehabilitationScreen() {
                 style={{
                   ...styles.timerFill,
                   width: `${timerPercent}%`,
-                  background: isPageUnlocked ? '#10b981' : page.color
+                  background: isPageUnlocked ? '#10b981' : page.accent
                 }}
               />
             </div>
           </div>
         </div>
 
-        {/* Final Agreement & Digital Signature on Last Page */}
-        {isLastPage && (
-          <form onSubmit={handleSubmitAgreement} style={styles.agreementBox}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: '700', fontSize: '0.95rem' }}>
-              <PenTool size={18} />
-              <span>Rehabilitation Agreement & Signature</span>
+        {/* Final Reinstatement Agreement & Signature */}
+        {isLastPage ? (
+          <form onSubmit={handleSubmitAgreement} style={styles.agreementCard}>
+            <div style={styles.agreementHeader}>
+              <PenTool size={18} color="#34d399" />
+              <div>
+                <h3 style={styles.agreementTitle}>Reinstatement Acknowledgement & Digital Signature</h3>
+                <p style={styles.agreementDesc}>Complete this sign-off after the review timer finishes to return to active duty.</p>
+              </div>
             </div>
 
-            <label style={{
-              ...styles.checkboxLabel,
-              opacity: isPageUnlocked ? 1 : 0.55,
-              cursor: isPageUnlocked ? 'pointer' : 'not-allowed'
-            }}>
+            <label
+              style={{
+                ...styles.checkboxLabel,
+                opacity: isPageUnlocked ? 1 : 0.55,
+                cursor: isPageUnlocked ? 'pointer' : 'not-allowed'
+              }}
+            >
               <input
                 type="checkbox"
                 disabled={!isPageUnlocked}
@@ -297,16 +391,16 @@ export default function RehabilitationScreen() {
                   setAgreed(e.target.checked);
                   setErrorMsg('');
                 }}
-                style={{ width: '18px', height: '18px', accentColor: '#10b981', flexShrink: 0 }}
+                style={{ width: '18px', height: '18px', accentColor: '#10b981', flexShrink: 0, marginTop: '2px' }}
               />
               <span>
-                I, <strong>{staffFullName}</strong>, confirm that I have read all rehabilitation pages, learned from my actions, and am determined to be my best in the future at Oxton Airways.
+                I, <strong>{staffFullName}</strong>, confirm that I have read every section of this briefing, learned from my past actions, understand that repeated infractions accumulate toward termination, and am determined to perform at my best at Luma Airways.
               </span>
             </label>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ fontSize: '0.84rem', fontWeight: '600', color: '#cbd5e1' }}>
-                Digital Signature (Type your full name) *
+              <label style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--color-text-main)' }}>
+                Full Name Signature *
               </label>
               <input
                 type="text"
@@ -317,15 +411,13 @@ export default function RehabilitationScreen() {
                   setSignature(e.target.value);
                   setErrorMsg('');
                 }}
-                placeholder={`Sign as ${staffFullName}`}
+                placeholder={`Type "${staffFullName}" to sign`}
                 className="input-field"
                 style={{ fontStyle: signature ? 'italic' : 'normal', fontSize: '1rem' }}
               />
             </div>
 
-            {errorMsg && (
-              <div style={styles.errorBox}>{errorMsg}</div>
-            )}
+            {errorMsg && <div style={styles.errorBox}>{errorMsg}</div>}
 
             <div style={styles.navFooter}>
               <button type="button" onClick={handlePrev} className="btn-secondary" style={styles.navBtn}>
@@ -347,16 +439,13 @@ export default function RehabilitationScreen() {
                   </>
                 ) : (
                   <>
-                    <ShieldCheck size={16} /> Sign Agreement & Continue
+                    <ShieldCheck size={16} /> Sign & Complete Reinstatement
                   </>
                 )}
               </button>
             </div>
           </form>
-        )}
-
-        {/* Navigation Footer for Pages 1..6 */}
-        {!isLastPage && (
+        ) : (
           <div style={styles.navFooter}>
             <button
               type="button"
@@ -385,7 +474,7 @@ export default function RehabilitationScreen() {
             >
               {isPageUnlocked ? (
                 <>
-                  <span>Next: {REHAB_PAGES[currentPageIndex + 1].title}</span>
+                  <span>Continue to {REHAB_PAGES[currentPageIndex + 1].stepLabel}</span>
                   <ArrowRight size={16} />
                 </>
               ) : (
@@ -408,106 +497,165 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '24px 16px',
+    padding: '28px 16px',
     background: 'var(--color-bg-deep)',
   },
-  card: {
-    maxWidth: '760px',
+  shell: {
+    maxWidth: '820px',
     width: '100%',
     padding: '28px',
     display: 'flex',
     flexDirection: 'column',
     gap: '20px',
+    position: 'relative',
+    overflow: 'hidden',
   },
-  topHeader: {
+  topProgressStrip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '4px',
+    background: 'rgba(148, 163, 184, 0.14)',
+  },
+  topProgressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, #38bdf8, #8b5cf6, #10b981)',
+    transition: 'width 0.4s ease',
+  },
+  header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '12px',
+    gap: '14px',
     flexWrap: 'wrap',
-    borderBottom: '1px solid rgba(255,255,255,0.08)',
-    paddingBottom: '16px',
   },
-  headerBadgeIcon: {
-    width: '46px',
-    height: '46px',
-    borderRadius: '12px',
-    background: 'rgba(16, 185, 129, 0.15)',
-    border: '1px solid rgba(16, 185, 129, 0.35)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  kicker: {
-    fontSize: '0.75rem',
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    color: '#34d399',
-    display: 'block',
-  },
-  mainTitle: {
-    fontSize: '1.5rem',
-    fontWeight: '800',
-    color: 'var(--color-text-main)',
-    margin: 0,
-  },
-  logoutBtn: {
-    padding: '8px 14px',
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '0.82rem',
-  },
-  introText: {
-    fontSize: '0.92rem',
-    color: '#cbd5e1',
-    lineHeight: '1.5',
-    margin: 0,
-  },
-  stepperWrapper: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-  stepperHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '8px',
-  },
-  stepsGrid: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-  },
-  stepPill: {
-    padding: '6px 10px',
-    borderRadius: '8px',
-    border: '1px solid',
-    fontSize: '0.76rem',
-    fontWeight: '700',
-    transition: 'all 0.2s ease',
-  },
-  pageBox: {
-    borderRadius: '14px',
-    border: '1px solid',
-    padding: '22px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  pageTitleRow: {
+  brandRow: {
     display: 'flex',
     alignItems: 'center',
     gap: '14px',
   },
-  pageIconCircle: {
+  logoWrap: {
     width: '48px',
     height: '48px',
+    borderRadius: '12px',
+    background: 'rgba(139, 92, 246, 0.12)',
+    border: '1px solid rgba(139, 92, 246, 0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '6px',
+    flexShrink: 0,
+  },
+  logoImg: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+  },
+  badgeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+    marginBottom: '4px',
+  },
+  docBadge: {
+    fontSize: '0.72rem',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: '0.07em',
+    color: '#34d399',
+  },
+  stepCountBadge: {
+    fontSize: '0.72rem',
+    fontWeight: '700',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    background: 'rgba(148, 163, 184, 0.14)',
+    color: 'var(--color-text-muted)',
+  },
+  mainTitle: {
+    fontSize: '1.45rem',
+    fontWeight: '800',
+    color: 'var(--color-text-main)',
+    margin: 0,
+    letterSpacing: '-0.02em',
+  },
+  logoutBtn: {
+    padding: '8px 14px',
+    borderRadius: '8px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '0.82rem',
+  },
+  contextBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: '12px',
+    padding: '12px 16px',
+    borderRadius: '12px',
+    background: 'rgba(148, 163, 184, 0.06)',
+    border: '1px solid var(--color-border)',
+  },
+  contextItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flex: '1 1 140px',
+  },
+  contextLabel: {
+    fontSize: '0.7rem',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    color: 'var(--color-text-muted)',
+  },
+  contextValue: {
+    fontSize: '0.9rem',
+    color: 'var(--color-text-main)',
+  },
+  contextDivider: {
+    width: '1px',
+    height: '28px',
+    background: 'var(--color-border)',
+  },
+  stepperGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+    gap: '8px',
+  },
+  stepPill: {
+    padding: '7px 10px',
+    borderRadius: '8px',
+    border: '1px solid',
+    fontSize: '0.75rem',
+    fontWeight: '700',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    transition: 'all 0.2s ease',
+  },
+  moduleCard: {
+    borderRadius: '14px',
+    border: '1px solid',
+    padding: '24px',
+    background: 'rgba(148, 163, 184, 0.04)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '18px',
+  },
+  moduleHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+  },
+  moduleIconBox: {
+    width: '50px',
+    height: '50px',
     borderRadius: '12px',
     border: '1px solid',
     display: 'flex',
@@ -515,35 +663,68 @@ const styles = {
     justifyContent: 'center',
     flexShrink: 0,
   },
-  pageTitle: {
-    fontSize: '1.35rem',
+  moduleTitle: {
+    fontSize: '1.3rem',
     fontWeight: '800',
+    color: 'var(--color-text-main)',
+    margin: '2px 0',
+  },
+  moduleSubtitle: {
+    fontSize: '0.86rem',
+    color: 'var(--color-text-muted)',
     margin: 0,
   },
-  pageSubtitle: {
-    fontSize: '0.85rem',
-    color: '#94a3b8',
-    marginTop: '2px',
-  },
-  pageBody: {
-    fontSize: '1.02rem',
-    color: '#f1f5f9',
-    lineHeight: '1.68',
+  moduleBody: {
+    fontSize: '0.98rem',
+    color: 'var(--color-text-main)',
+    lineHeight: '1.7',
     margin: 0,
   },
-  takeawayBox: {
-    padding: '12px 14px',
-    borderRadius: '10px',
+  standardsBox: {
+    padding: '14px 16px',
+    borderRadius: '12px',
     border: '1px solid',
   },
-  timerSection: {
-    marginTop: '4px',
+  standardsList: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  standardItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    fontSize: '0.89rem',
+    color: 'var(--color-text-main)',
+    lineHeight: '1.45',
+  },
+  bulletDot: {
+    width: '7px',
+    height: '7px',
+    borderRadius: '50%',
+    marginTop: '7px',
+    flexShrink: 0,
+  },
+  timerBox: {
+    paddingTop: '4px',
+  },
+  timerMeta: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontSize: '0.8rem',
+    marginBottom: '8px',
+    gap: '8px',
+    flexWrap: 'wrap',
   },
   timerTrack: {
     width: '100%',
-    height: '8px',
+    height: '7px',
     borderRadius: '999px',
-    background: 'rgba(255,255,255,0.08)',
+    background: 'rgba(148, 163, 184, 0.16)',
     overflow: 'hidden',
   },
   timerFill: {
@@ -551,29 +732,45 @@ const styles = {
     borderRadius: '999px',
     transition: 'width 0.35s ease',
   },
-  agreementBox: {
-    padding: '20px',
+  agreementCard: {
+    padding: '22px',
     borderRadius: '14px',
-    background: 'rgba(16, 185, 129, 0.08)',
+    background: 'rgba(16, 185, 129, 0.07)',
     border: '1px solid rgba(16, 185, 129, 0.3)',
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
+  },
+  agreementHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+  },
+  agreementTitle: {
+    margin: 0,
+    fontSize: '1rem',
+    fontWeight: '800',
+    color: '#34d399',
+  },
+  agreementDesc: {
+    margin: '2px 0 0 0',
+    fontSize: '0.82rem',
+    color: 'var(--color-text-muted)',
   },
   checkboxLabel: {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '10px',
     fontSize: '0.9rem',
-    color: '#e2e8f0',
-    lineHeight: '1.45',
+    color: 'var(--color-text-main)',
+    lineHeight: '1.5',
   },
   errorBox: {
     padding: '10px 12px',
     borderRadius: '8px',
-    background: 'rgba(239, 68, 68, 0.15)',
+    background: 'rgba(239, 68, 68, 0.14)',
     border: '1px solid rgba(239, 68, 68, 0.4)',
-    color: '#fca5a5',
+    color: '#ef4444',
     fontSize: '0.84rem',
     fontWeight: '600',
   },
@@ -587,7 +784,7 @@ const styles = {
   navBtn: {
     padding: '10px 16px',
     borderRadius: '10px',
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
     fontWeight: '600',
@@ -595,7 +792,7 @@ const styles = {
   nextBtn: {
     padding: '10px 20px',
     borderRadius: '10px',
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
     fontWeight: '700',
@@ -604,7 +801,7 @@ const styles = {
   submitBtn: {
     padding: '11px 22px',
     borderRadius: '10px',
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
     fontWeight: '700',
