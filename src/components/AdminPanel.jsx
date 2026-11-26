@@ -2131,7 +2131,7 @@ export default function AdminPanel() {
                     value={adminRequiredVersion}
                     onChange={e => setAdminRequiredVersion(e.target.value)}
                     className="input-field"
-                    placeholder="2.1.57"
+                    placeholder="2.1.58"
                   />
                 </div>
                 <button

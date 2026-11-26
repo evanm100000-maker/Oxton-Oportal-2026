@@ -19,7 +19,9 @@ const escapeEmail = (email) => (email ? email.toLowerCase().trim().replace(/\./g
 const unescapeEmail = (email) => (email ? email.replace(/,/g, '.') : '');
 
 export const BOARD_TIERS = [
-  { key: 'c1_c3', label: 'C1-C3', color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.2)', border: 'rgba(59, 130, 246, 0.5)' },
+  { key: 'c1', label: 'C1', color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.2)', border: 'rgba(59, 130, 246, 0.5)' },
+  { key: 'c2', label: 'C2', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.2)', border: 'rgba(56, 189, 248, 0.5)' },
+  { key: 'c3', label: 'C3', color: '#eab308', bg: 'rgba(234, 179, 8, 0.2)', border: 'rgba(234, 179, 8, 0.5)' },
   { key: 'c4a', label: 'C4A', color: '#fbbf24', bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)' },
   { key: 'c4b', label: 'C4B', color: '#fb923c', bg: 'rgba(249, 115, 22, 0.2)', border: 'rgba(249, 115, 22, 0.5)' },
   { key: 'c5', label: 'C5', color: '#f87171', bg: 'rgba(239, 68, 68, 0.2)', border: 'rgba(239, 68, 68, 0.5)' },
@@ -342,7 +344,7 @@ export default function ConsequenceBoardModal({ isOpen, onClose }) {
                     <tr style={styles.trHead}>
                       <th style={styles.th}>Allocated Staff Member</th>
                       {BOARD_TIERS.map(tier => (
-                        <th key={tier.key} style={{ ...styles.th, textAlign: 'center', color: tier.color, width: '92px' }}>
+                        <th key={tier.key} style={{ ...styles.th, textAlign: 'center', color: tier.color, width: '72px' }}>
                           {tier.label}
                         </th>
                       ))}
@@ -412,7 +414,7 @@ const styles = {
   },
   modal: {
     width: '100%',
-    maxWidth: '880px',
+    maxWidth: '940px',
     maxHeight: '90vh',
     display: 'flex',
     flexDirection: 'column',
