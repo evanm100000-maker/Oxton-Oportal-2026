@@ -1,4 +1,4 @@
-export const CURRENT_APP_VERSION = '2.1.56';
+export const CURRENT_APP_VERSION = '2.1.57';
 
 /**
  * Normalizes a version string by stripping leading 'v' or 'V' and whitespace.

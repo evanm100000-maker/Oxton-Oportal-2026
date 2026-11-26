@@ -12,6 +12,7 @@ import ConsequenceLoggedModal, {
   CustomSuspensionFields,
   SanctionScheduleFields
 } from './ConsequenceLoggedModal';
+import ConsequenceBoardModal from './ConsequenceBoardModal';
 import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
@@ -195,6 +196,7 @@ export default function AdminPanel() {
   // Consequence count summary UI modal for admin
   const [showLoggedSummaryModal, setShowLoggedSummaryModal] = useState(false);
   const [loggedSummaryData, setLoggedSummaryData] = useState(null);
+  const [showConsequenceBoard, setShowConsequenceBoard] = useState(false);
 
   // Detention Register states
   const [detentionDateFilter, setDetentionDateFilter] = useState(() => new Date().toISOString().split('T')[0]);
@@ -810,9 +812,19 @@ export default function AdminPanel() {
                 style={{ width: '100%' }} 
               />
             </div>
-            <button type="button" className="btn-danger" onClick={() => setShowInfractionModal(true)} style={{padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'}}>
-              <ShieldAlert size={16} /> Log New Consequence
-            </button>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setShowConsequenceBoard(true)}
+                style={{ padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
+              >
+                <ClipboardList size={16} /> Consequence Board
+              </button>
+              <button type="button" className="btn-danger" onClick={() => setShowInfractionModal(true)} style={{padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap'}}>
+                <ShieldAlert size={16} /> Log New Consequence
+              </button>
+            </div>
           </div>
 
           
@@ -2119,7 +2131,7 @@ export default function AdminPanel() {
                     value={adminRequiredVersion}
                     onChange={e => setAdminRequiredVersion(e.target.value)}
                     className="input-field"
-                    placeholder="2.1.56"
+                    placeholder="2.1.57"
                   />
                 </div>
                 <button
@@ -3040,6 +3052,12 @@ export default function AdminPanel() {
         loggedConsequence={loggedSummaryData?.loggedConsequence}
         stats={loggedSummaryData?.stats}
         onViewAll={() => setActiveSubTab('infractions')}
+      />
+
+      {/* Modal: Live Flight Consequence Board */}
+      <ConsequenceBoardModal
+        isOpen={showConsequenceBoard}
+        onClose={() => setShowConsequenceBoard(false)}
       />
 
       {/* Reschedule Detention Modal */}

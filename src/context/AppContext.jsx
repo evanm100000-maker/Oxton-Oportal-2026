@@ -2368,6 +2368,42 @@ export const AppProvider = ({ children }) => {
     logAction('flight_attendance_marked', `Marked ${email} as ${status} on flight ${flightId}`, { flightId, email, status });
   };
 
+  const toggleConsequenceBoardTick = (flightId, staffEmail, tierKey) => {
+    if (!flightId || !staffEmail || !tierKey) return;
+    const safeEmail = staffEmail.toLowerCase().trim().replace(/\./g, ',');
+    const targetFlight = (flights || []).find(f => f && (f.id === flightId || f._firebaseKey === flightId));
+    if (!targetFlight) return;
+
+    const currentBoard = targetFlight.consequenceBoard || {};
+    const rawSafe = staffEmail.replace(/\./g, ',');
+    const currentStaffEntry = currentBoard[safeEmail] || currentBoard[rawSafe] || currentBoard[staffEmail] || {};
+    const nextChecked = !Boolean(currentStaffEntry[tierKey]);
+    const nowIso = new Date().toISOString();
+
+    const patch = {
+      [tierKey]: nextChecked,
+      [`${tierKey}UpdatedBy`]: currentUser?.email || 'Admin',
+      [`${tierKey}UpdatedAt`]: nowIso
+    };
+    const mergedEntry = { ...currentStaffEntry, ...patch };
+
+    const fbKey = targetFlight._firebaseKey || targetFlight.id || flightId;
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `flights/${fbKey}/consequenceBoard/${safeEmail}`), patch)
+      .catch(err => console.error('Failed to sync consequence board tick to Firebase:', err));
+
+    setFlights(prev => (prev || []).map(f => {
+      if (!f || (f.id !== flightId && f._firebaseKey !== fbKey)) return f;
+      return {
+        ...f,
+        consequenceBoard: {
+          ...(f.consequenceBoard || {}),
+          [safeEmail]: mergedEntry
+        }
+      };
+    }));
+  };
+
   const submitFlightRegister = (flightId, customAttendanceRecord = null) => {
     const nowIso = new Date().toISOString();
     let targetFlight = null;
@@ -3619,6 +3655,7 @@ useEffect(() => {
           logAction('emergency_alert_cleared', 'Cleared emergency alert');
         },
         markFlightAttendance,
+        toggleConsequenceBoardTick,
         submitFlightRegister,
         reopenFlightRegister,
         resetAllFlightQuotas,

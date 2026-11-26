@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import fs from 'fs'
 
 const BUILD_TIME = Date.now();
-const APP_VERSION = '2.1.56';
+const APP_VERSION = '2.1.57';
 
 // Plugin to write public/version.json on build
 function versionEmitterPlugin() {
