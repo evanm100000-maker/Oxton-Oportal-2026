@@ -1,100 +1,473 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { ShieldAlert, History, Lock, Trash2, ShieldCheck, Clock, Plus, X, Search, AlertTriangle, Flame, Edit3, BookOpen } from 'lucide-react';
+import { normalizeAppealStatus } from '../utils/appealUtils';
+import {
+  ShieldAlert,
+  History,
+  Lock,
+  Trash2,
+  ShieldCheck,
+  Clock,
+  Plus,
+  Search,
+  AlertTriangle,
+  Flame,
+  Edit3,
+  BookOpen,
+  MessageSquare,
+} from 'lucide-react';
 import ConsequenceLoggedModal, {
   computeStaffConsequenceStats,
-  C5_OPTIONS,
-  C6_OPTION,
+  computeAllStaffConsequenceStatsMap,
   isC6Consequence,
   isScheduledSanctionType,
   formatUpcomingSanctionTime,
-  resolveC5Suspension,
-  CustomSuspensionFields,
-  SanctionScheduleFields
 } from './ConsequenceLoggedModal';
 import BehavioralCourseModal from './BehavioralCourseModal';
+import LogConsequenceModal from './LogConsequenceModal';
+import AppealSection from './AppealSection';
+
+function parseCategoryAndMessage(raw) {
+  const text = String(raw || '').trim();
+  const match = text.match(/^\[([^\]]+)\]\s*(.*)$/s);
+  if (match) {
+    return { category: match[1].trim(), message: match[2].trim() };
+  }
+  return { category: null, message: text };
+}
+
+function getTierMeta(type, isInformal = false) {
+  if (isC6Consequence(type)) {
+    return {
+      label: type || 'C6 - Behavioral Course',
+      color: '#c084fc',
+      bg: 'rgba(168, 85, 247, 0.14)',
+      border: 'rgba(168, 85, 247, 0.35)',
+      accent: '#a855f7',
+      points: 6,
+    };
+  }
+  if (type?.startsWith('C5') || type?.toLowerCase().includes('suspension')) {
+    return {
+      label: type || 'C5 Suspension',
+      color: '#f87171',
+      bg: 'rgba(239, 68, 68, 0.14)',
+      border: 'rgba(239, 68, 68, 0.35)',
+      accent: '#ef4444',
+      points: 5,
+    };
+  }
+  if (type?.startsWith('C4') || type?.toLowerCase().includes('detention')) {
+    return {
+      label: type || 'C4 Detention',
+      color: '#fbbf24',
+      bg: 'rgba(245, 158, 11, 0.14)',
+      border: 'rgba(245, 158, 11, 0.35)',
+      accent: '#f59e0b',
+      points: 4,
+    };
+  }
+  if (isInformal || type?.startsWith('C3') || type?.toLowerCase().includes('informal')) {
+    return {
+      label: isInformal ? 'C3 Informal Sanction' : (type || 'C3 Informal Sanction'),
+      color: '#facc15',
+      bg: 'rgba(234, 179, 8, 0.14)',
+      border: 'rgba(234, 179, 8, 0.35)',
+      accent: '#eab308',
+      points: 3,
+    };
+  }
+  if (type?.startsWith('C2')) {
+    return {
+      label: type || 'C2 Warning',
+      color: '#38bdf8',
+      bg: 'rgba(56, 189, 248, 0.14)',
+      border: 'rgba(56, 189, 248, 0.35)',
+      accent: '#38bdf8',
+      points: 2,
+    };
+  }
+  return {
+    label: type || 'C1 Warning',
+    color: '#60a5fa',
+    bg: 'rgba(59, 130, 246, 0.14)',
+    border: 'rgba(59, 130, 246, 0.35)',
+    accent: '#3b82f6',
+    points: 1,
+  };
+}
+
+function formatSanctionDate(dateStr) {
+  if (!dateStr) return 'Upcoming';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return String(dateStr);
+  }
+}
+
+const InfractionCard = React.memo(function InfractionCard({
+  inf,
+  isAllView = false,
+  isAdminOrMod = false,
+  canDelete = false,
+  staffTotalPts = 0,
+  onDelete,
+  onAppealSubmit,
+  onAppealReply,
+  onAppealStatusChange,
+  onUpdateLocation,
+  onToggleCourseAccess,
+  onOpenCourse,
+  onNotifySuccess,
+}) {
+  const [isAppealing, setIsAppealing] = useState(false);
+  const [appealDraft, setAppealDraft] = useState('');
+  const [isEditingLocation, setIsEditingLocation] = useState(false);
+  const [locationDraft, setLocationDraft] = useState(inf.detentionLocation || 'Hall');
+
+  const isInformal = !inf.type && Boolean(inf.reason);
+  const tier = getTierMeta(inf.type, isInformal);
+  const isC6 = isC6Consequence(inf.type);
+  const isC4 = Boolean(inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention'));
+  const { category, message } = parseCategoryAndMessage(isInformal ? inf.reason : inf.mainMessage);
+  const infKey = inf.id || inf._firebaseKey;
+
+  const handleAppealFormSubmit = (e) => {
+    e.preventDefault();
+    const cleaned = appealDraft.trim();
+    if (!cleaned) return;
+    onAppealSubmit(infKey, cleaned);
+    setAppealDraft('');
+    setIsAppealing(false);
+  };
+
+  return (
+    <article
+      style={{
+        ...styles.card,
+        borderLeft: `4px solid ${tier.accent}`,
+      }}
+    >
+      {/* Card Header */}
+      <div style={styles.cardHeader}>
+        <div style={styles.cardTitleGroup}>
+          {isAllView && (
+            <div style={styles.staffIdentity}>
+              <strong style={styles.staffName}>{inf.staffName || inf.staffEmail}</strong>
+              <span style={styles.staffEmail}>{inf.staffEmail}</span>
+              <span
+                style={{
+                  ...styles.totalPtsPill,
+                  color: staffTotalPts >= 30 ? '#f87171' : staffTotalPts >= 18 ? '#fbbf24' : '#93c5fd',
+                  borderColor: staffTotalPts >= 30 ? 'rgba(239, 68, 68, 0.35)' : staffTotalPts >= 18 ? 'rgba(245, 158, 11, 0.35)' : 'rgba(59, 130, 246, 0.3)',
+                  background: staffTotalPts >= 30 ? 'rgba(239, 68, 68, 0.12)' : staffTotalPts >= 18 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                }}
+              >
+                {staffTotalPts} / 35 pts
+              </span>
+            </div>
+          )}
+
+          <div style={styles.badgeRow}>
+            <span
+              style={{
+                ...styles.tierBadge,
+                background: tier.bg,
+                color: tier.color,
+                border: `1px solid ${tier.border}`,
+              }}
+            >
+              {tier.label}
+            </span>
+            <span style={styles.ptsChip}>+{tier.points} pt{tier.points === 1 ? '' : 's'}</span>
+            {category && <span style={styles.categoryChip}>{category}</span>}
+            {inf.isEscalation && <span style={styles.escalationChip}>Escalated</span>}
+          </div>
+        </div>
+
+        <div style={styles.cardMetaRight}>
+          <span style={styles.dateText}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(infKey, isInformal)}
+              className="btn-danger"
+              style={styles.deleteBtn}
+              title="Remove Consequence"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Reason / Details */}
+      <p style={styles.reasonText}>{message}</p>
+
+      {/* Scheduled Detention / Behavioral Course Strip */}
+      {(isC4 || isC6) && (
+        <div
+          style={{
+            ...styles.scheduleStrip,
+            background: isC6 ? 'rgba(168, 85, 247, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+            borderColor: isC6 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+          }}
+        >
+          <div style={styles.scheduleStripMain}>
+            <Clock size={15} color={isC6 ? '#c084fc' : '#f59e0b'} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '0.84rem', color: isC6 ? '#e9d5ff' : '#fde68a' }}>
+              <strong>{isC6 ? 'Behavioral Course' : 'Detention'}:</strong>{' '}
+              {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull;{' '}
+              {inf.detentionDate || 'Scheduled'} &bull;{' '}
+              {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
+            </span>
+
+            <div style={styles.scheduleActions}>
+              {isC6 && isAdminOrMod && inf.detentionStatus !== 'Passed' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextAllowed = !inf.courseUnlocked;
+                    onToggleCourseAccess(infKey, nextAllowed);
+                    onNotifySuccess(
+                      nextAllowed
+                        ? 'C6 Behavioral Course access allowed for staff member.'
+                        : 'C6 Behavioral Course access locked.'
+                    );
+                  }}
+                  className={inf.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
+                  style={styles.smallActionBtn}
+                >
+                  {inf.courseUnlocked ? 'Access Allowed (Lock)' : 'Allow Course Access'}
+                </button>
+              )}
+
+              {!isAllView && isC6 && inf.detentionStatus !== 'Passed' && (
+                <button
+                  type="button"
+                  onClick={() => onOpenCourse(inf)}
+                  className="btn-primary"
+                  style={{
+                    ...styles.smallActionBtn,
+                    background: inf.courseUnlocked
+                      ? 'linear-gradient(135deg, #a855f7, #7e22ce)'
+                      : 'rgba(148, 163, 184, 0.2)',
+                  }}
+                >
+                  {inf.courseUnlocked ? <BookOpen size={13} /> : <Lock size={13} />}
+                  {inf.courseUnlocked ? 'Start Course' : 'Open Course'}
+                </button>
+              )}
+
+              {isAdminOrMod && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingLocation(prev => !prev);
+                    setLocationDraft(inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall'));
+                  }}
+                  style={styles.inlineEditBtn}
+                  title="Edit scheduled location"
+                >
+                  <Edit3 size={13} />
+                  <span>Edit Location</span>
+                </button>
+              )}
+
+              <span
+                style={{
+                  fontSize: '0.76rem',
+                  fontWeight: '700',
+                  color:
+                    inf.detentionStatus === 'Passed'
+                      ? '#34d399'
+                      : inf.detentionStatus === 'Failed'
+                        ? '#f87171'
+                        : '#fbbf24',
+                }}
+              >
+                {inf.detentionStatus || 'Scheduled'}
+              </span>
+            </div>
+          </div>
+
+          {isEditingLocation && (
+            <div style={styles.locationEditRow}>
+              <input
+                type="text"
+                value={locationDraft}
+                onChange={e => setLocationDraft(e.target.value)}
+                className="input-field"
+                style={{ padding: '5px 10px', fontSize: '0.82rem', width: '180px' }}
+                placeholder="e.g. Hall, Training Room"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!locationDraft.trim()) return;
+                  onUpdateLocation(infKey, locationDraft.trim());
+                  setIsEditingLocation(false);
+                }}
+                className="btn-primary"
+                style={styles.smallActionBtn}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditingLocation(false)}
+                className="btn-secondary"
+                style={styles.smallActionBtn}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Admin Confidential Note */}
+      {isAllView && inf.confidentialMessage && (
+        <div style={styles.confidentialBox}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#22d3ee', fontSize: '0.73rem', fontWeight: '700', textTransform: 'uppercase' }}>
+            <Lock size={12} />
+            Confidential Note (Admin Only)
+          </div>
+          <p style={styles.confidentialText}>{inf.confidentialMessage}</p>
+        </div>
+      )}
+
+      {/* Appeal & Admin Reply / Status Section */}
+      {inf.appeal ? (
+        <AppealSection
+          appeal={inf.appeal}
+          infId={infKey}
+          staffEmail={inf.staffEmail}
+          canManage={isAllView && isAdminOrMod}
+          onReply={onAppealReply}
+          onStatusChange={onAppealStatusChange}
+        />
+      ) : (
+        !isAllView && !isInformal && (
+          isAppealing ? (
+            <form onSubmit={handleAppealFormSubmit} style={styles.appealComposer}>
+              <textarea
+                required
+                value={appealDraft}
+                onChange={e => setAppealDraft(e.target.value)}
+                placeholder="Explain clearly why you are appealing this consequence..."
+                className="input-field"
+                rows="2"
+                style={{ resize: 'vertical', fontSize: '0.86rem' }}
+              />
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAppealing(false);
+                    setAppealDraft('');
+                  }}
+                  className="btn-secondary"
+                  style={styles.smallActionBtn}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" style={styles.smallActionBtn}>
+                  Submit Appeal
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div>
+              <button
+                type="button"
+                onClick={() => setIsAppealing(true)}
+                className="btn-secondary"
+                style={styles.appealBtn}
+              >
+                <MessageSquare size={14} />
+                Appeal Consequence
+              </button>
+            </div>
+          )
+        )
+      )}
+
+      {/* Footer */}
+      <div style={styles.cardFooter}>
+        <span>
+          Logged by <strong>{inf.adminName || inf.issuedByName || 'Administrator'}</strong>
+        </span>
+      </div>
+    </article>
+  );
+});
 
 export default function Infractions() {
-  const { 
-    infractions = [], 
-    deleteInfraction, 
-    appealInfraction, 
-    addInfraction, 
+  const {
+    infractions = [],
+    deleteInfraction,
+    appealInfraction,
+    replyToInfractionAppeal,
+    updateAppealStatus,
+    addInfraction,
     updateInfraction,
     completeBehavioralCourse,
     setBehavioralCourseAccess,
-    informalSanctions = [], 
-    deleteInformalSanction, 
+    informalSanctions = [],
+    deleteInformalSanction,
     users = [],
-    currentUser 
+    currentUser,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState('my');
-  const [appealingId, setAppealingId] = useState(null);
-  const [appealText, setAppealText] = useState('');
-  
-  // All staff filter & search
   const [searchStaff, setSearchStaff] = useState('');
   const [tierFilter, setTierFilter] = useState('all');
-
-  // Inline location editing state for C4 sanctions
-  const [editingLocationInfId, setEditingLocationInfId] = useState(null);
-  const [editLocationValue, setEditLocationValue] = useState('');
-
-  // Log Consequence modal
   const [showLogModal, setShowLogModal] = useState(false);
-  const [logStaffEmail, setLogStaffEmail] = useState('');
-  const [logType, setLogType] = useState('C1 Warning');
-  const [logCategory, setLogCategory] = useState('Behavior');
-  const [logMainMessage, setLogMainMessage] = useState('');
-  const [logConfidential, setLogConfidential] = useState('');
-  const [logDetentionLocation, setLogDetentionLocation] = useState('Hall');
-  const [logDetentionDate, setLogDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-  const [logDetentionTime, setLogDetentionTime] = useState('17:15 - 17:35');
-  const [logCustomSuspensionValue, setLogCustomSuspensionValue] = useState('');
-  const [logCustomSuspensionUnit, setLogCustomSuspensionUnit] = useState('days');
   const [logSuccess, setLogSuccess] = useState('');
-
-  // Active C6 behavioral course modal
   const [activeCourseSanction, setActiveCourseSanction] = useState(null);
-
-  // New Consequence count summary UI modal for admin
   const [showLoggedSummaryModal, setShowLoggedSummaryModal] = useState(false);
   const [loggedSummaryData, setLoggedSummaryData] = useState(null);
 
   const isAdminOrMod = Boolean(currentUser?.isAdmin || currentUser?.siteRole === 'Moderator');
+  const canDeleteConsequence = Boolean(
+    currentUser?.siteRole === 'Owner' || currentUser?.email?.toLowerCase() === 'evanm.100000@gmail.com'
+  );
 
-  const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to remove this consequence?')) {
-      deleteInfraction(id);
-    }
-  };
-
-  // Safe arrays
-  const safeInfractions = Array.isArray(infractions) ? infractions : [];
-  const safeInformalSanctions = Array.isArray(informalSanctions) ? informalSanctions : [];
+  const safeInfractions = useMemo(() => (Array.isArray(infractions) ? infractions : []), [infractions]);
+  const safeInformalSanctions = useMemo(() => (Array.isArray(informalSanctions) ? informalSanctions : []), [informalSanctions]);
   const myEmail = currentUser?.email || '';
+  const myEmailLower = myEmail.toLowerCase().trim();
+
+  const notifySuccess = useCallback((msg) => {
+    setLogSuccess(msg);
+    setTimeout(() => setLogSuccess(''), 3800);
+  }, []);
 
   const {
     myLogs,
     myInformalSanctions,
     c1Count,
     c2Count,
-    genericWarningCount,
     c1c2CombinedCount,
     c3Count,
     c4Count,
     c5Count,
     c6Count,
     totalWeightedPoints,
-    myUpcomingSanctions
+    myUpcomingSanctions,
   } = useMemo(() => {
-    const logs = safeInfractions.filter(inf => inf && inf.staffEmail === myEmail);
-    const informal = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail === myEmail);
+    const logs = safeInfractions.filter(inf => inf && inf.staffEmail?.toLowerCase().trim() === myEmailLower);
+    const informal = safeInformalSanctions.filter(sanc => sanc && sanc.staffEmail?.toLowerCase().trim() === myEmailLower);
     let c1 = 0, c2 = 0, gen = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0;
     const upcoming = [];
-    logs.forEach(inf => {
-      if (!inf) return;
+
+    for (let i = 0; i < logs.length; i++) {
+      const inf = logs[i];
+      if (!inf) continue;
       if (inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))) c1++;
       else if (inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))) c2++;
       else if (inf.type?.toLowerCase().includes('warning')) gen++;
@@ -107,167 +480,55 @@ export default function Infractions() {
       if (isScheduled && inf.detentionStatus !== 'Passed') {
         upcoming.push(inf);
       }
-    });
+    }
     c3 += informal.length;
     const combined = c1 + c2 + gen;
-    const weighted = (c1 * 1) + (c2 * 2) + (gen * 1) + (c3 * 3) + (c4 * 4) + (c5 * 5) + (c6 * 6);
+    const weighted = c1 * 1 + c2 * 2 + gen * 1 + c3 * 3 + c4 * 4 + c5 * 5 + c6 * 6;
 
     return {
       myLogs: logs,
       myInformalSanctions: informal,
       c1Count: c1,
       c2Count: c2,
-      genericWarningCount: gen,
       c1c2CombinedCount: combined,
       c3Count: c3,
       c4Count: c4,
       c5Count: c5,
       c6Count: c6,
       totalWeightedPoints: weighted,
-      myUpcomingSanctions: upcoming
+      myUpcomingSanctions: upcoming,
     };
-  }, [safeInfractions, safeInformalSanctions, myEmail]);
+  }, [safeInfractions, safeInformalSanctions, myEmailLower]);
 
-  const formatSanctionDate = (dateStr) => {
-    if (!dateStr) return 'Upcoming';
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return String(dateStr);
-      return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-    } catch {
-      return String(dateStr);
-    }
-  };
+  // O(N) lookup map for all staff consequence points
+  const statsMap = useMemo(
+    () => computeAllStaffConsequenceStatsMap(safeInfractions, safeInformalSanctions),
+    [safeInfractions, safeInformalSanctions]
+  );
 
-  const handleCreateConsequence = (e) => {
-    e.preventDefault();
-    if (!logStaffEmail || !logMainMessage.trim()) {
-      alert('Please select a staff member and provide reason details.');
-      return;
-    }
+  const pendingAppealsCount = useMemo(
+    () => safeInfractions.filter(inf => inf?.appeal && normalizeAppealStatus(inf.appeal.status) === 'Pending').length,
+    [safeInfractions]
+  );
 
-    const isDetention = logType.startsWith('C4');
-    const isCourse = isC6Consequence(logType);
-    const isScheduled = isDetention || isCourse;
-    const targetEmail = logStaffEmail;
+  const totalAppealsCount = useMemo(
+    () => safeInfractions.filter(inf => Boolean(inf?.appeal?.text)).length,
+    [safeInfractions]
+  );
 
-    const c5Resolved = resolveC5Suspension(logType, logCustomSuspensionValue, logCustomSuspensionUnit);
-    if (!c5Resolved.valid) {
-      alert(c5Resolved.error);
-      return;
-    }
-    const resolvedType = c5Resolved.type;
-
-    // Check duplicate C4 for this user on this date
-    if (isDetention) {
-      const scheduledDate = (logDetentionDate || '').trim();
-      const existingC4ForDate = safeInfractions.find(inf => 
-        inf &&
-        inf.staffEmail?.toLowerCase() === targetEmail.toLowerCase() &&
-        (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) &&
-        (inf.detentionDate || '').trim() === scheduledDate
-      );
-
-      if (existingC4ForDate) {
-        alert('Unable to log (C4 Already Scheduled for this date for this user.)');
-        return;
-      }
-    }
-
-    const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
-    const consequenceData = {
-      type: resolvedType,
-      mainMessage: `[${logCategory}] ${logMainMessage}`,
-      confidentialMessage: logConfidential,
-      detentionLocation: isScheduled ? (logDetentionLocation || (isCourse ? 'Behavioral Course' : 'Hall')) : null,
-      detentionDate: isScheduled ? logDetentionDate : null,
-      detentionTime: isScheduled ? logDetentionTime : null,
-      suspensionDurationHours: c5Resolved.suspensionDurationHours,
-      suspensionDurationLabel: c5Resolved.suspensionDurationLabel
-    };
-
-    // Calculate new stats including this consequence before clearing form
-    const newStats = computeStaffConsequenceStats(targetEmail, safeInfractions, safeInformalSanctions, resolvedType);
-
-    const wasAdded = addInfraction({
-      staffEmail: targetEmail,
-      type: resolvedType,
-      mainMessage: consequenceData.mainMessage,
-      confidentialMessage: logConfidential,
-      detentionDate: consequenceData.detentionDate,
-      detentionTime: consequenceData.detentionTime,
-      detentionLocation: consequenceData.detentionLocation,
-      suspensionDurationHours: c5Resolved.suspensionDurationHours,
-      suspensionDurationLabel: c5Resolved.suspensionDurationLabel
-    });
-
-    if (wasAdded === false) {
-      alert('Could not log consequence. Please verify staff permissions.');
-      return;
-    }
-
-    // Set summary modal data and open it to show the admin the updated consequence count
-    setLoggedSummaryData({
-      targetUser,
-      targetEmail,
-      loggedConsequence: consequenceData,
-      stats: newStats
-    });
-    setShowLoggedSummaryModal(true);
-
-    setLogStaffEmail('');
-    setLogType('C1 Warning');
-    setLogMainMessage('');
-    setLogConfidential('');
-    setLogDetentionLocation('Hall');
-    setLogDetentionTime('17:15 - 17:35');
-    setLogCustomSuspensionValue('');
-    setLogCustomSuspensionUnit('days');
-    setShowLogModal(false);
-    setLogSuccess('Consequence logged successfully!');
-    setTimeout(() => setLogSuccess(''), 4000);
-  };
-
-  // Fast O(1) lookup map for consequence points across all staff
-  const staffPointsMap = useMemo(() => {
-    const map = new Map();
-    safeInfractions.forEach(inf => {
-      if (!inf?.staffEmail) return;
-      const email = inf.staffEmail.toLowerCase();
-      let pts = 0;
-      if (inf.type === 'C1 Warning' || (inf.type?.startsWith('C1') && !inf.type?.includes('C2'))) pts = 1;
-      else if (inf.type === 'C2 Warning' || (inf.type?.startsWith('C2') && !inf.type?.includes('C1'))) pts = 2;
-      else if (inf.type?.toLowerCase().includes('warning')) pts = 1;
-      else if (inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal')) pts = 3;
-      else if (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) pts = 4;
-      else if (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) pts = 5;
-      else if (isC6Consequence(inf.type)) pts = 6;
-      map.set(email, (map.get(email) || 0) + pts);
-    });
-    safeInformalSanctions.forEach(s => {
-      if (!s?.staffEmail) return;
-      const email = s.staffEmail.toLowerCase();
-      map.set(email, (map.get(email) || 0) + 3);
-    });
-    return map;
-  }, [safeInfractions, safeInformalSanctions]);
-
-  // Backward-compatible helper to calculate total consequence points for any staff member
-  const calculateStaffPoints = (email) => {
-    if (!email) return 0;
-    return staffPointsMap.get(email.toLowerCase()) || 0;
-  };
-
-  // Filter for All Staff tab
   const filteredAllStaffLogs = useMemo(() => {
     const search = searchStaff.toLowerCase().trim();
     return safeInfractions.filter(inf => {
       if (!inf) return false;
       if (search) {
-        const matchesSearch = `${inf.staffName || ''} ${inf.staffEmail || ''} ${inf.mainMessage || ''}`.toLowerCase().includes(search);
+        const matchesSearch = `${inf.staffName || ''} ${inf.staffEmail || ''} ${inf.mainMessage || ''} ${inf.appeal?.text || ''}`
+          .toLowerCase()
+          .includes(search);
         if (!matchesSearch) return false;
       }
 
+      if (tierFilter === 'appeals') return Boolean(inf.appeal?.text);
+      if (tierFilter === 'pending_appeals') return Boolean(inf.appeal?.text) && normalizeAppealStatus(inf.appeal.status) === 'Pending';
       if (tierFilter === 'c1c2') return inf.type?.startsWith('C1') || inf.type?.startsWith('C2') || inf.type?.toLowerCase().includes('warning');
       if (tierFilter === 'c3') return inf.type?.startsWith('C3') || inf.type?.toLowerCase().includes('informal');
       if (tierFilter === 'c4') return inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention');
@@ -277,817 +538,413 @@ export default function Infractions() {
     });
   }, [safeInfractions, searchStaff, tierFilter]);
 
-  const eligibleStaff = useMemo(() => {
-    const curEmail = currentUser?.email?.toLowerCase();
-    return users.filter(u => u && u.approved && u.email?.toLowerCase() !== curEmail);
-  }, [users, currentUser?.email]);
+  const handleDelete = useCallback(
+    (id, isInformal = false) => {
+      if (window.confirm('Are you sure you want to remove this consequence?')) {
+        if (isInformal) deleteInformalSanction(id);
+        else deleteInfraction(id);
+      }
+    },
+    [deleteInfraction, deleteInformalSanction]
+  );
+
+  const handleUpdateLocation = useCallback(
+    (infId, nextLoc) => {
+      updateInfraction(infId, { detentionLocation: nextLoc });
+      notifySuccess('Scheduled location updated.');
+    },
+    [updateInfraction, notifySuccess]
+  );
+
+  const handleSubmitConsequence = useCallback(
+    (payload) => {
+      const newStats = computeStaffConsequenceStats(
+        payload.staffEmail,
+        safeInfractions,
+        safeInformalSanctions,
+        payload.type
+      );
+
+      const wasAdded = addInfraction({
+        staffEmail: payload.staffEmail,
+        type: payload.type,
+        mainMessage: payload.mainMessage,
+        confidentialMessage: payload.confidentialMessage,
+        detentionDate: payload.detentionDate,
+        detentionTime: payload.detentionTime,
+        detentionLocation: payload.detentionLocation,
+        suspensionDurationHours: payload.suspensionDurationHours,
+        suspensionDurationLabel: payload.suspensionDurationLabel,
+      });
+
+      if (wasAdded === false) return false;
+
+      setShowLogModal(false);
+      setLoggedSummaryData({
+        targetUser: payload.targetUser,
+        targetEmail: payload.staffEmail,
+        loggedConsequence: payload,
+        stats: newStats,
+      });
+      setShowLoggedSummaryModal(true);
+      notifySuccess('Consequence logged successfully!');
+      return true;
+    },
+    [safeInfractions, safeInformalSanctions, addInfraction, notifySuccess]
+  );
 
   if (!currentUser) {
     return (
       <div style={styles.container}>
         <div style={styles.emptyState}>
-          <ShieldAlert size={48} color="rgba(255,255,255,0.15)" />
+          <ShieldAlert size={44} color="rgba(255,255,255,0.2)" />
           <p style={styles.emptyText}>Please sign in to view your consequences.</p>
         </div>
       </div>
     );
   }
 
+  const standingPercent = Math.min(100, Math.round((totalWeightedPoints / 35) * 100));
+  const standingColor = totalWeightedPoints >= 35 ? '#ef4444' : totalWeightedPoints >= 28 ? '#f59e0b' : totalWeightedPoints > 0 ? '#38bdf8' : '#10b981';
+  const standingLabel = totalWeightedPoints >= 35 ? 'Termination Limit Reached' : totalWeightedPoints >= 28 ? 'Near Limit' : totalWeightedPoints === 0 ? 'Clean Standing' : 'Active Standing';
+
   return (
     <div style={styles.container}>
       {logSuccess && (
         <div style={styles.successAlert}>
-          <ShieldCheck size={18} />
+          <ShieldCheck size={17} />
           <span>{logSuccess}</span>
         </div>
       )}
 
-      {/* Universal Staff Policy Banner: Visible to ALL staff and admins regardless of consequences */}
-      <div className="glass-panel" style={{
-        background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(15, 23, 42, 0.7))',
-        border: '1px solid rgba(239, 68, 68, 0.4)',
-        borderRadius: '14px',
-        padding: '16px 20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-        flexWrap: 'wrap',
-        boxShadow: '0 8px 24px rgba(239, 68, 68, 0.12)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid rgba(239, 68, 68, 0.35)' }}>
-            <AlertTriangle size={22} color="#ef4444" />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.7rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Official Policy</span>
-              <strong style={{ color: '#ef4444', fontSize: '1.02rem', letterSpacing: '0.2px' }}>
-                35 consequences will result in a termination from the staff team.
-              </strong>
-            </div>
-            <div style={{ color: '#9ca3af', fontSize: '0.84rem', marginTop: '4px' }}>
-              All staff members must maintain fewer than 35 consequence points to remain in active standing.
-              {totalWeightedPoints > 0 ? (
-                <> Your record: <strong style={{ color: totalWeightedPoints >= 30 ? '#ef4444' : totalWeightedPoints >= 18 ? '#f59e0b' : '#3b82f6' }}>{totalWeightedPoints} / 35 points</strong>.</>
-              ) : (
-                <> Your current record is clean (<strong>0 / 35 points</strong>).</>
-              )}
-            </div>
-          </div>
-        </div>
-        <div style={{ minWidth: '170px', flex: '1 1 200px', maxWidth: '320px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: '4px' }}>
-            <span>Termination Threshold</span>
-            <span style={{ fontWeight: '700', color: totalWeightedPoints >= 35 ? '#ef4444' : '#f87171' }}>{totalWeightedPoints} / 35 ({Math.round((totalWeightedPoints / 35) * 100)}%)</span>
-          </div>
-          <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
-            <div style={{
-              width: `${Math.min(100, Math.max(2, (totalWeightedPoints / 35) * 100))}%`,
-              height: '100%',
-              background: totalWeightedPoints >= 30 ? '#ef4444' : totalWeightedPoints >= 18 ? '#f59e0b' : '#10b981',
-              borderRadius: '999px',
-              transition: 'width 0.4s ease'
-            }} />
-          </div>
-        </div>
-      </div>
-
+      {/* Admin Tab Switcher + Log Action */}
       {isAdminOrMod && (
         <div style={styles.tabHeader}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
+              type="button"
               onClick={() => setActiveTab('my')}
-              className="btn-secondary"
               style={{
                 ...styles.tabBtn,
-                background: activeTab === 'my' ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
-                borderColor: activeTab === 'my' ? '#2563eb' : 'transparent',
-                color: activeTab === 'my' ? 'var(--color-text-main)' : '#9ca3af',
+                background: activeTab === 'my' ? 'rgba(59, 130, 246, 0.16)' : 'rgba(255,255,255,0.03)',
+                borderColor: activeTab === 'my' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255,255,255,0.08)',
+                color: activeTab === 'my' ? '#ffffff' : '#94a3b8',
               }}
             >
               <ShieldCheck size={16} />
-              My Consequences
+              <span>My Consequences</span>
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('all')}
-              className="btn-secondary"
               style={{
                 ...styles.tabBtn,
-                background: activeTab === 'all' ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
-                borderColor: activeTab === 'all' ? '#2563eb' : 'transparent',
-                color: activeTab === 'all' ? 'var(--color-text-main)' : '#9ca3af',
+                background: activeTab === 'all' ? 'rgba(59, 130, 246, 0.16)' : 'rgba(255,255,255,0.03)',
+                borderColor: activeTab === 'all' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255,255,255,0.08)',
+                color: activeTab === 'all' ? '#ffffff' : '#94a3b8',
               }}
             >
               <History size={16} />
-              All Staff Consequences ({safeInfractions.length})
+              <span>All Staff Consequences ({safeInfractions.length})</span>
+              {pendingAppealsCount > 0 && (
+                <span style={styles.pendingAppealCounter}>{pendingAppealsCount} Pending Appeal{pendingAppealsCount === 1 ? '' : 's'}</span>
+              )}
             </button>
           </div>
 
-          <button
-            onClick={() => setShowLogModal(true)}
-            className="btn-danger"
-            style={styles.logNewBtn}
-          >
+          <button type="button" onClick={() => setShowLogModal(true)} className="btn-danger" style={styles.logNewBtn}>
             <Plus size={16} />
             <span>Log Consequence</span>
           </button>
         </div>
       )}
 
-      {/* Staff View: My Consequences */}
+      {/* MY CONSEQUENCES TAB */}
       {(!isAdminOrMod || activeTab === 'my') && (
-        <div style={styles.listContainer}>
-          
-          {/* 1. TOP STATS: Individual Consequences Breakdown & Total Consequences Weighted Points */}
-          <div style={styles.statsGrid}>
-            {/* Total Consequences (Weighted Points: e.g. 2 C4s = 8) */}
-            <div className="glass-panel" style={styles.totalScoreCard}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={styles.totalScoreLabel}>Total Consequences</span>
-                <Flame size={20} color="#f87171" />
+        <div style={styles.sectionStack}>
+          {/* Unified Standing & Policy Summary Card */}
+          <div style={styles.standingCard}>
+            <div style={styles.standingTop}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 320px' }}>
+                <div style={{ ...styles.standingIconBox, borderColor: `${standingColor}55`, background: `${standingColor}1a` }}>
+                  {totalWeightedPoints >= 28 ? <AlertTriangle size={22} color={standingColor} /> : <Flame size={22} color={standingColor} />}
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={styles.standingKicker}>Consequence Standing</span>
+                    <span style={{ ...styles.standingStatusBadge, color: standingColor, borderColor: `${standingColor}55`, background: `${standingColor}18` }}>
+                      {standingLabel}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '4px' }}>
+                    <span style={{ fontSize: '2rem', fontWeight: '900', color: standingColor, lineHeight: 1 }}>
+                      {totalWeightedPoints}
+                    </span>
+                    <span style={{ fontSize: '0.95rem', color: '#94a3b8', fontWeight: '600' }}>
+                      / 35 Consequence Points
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div style={styles.totalScoreVal}>{totalWeightedPoints}</div>
-              <div style={styles.totalScoreSub}>
-                Weighted Points (C1=1, C2=2, C3=3, C4=4, C5=5, C6=6)
+
+              <div style={{ flex: '1 1 260px', maxWidth: '380px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#94a3b8', marginBottom: '6px' }}>
+                  <span>35-Point Termination Policy</span>
+                  <span style={{ color: standingColor, fontWeight: '700' }}>{standingPercent}%</span>
+                </div>
+                <div style={styles.progressTrack}>
+                  <div
+                    style={{
+                      width: `${Math.max(totalWeightedPoints > 0 ? 3 : 0, standingPercent)}%`,
+                      height: '100%',
+                      background: standingColor,
+                      borderRadius: '999px',
+                      transition: 'width 0.3s ease',
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>
+                  Reaching 35 points results in termination from the staff team.
+                </div>
               </div>
             </div>
 
-            {/* C1 - C2 Warnings */}
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(59, 130, 246, 0.3)' }}>
-              <div style={styles.statHeaderRow}>
-                <span style={{ color: '#93c5fd', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C1 - C2 Warnings</span>
-                <span style={styles.weightBadgeBlue}>1 - 2 pts</span>
+            {/* Compact Tier Breakdown */}
+            <div style={styles.tierGrid}>
+              <div style={styles.tierTile}>
+                <div style={styles.tierTileTop}>
+                  <span style={{ color: '#93c5fd' }}>C1–C2 Warnings</span>
+                  <span style={styles.tierPts}>1–2 pts</span>
+                </div>
+                <div style={{ ...styles.tierValue, color: '#60a5fa' }}>{c1c2CombinedCount}</div>
+                <div style={styles.tierSub}>C1: {c1Count} &bull; C2: {c2Count}</div>
               </div>
-              <div style={{ fontSize: '2.2rem', color: '#60a5fa', fontWeight: '800', margin: '8px 0 4px' }}>{c1c2CombinedCount}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                C1: {c1Count} &bull; C2: {c2Count}
-              </div>
-            </div>
 
-            {/* C3 Informal Sanctions */}
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(234, 179, 8, 0.3)' }}>
-              <div style={styles.statHeaderRow}>
-                <span style={{ color: '#fde047', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C3 Informal</span>
-                <span style={styles.weightBadgeYellow}>3 pts each</span>
+              <div style={styles.tierTile}>
+                <div style={styles.tierTileTop}>
+                  <span style={{ color: '#fde047' }}>C3 Informal</span>
+                  <span style={styles.tierPts}>3 pts</span>
+                </div>
+                <div style={{ ...styles.tierValue, color: '#eab308' }}>{c3Count}</div>
+                <div style={styles.tierSub}>Informal sanctions</div>
               </div>
-              <div style={{ fontSize: '2.2rem', color: '#eab308', fontWeight: '800', margin: '8px 0 4px' }}>{c3Count}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                Official informal sanctions
-              </div>
-            </div>
 
-            {/* C4 Detentions */}
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(245, 158, 11, 0.3)' }}>
-              <div style={styles.statHeaderRow}>
-                <span style={{ color: '#fcd34d', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C4 Detentions</span>
-                <span style={styles.weightBadgeAmber}>4 pts each</span>
+              <div style={styles.tierTile}>
+                <div style={styles.tierTileTop}>
+                  <span style={{ color: '#fcd34d' }}>C4 Detentions</span>
+                  <span style={styles.tierPts}>4 pts</span>
+                </div>
+                <div style={{ ...styles.tierValue, color: '#f59e0b' }}>{c4Count}</div>
+                <div style={styles.tierSub}>20m / 40m sessions</div>
               </div>
-              <div style={{ fontSize: '2.2rem', color: '#f59e0b', fontWeight: '800', margin: '8px 0 4px' }}>{c4Count}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                20m / 40m Detentions
-              </div>
-            </div>
 
-            {/* C5 Suspensions */}
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-              <div style={styles.statHeaderRow}>
-                <span style={{ color: '#fca5a5', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C5 Suspensions</span>
-                <span style={styles.weightBadgeRed}>5 pts each</span>
+              <div style={styles.tierTile}>
+                <div style={styles.tierTileTop}>
+                  <span style={{ color: '#fca5a5' }}>C5 Suspensions</span>
+                  <span style={styles.tierPts}>5 pts</span>
+                </div>
+                <div style={{ ...styles.tierValue, color: '#ef4444' }}>{c5Count}</div>
+                <div style={styles.tierSub}>Temporary suspensions</div>
               </div>
-              <div style={{ fontSize: '2.2rem', color: '#ef4444', fontWeight: '800', margin: '8px 0 4px' }}>{c5Count}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                2-Day / 7-Day / Custom
-              </div>
-            </div>
 
-            {/* C6 Behavioral Course */}
-            <div className="glass-panel" style={{ ...styles.statCard, borderColor: 'rgba(168, 85, 247, 0.35)' }}>
-              <div style={styles.statHeaderRow}>
-                <span style={{ color: '#d8b4fe', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase' }}>C6 Course</span>
-                <span style={styles.weightBadgePurple}>6 pts each</span>
-              </div>
-              <div style={{ fontSize: '2.2rem', color: '#a855f7', fontWeight: '800', margin: '8px 0 4px' }}>{c6Count}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                Full Behavioral Course
+              <div style={styles.tierTile}>
+                <div style={styles.tierTileTop}>
+                  <span style={{ color: '#d8b4fe' }}>C6 Course</span>
+                  <span style={styles.tierPts}>6 pts</span>
+                </div>
+                <div style={{ ...styles.tierValue, color: '#a855f7' }}>{c6Count}</div>
+                <div style={styles.tierSub}>Behavioral courses</div>
               </div>
             </div>
           </div>
 
-          {/* 2. UPCOMING SANCTIONS: Rendered UNDER the stats, matching the portal dark glass theme */}
-          <div className="glass-panel" style={styles.upcomingThemeCard}>
-            <div style={styles.upcomingHeaderDark}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Clock size={18} color="#fbbf24" />
-                <h3 style={styles.upcomingTitleDark}>Upcoming Sanctions</h3>
+          {/* Upcoming Sanctions (compact when empty, detailed when active) */}
+          <div style={styles.upcomingCard}>
+            <div style={styles.upcomingHeader}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={16} color="#fbbf24" />
+                <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '700', color: 'var(--color-text-main)' }}>
+                  Upcoming Sanctions
+                </h3>
               </div>
               <span style={styles.upcomingCountBadge}>
                 {myUpcomingSanctions.length} Scheduled
               </span>
             </div>
 
-            <div style={styles.upcomingBodyDark}>
-              {myUpcomingSanctions.length === 0 ? (
-                <div style={styles.noUpcomingDark}>
-                  <ShieldCheck size={28} color="#10b981" style={{ opacity: 0.6 }} />
-                  <span>No upcoming sanctions scheduled.</span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {myUpcomingSanctions.map(sanc => {
-                    const isC6 = isC6Consequence(sanc.type);
-                    const isC4b = sanc.type?.includes('C4B') || sanc.type?.toLowerCase().includes('40m');
-                    const badgeText = isC6 ? 'C6' : isC4b ? 'C4b' : 'C4a';
-                    const locationName = sanc.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall');
-                    const titleText = isC6 ? `C6 Behavioral Course (${locationName})` : `${isC4b ? 'C4B' : 'C4A'} (${locationName})`;
-                    const timeText = formatUpcomingSanctionTime(sanc.detentionTime, sanc.type);
+            {myUpcomingSanctions.length === 0 ? (
+              <div style={styles.noUpcomingRow}>
+                <ShieldCheck size={18} color="#10b981" />
+                <span>No upcoming detentions or behavioral courses scheduled.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '14px 18px' }}>
+                {myUpcomingSanctions.map(sanc => {
+                  const isC6 = isC6Consequence(sanc.type);
+                  const isC4b = sanc.type?.includes('C4B') || sanc.type?.toLowerCase().includes('40m');
+                  const badgeText = isC6 ? 'C6' : isC4b ? 'C4B' : 'C4A';
+                  const locationName = sanc.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall');
+                  const timeText = formatUpcomingSanctionTime(sanc.detentionTime, sanc.type);
 
-                    return (
-                      <div key={sanc.id} style={styles.upcomingItemDark}>
-                        <div style={styles.upcomingDateTextDark}>
-                          {formatSanctionDate(sanc.detentionDate || sanc.timestamp)}
-                        </div>
-                        <div style={styles.upcomingRowDark}>
-                          <span style={isC6 ? styles.c6BadgeDark : styles.c4BadgeDark}>{badgeText}</span>
-                          {sanc.isEscalation && (
-                            <span style={styles.escalationBadgeDark}>Escalation</span>
-                          )}
-                          <span style={styles.detentionTitleTextDark}>{titleText}</span>
-                          
-                          {isC6 && (
-                            <>
-                              <span style={{
-                                fontSize: '0.72rem',
-                                fontWeight: '700',
-                                padding: '3px 8px',
-                                borderRadius: '6px',
-                                background: sanc.courseUnlocked ? 'rgba(16, 185, 129, 0.16)' : 'rgba(245, 158, 11, 0.15)',
-                                color: sanc.courseUnlocked ? '#34d399' : '#fbbf24',
-                                border: `1px solid ${sanc.courseUnlocked ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`
-                              }}>
-                                {sanc.courseUnlocked ? 'Access Allowed' : 'Locked Until In Meeting'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setActiveCourseSanction(sanc)}
-                                className="btn-primary"
-                                style={{
-                                  padding: '5px 12px',
-                                  fontSize: '0.78rem',
-                                  fontWeight: '700',
-                                  borderRadius: '6px',
-                                  background: sanc.courseUnlocked ? 'linear-gradient(135deg, #a855f7, #7e22ce)' : 'rgba(148, 163, 184, 0.2)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
-                              >
-                                {sanc.courseUnlocked ? <BookOpen size={14} /> : <Lock size={14} />}
-                                {sanc.courseUnlocked ? 'Start Behavioral Course' : 'Open Behavioral Course'}
-                              </button>
-                            </>
-                          )}
+                  return (
+                    <div key={sanc.id} style={styles.upcomingRowItem}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={isC6 ? styles.c6Badge : styles.c4Badge}>{badgeText}</span>
+                        <strong style={{ fontSize: '0.9rem', color: '#f8fafc' }}>
+                          {isC6 ? `Behavioral Course (${locationName})` : `${isC4b ? '40m' : '20m'} Detention (${locationName})`}
+                        </strong>
+                        {sanc.isEscalation && <span style={styles.escalationChip}>Escalated</span>}
+                      </div>
 
-                          {isAdminOrMod && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingLocationInfId(editingLocationInfId === sanc.id ? null : sanc.id);
-                                setEditLocationValue(locationName);
-                              }}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#f59e0b',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '0.75rem',
-                                borderRadius: '4px'
-                              }}
-                              title="Edit location for this detention"
-                            >
-                              <Edit3 size={13} />
-                              <span style={{ textDecoration: 'underline' }}>Edit Location</span>
-                            </button>
-                          )}
-
-                          <div style={styles.detentionTimeRowDark}>
-                            <Clock size={15} color="#94a3b8" />
-                            <span>{timeText}</span>
-                          </div>
-                        </div>
-
-                        {/* Inline Location Editor for Admins */}
-                        {editingLocationInfId === sanc.id && (
-                          <div style={{
-                            marginTop: '10px',
-                            padding: '10px 14px',
-                            background: 'rgba(0,0,0,0.4)',
-                            border: '1px solid rgba(245, 158, 11, 0.4)',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            flexWrap: 'wrap'
-                          }}>
-                            <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 'bold' }}>Update Location:</span>
-                            <input
-                              type="text"
-                              value={editLocationValue}
-                              onChange={e => setEditLocationValue(e.target.value)}
-                              className="input-field"
-                              style={{ padding: '4px 8px', fontSize: '0.82rem', width: '160px' }}
-                              placeholder="e.g. Hall, Training Room"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!editLocationValue.trim()) return;
-                                updateInfraction(sanc.id, { detentionLocation: editLocationValue.trim() });
-                                setEditingLocationInfId(null);
-                              }}
-                              className="btn-primary"
-                              style={{ padding: '4px 10px', fontSize: '0.78rem', borderRadius: '6px' }}
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingLocationInfId(null)}
-                              className="btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.78rem', borderRadius: '6px' }}
-                            >
-                              Cancel
-                            </button>
-                            <div style={{ display: 'flex', gap: '4px', width: '100%', marginTop: '4px' }}>
-                              {['HQ', 'Discord', 'Hall', 'N/A'].map(preset => (
-                                <button
-                                  key={preset}
-                                  type="button"
-                                  onClick={() => setEditLocationValue(preset)}
-                                  style={{
-                                    fontSize: '0.7rem',
-                                    padding: '2px 6px',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    borderRadius: '4px',
-                                    color: '#9ca3af',
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  {preset}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginLeft: 'auto' }}>
+                        <span style={{ fontSize: '0.82rem', color: '#93c5fd', fontWeight: '600' }}>
+                          {formatSanctionDate(sanc.detentionDate || sanc.timestamp)} &bull; {timeText}
+                        </span>
+                        {isC6 && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveCourseSanction(sanc)}
+                            className="btn-primary"
+                            style={{
+                              ...styles.smallActionBtn,
+                              background: sanc.courseUnlocked
+                                ? 'linear-gradient(135deg, #a855f7, #7e22ce)'
+                                : 'rgba(148, 163, 184, 0.22)',
+                            }}
+                          >
+                            {sanc.courseUnlocked ? <BookOpen size={13} /> : <Lock size={13} />}
+                            {sanc.courseUnlocked ? 'Start Course' : 'Open Course'}
+                          </button>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Disciplinary Record List */}
+          <div style={styles.sectionHeaderRow}>
+            <div>
+              <h3 style={styles.sectionHeading}>Disciplinary Record</h3>
+              <p style={styles.sectionSub}>
+                Official consequences logged on your staff record. You may submit an appeal on any consequence below.
+              </p>
             </div>
+            <span style={styles.recordCountChip}>{myLogs.length + myInformalSanctions.length} Total</span>
           </div>
 
-          <div style={styles.sectionNotice} className="glass-panel">
-            <ShieldCheck size={18} color="#10b981" />
-            <p style={styles.noticeText}>
-              Below is your official disciplinary record. Consequences are logged by administrators and reviewable during evaluations.
-            </p>
-          </div>
-
-          {/* 3. LOG HISTORY */}
           {myLogs.length === 0 && myInformalSanctions.length === 0 ? (
             <div style={styles.emptyState}>
-              <ShieldCheck size={48} color="rgba(16, 185, 129, 0.2)" />
-              <p style={{ ...styles.emptyText, color: '#10b981' }}>Your record is clean! No consequences logged.</p>
+              <ShieldCheck size={42} color="rgba(16, 185, 129, 0.45)" />
+              <p style={{ ...styles.emptyText, color: '#34d399', fontWeight: '600' }}>
+                Your record is clean. No consequences have been logged.
+              </p>
             </div>
           ) : (
-            <div style={styles.list}>
-              {myLogs.map(inf => {
-                const isC6 = isC6Consequence(inf.type);
-                const isC5 = inf.type?.startsWith('C5') || inf.type?.includes('Suspension');
-                const isC4 = inf.type?.startsWith('C4') || inf.type?.includes('Detention');
-                const isC3 = inf.type?.startsWith('C3') || inf.type?.includes('Informal');
-                const badgeColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#3b82f6';
-                const badgeBg = isC6 ? 'rgba(168, 85, 247, 0.15)' : isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
-                const badgeBorder = isC6 ? 'rgba(168, 85, 247, 0.35)' : isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+            <div style={styles.cardList}>
+              {myLogs.map(inf => (
+                <InfractionCard
+                  key={inf.id || inf._firebaseKey}
+                  inf={inf}
+                  isAllView={false}
+                  isAdminOrMod={isAdminOrMod}
+                  canDelete={false}
+                  onAppealSubmit={appealInfraction}
+                  onUpdateLocation={handleUpdateLocation}
+                  onToggleCourseAccess={setBehavioralCourseAccess}
+                  onOpenCourse={setActiveCourseSanction}
+                  onNotifySuccess={notifySuccess}
+                />
+              ))}
 
-                return (
-                  <div key={inf.id} style={styles.infractionCard} className="glass-panel">
-                    <div style={styles.cardHeader}>
-                      <div style={styles.typeBadgeContainer}>
-                        <span style={{
-                          ...styles.infractionType, 
-                          background: badgeBg,
-                          color: badgeColor,
-                          border: `1px solid ${badgeBorder}`
-                        }}>
-                          {inf.type}
-                        </span>
-                        {inf.isEscalation && (
-                          <span style={styles.escalationBadgeDark}>Escalated</span>
-                        )}
-                      </div>
-                      <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
-                    </div>
-
-                    {(isC4 || isC6) && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: isC6 ? 'rgba(168, 85, 247, 0.08)' : 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${isC6 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(245, 158, 11, 0.2)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                          <Clock size={16} color={isC6 ? '#c084fc' : '#f59e0b'} />
-                          <span style={{ fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
-                            <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate || 'Scheduled'} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
-                          </span>
-                          {isC6 && isAdminOrMod && inf.detentionStatus !== 'Passed' && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextAllowed = !inf.courseUnlocked;
-                                setBehavioralCourseAccess(inf.id || inf._firebaseKey, nextAllowed);
-                                setLogSuccess(nextAllowed ? 'C6 Behavioral Course access allowed for staff member.' : 'C6 Behavioral Course access locked.');
-                                setTimeout(() => setLogSuccess(''), 3500);
-                              }}
-                              className={inf.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
-                              style={{ padding: '4px 10px', fontSize: '0.75rem', borderRadius: '6px' }}
-                            >
-                              {inf.courseUnlocked ? 'Access Allowed (Lock)' : 'Allow Course Access'}
-                            </button>
-                          )}
-                          {isC6 && inf.detentionStatus !== 'Passed' && (
-                            <button
-                              type="button"
-                              onClick={() => setActiveCourseSanction(inf)}
-                              className="btn-primary"
-                              style={{ padding: '4px 10px', fontSize: '0.76rem', borderRadius: '6px', background: inf.courseUnlocked ? 'linear-gradient(135deg, #a855f7, #7e22ce)' : 'rgba(148, 163, 184, 0.2)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                            >
-                              {inf.courseUnlocked ? <BookOpen size={13} /> : <Lock size={13} />}
-                              {inf.courseUnlocked ? 'Complete Behavioral Course' : 'Open Behavioral Course'}
-                            </button>
-                          )}
-                          {isAdminOrMod && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingLocationInfId(editingLocationInfId === inf.id ? null : inf.id);
-                                setEditLocationValue(inf.detentionLocation || 'Hall');
-                              }}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#f59e0b',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '0.75rem',
-                                borderRadius: '4px'
-                              }}
-                              title="Edit Detention Location"
-                            >
-                              <Edit3 size={13} />
-                              <span style={{ textDecoration: 'underline' }}>Edit Location</span>
-                            </button>
-                          )}
-                          <span style={{ marginLeft: 'auto', fontSize: '0.78rem', fontWeight: 'bold', color: inf.detentionStatus === 'Passed' ? '#10b981' : inf.detentionStatus === 'Failed' ? '#ef4444' : '#f59e0b' }}>
-                            Status: {inf.detentionStatus || 'Scheduled'}
-                          </span>
-                        </div>
-
-                        {editingLocationInfId === inf.id && (
-                          <div style={{
-                            marginTop: '4px',
-                            padding: '8px 12px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            flexWrap: 'wrap'
-                          }}>
-                            <span style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 'bold' }}>Update Location:</span>
-                            <input
-                              type="text"
-                              value={editLocationValue}
-                              onChange={e => setEditLocationValue(e.target.value)}
-                              className="input-field"
-                              style={{ padding: '4px 8px', fontSize: '0.82rem', width: '150px' }}
-                              placeholder="e.g. Hall, Training Room"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!editLocationValue.trim()) return;
-                                updateInfraction(inf.id, { detentionLocation: editLocationValue.trim() });
-                                setEditingLocationInfId(null);
-                              }}
-                              className="btn-primary"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingLocationInfId(null)}
-                              className="btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div style={styles.messageBox}>
-                      <h5 style={styles.boxLabel}>Reason / Details:</h5>
-                      <p style={styles.messageText}>{inf.mainMessage}</p>
-                    </div>
-
-                    {inf.appeal ? (
-                      <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(59, 130, 246, 0.1)', borderLeft: '3px solid #3b82f6', borderRadius: '0 8px 8px 0' }}>
-                        <h5 style={{ ...styles.boxLabel, color: '#60a5fa', marginBottom: '4px' }}>Your Appeal:</h5>
-                        <p style={{ margin: 0, fontSize: '0.85rem', color: '#bfdbfe' }}>{inf.appeal.text}</p>
-                      </div>
-                    ) : (
-                      appealingId === inf.id ? (
-                        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <textarea 
-                            value={appealText}
-                            onChange={e => setAppealText(e.target.value)}
-                            placeholder="Explain why you are appealing this consequence..."
-                            className="input-field"
-                            rows="2"
-                          />
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => { appealInfraction(inf.id, appealText); setAppealingId(null); setAppealText(''); }} className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Submit Appeal</button>
-                            <button onClick={() => { setAppealingId(null); setAppealText(''); }} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: '12px' }}>
-                          <button onClick={() => { setAppealingId(inf.id); setAppealText(''); }} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>Appeal Consequence</button>
-                        </div>
-                      )
-                    )}
-
-                    <div style={styles.cardFooter}>
-                      <span>Logged by Administrator: <strong>{inf.adminName || inf.issuedByName || 'Administrator'}</strong></span>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Legacy Informal Sanctions */}
               {myInformalSanctions.map(sanc => (
-                <div key={sanc.id} style={styles.infractionCard} className="glass-panel">
-                  <div style={styles.cardHeader}>
-                    <div style={styles.typeBadgeContainer}>
-                      <span style={{
-                        ...styles.infractionType, 
-                        background: 'rgba(234, 179, 8, 0.15)',
-                        color: '#eab308',
-                        border: '1px solid rgba(234, 179, 8, 0.3)'
-                      }}>C3 Informal Sanction</span>
-                    </div>
-                    <span style={styles.infDate}>{formatSanctionDate(sanc.timestamp || sanc.date)}</span>
-                  </div>
-                  <div style={styles.messageBox}>
-                    <h5 style={styles.boxLabel}>Reason / Details:</h5>
-                    <p style={styles.messageText}>{sanc.reason}</p>
-                  </div>
-                  <div style={styles.cardFooter}>
-                    <span>Logged by Administrator: <strong>{sanc.issuedByName || sanc.adminName || 'Administrator'}</strong></span>
-                  </div>
-                </div>
+                <InfractionCard
+                  key={sanc.id || sanc._firebaseKey}
+                  inf={sanc}
+                  isAllView={false}
+                  isAdminOrMod={isAdminOrMod}
+                  canDelete={false}
+                  onNotifySuccess={notifySuccess}
+                />
               ))}
             </div>
           )}
         </div>
       )}
 
-      {/* Admin View: All Staff Consequences */}
+      {/* ALL STAFF CONSEQUENCES TAB (ADMIN / MOD) */}
       {isAdminOrMod && activeTab === 'all' && (
-        <div style={styles.listContainer}>
-          {/* Controls: Search and Tiers Filter */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: '240px', maxWidth: '360px' }}>
-              <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+        <div style={styles.sectionStack}>
+          <div style={styles.filterToolbar}>
+            <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: '380px' }}>
+              <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"
-                placeholder="Search staff name, email, or reason..."
+                placeholder="Search staff name, email, reason, or appeal..."
                 value={searchStaff}
                 onChange={e => setSearchStaff(e.target.value)}
                 className="input-field"
-                style={{ paddingLeft: '38px', width: '100%' }}
+                style={{ paddingLeft: '36px', width: '100%', paddingTop: '9px', paddingBottom: '9px', fontSize: '0.88rem' }}
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {[
                 { id: 'all', label: `All (${safeInfractions.length})` },
-                { id: 'c1c2', label: 'C1/C2 Warnings' },
-                { id: 'c3', label: 'C3 Informal' },
-                { id: 'c4', label: 'C4 Detentions' },
-                { id: 'c5', label: 'C5 Suspensions' },
-                { id: 'c6', label: 'C6 Courses' }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setTierFilter(f.id)}
-                  className="btn-secondary"
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: '0.82rem',
-                    borderRadius: '8px',
-                    background: tierFilter === f.id ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                    borderColor: tierFilter === f.id ? '#3b82f6' : 'rgba(255,255,255,0.1)',
-                    color: tierFilter === f.id ? '#ffffff' : '#9ca3af'
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
+                { id: 'pending_appeals', label: `Pending Appeals (${pendingAppealsCount})` },
+                { id: 'appeals', label: `All Appeals (${totalAppealsCount})` },
+                { id: 'c1c2', label: 'C1/C2' },
+                { id: 'c3', label: 'C3' },
+                { id: 'c4', label: 'C4' },
+                { id: 'c5', label: 'C5' },
+                { id: 'c6', label: 'C6' },
+              ].map(f => {
+                const isActive = tierFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setTierFilter(f.id)}
+                    style={{
+                      ...styles.filterChip,
+                      background: isActive ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.03)',
+                      borderColor: isActive ? '#3b82f6' : 'rgba(255,255,255,0.1)',
+                      color: isActive ? '#ffffff' : '#94a3b8',
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {filteredAllStaffLogs.length === 0 ? (
             <div style={styles.emptyState}>
-              <ShieldAlert size={48} color="rgba(255,255,255,0.15)" />
+              <ShieldAlert size={42} color="rgba(255,255,255,0.2)" />
               <p style={styles.emptyText}>No consequences match your search or filter.</p>
             </div>
           ) : (
-            <div style={styles.list}>
+            <div style={styles.cardList}>
               {filteredAllStaffLogs.map(inf => {
-                const isC6 = isC6Consequence(inf.type);
-                const isC5 = inf.type?.startsWith('C5') || inf.type?.includes('Suspension');
-                const isC4 = inf.type?.startsWith('C4') || inf.type?.includes('Detention');
-                const isC3 = inf.type?.startsWith('C3') || inf.type?.includes('Informal');
-                const badgeColor = isC6 ? '#c084fc' : isC5 ? '#ef4444' : isC4 ? '#f59e0b' : isC3 ? '#eab308' : '#3b82f6';
-                const badgeBg = isC6 ? 'rgba(168, 85, 247, 0.15)' : isC5 ? 'rgba(239, 68, 68, 0.15)' : isC4 ? 'rgba(245, 158, 11, 0.15)' : isC3 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)';
-                const badgeBorder = isC6 ? 'rgba(168, 85, 247, 0.35)' : isC5 ? 'rgba(239, 68, 68, 0.3)' : isC4 ? 'rgba(245, 158, 11, 0.3)' : isC3 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(59, 130, 246, 0.3)';
-
-                const staffPts = calculateStaffPoints(inf.staffEmail);
-
+                const staffPts = statsMap.get(inf.staffEmail?.toLowerCase().trim() || '')?.totalPoints || 0;
                 return (
-                  <div key={inf.id} style={styles.infractionCard} className="glass-panel">
-                    <div style={styles.cardHeader}>
-                      <div style={styles.typeBadgeContainer}>
-                        <span style={styles.targetStaff}>{inf.staffName}</span>
-                        <span style={styles.staffMail}>({inf.staffEmail})</span>
-                        <span style={{
-                          ...styles.infractionType,
-                          background: badgeBg,
-                          color: badgeColor,
-                          border: `1px solid ${badgeBorder}`,
-                          marginLeft: '8px'
-                        }}>
-                          {inf.type}
-                        </span>
-                        {inf.isEscalation && (
-                          <span style={styles.escalationBadgeDark}>Escalated</span>
-                        )}
-                        <span style={styles.staffTotalPointsBadge} title="Staff Member Total Weighted Points">
-                          {staffPts} Total Pts
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={styles.infDate}>{formatSanctionDate(inf.date || inf.timestamp)}</span>
-                        {(currentUser?.siteRole === 'Owner' || currentUser?.email?.toLowerCase() === 'evanm.100000@gmail.com') && (
-                          <button
-                            onClick={() => handleDelete(inf.id)}
-                            className="btn-danger"
-                            style={styles.deleteBtn}
-                            title="Remove Consequence"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {(isC4 || isC6) && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: isC6 ? 'rgba(168, 85, 247, 0.08)' : 'rgba(245, 158, 11, 0.08)', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${isC6 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(245, 158, 11, 0.2)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-                          <Clock size={16} color={isC6 ? '#c084fc' : '#f59e0b'} />
-                          <span style={{ fontSize: '0.85rem', color: isC6 ? '#e9d5ff' : '#fcd34d' }}>
-                            <strong>{isC6 ? 'Behavioral Course:' : 'Detention:'}</strong> {inf.detentionLocation || (isC6 ? 'Behavioral Course' : 'Hall')} &bull; {inf.detentionDate || 'Scheduled'} &bull; {formatUpcomingSanctionTime(inf.detentionTime, inf.type)}
-                          </span>
-                          {isC6 && isAdminOrMod && inf.detentionStatus !== 'Passed' && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextAllowed = !inf.courseUnlocked;
-                                setBehavioralCourseAccess(inf.id || inf._firebaseKey, nextAllowed);
-                                setLogSuccess(nextAllowed ? 'C6 Behavioral Course access allowed for staff member.' : 'C6 Behavioral Course access locked.');
-                                setTimeout(() => setLogSuccess(''), 3500);
-                              }}
-                              className={inf.courseUnlocked ? 'btn-secondary' : 'btn-primary'}
-                              style={{ padding: '4px 10px', fontSize: '0.75rem', borderRadius: '6px' }}
-                            >
-                              {inf.courseUnlocked ? 'Access Allowed (Lock)' : 'Allow Course Access'}
-                            </button>
-                          )}
-                          {isAdminOrMod && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingLocationInfId(editingLocationInfId === inf.id ? null : inf.id);
-                                setEditLocationValue(inf.detentionLocation || 'Hall');
-                              }}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#f59e0b',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '0.75rem',
-                                borderRadius: '4px'
-                              }}
-                              title="Edit Detention Location"
-                            >
-                              <Edit3 size={13} />
-                              <span style={{ textDecoration: 'underline' }}>Edit Location</span>
-                            </button>
-                          )}
-                          <span style={{ marginLeft: 'auto', fontSize: '0.8rem', fontWeight: 'bold', color: inf.detentionStatus === 'Passed' ? '#10b981' : inf.detentionStatus === 'Failed' ? '#ef4444' : '#f59e0b' }}>
-                            Status: {inf.detentionStatus || 'Scheduled'}
-                          </span>
-                        </div>
-
-                        {editingLocationInfId === inf.id && (
-                          <div style={{
-                            marginTop: '4px',
-                            padding: '8px 12px',
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            flexWrap: 'wrap'
-                          }}>
-                            <span style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 'bold' }}>Update Location:</span>
-                            <input
-                              type="text"
-                              value={editLocationValue}
-                              onChange={e => setEditLocationValue(e.target.value)}
-                              className="input-field"
-                              style={{ padding: '4px 8px', fontSize: '0.82rem', width: '150px' }}
-                              placeholder="e.g. Hall, Training Room"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!editLocationValue.trim()) return;
-                                updateInfraction(inf.id, { detentionLocation: editLocationValue.trim() });
-                                setEditingLocationInfId(null);
-                              }}
-                              className="btn-primary"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingLocationInfId(null)}
-                              className="btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px' }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div style={styles.messageBox}>
-                      <h5 style={styles.boxLabel}>Public Record Message:</h5>
-                      <p style={styles.messageText}>{inf.mainMessage}</p>
-                    </div>
-
-                    {inf.confidentialMessage && (
-                      <div style={styles.confidentialBox}>
-                        <div style={styles.confHeader}>
-                          <Lock size={12} color="#06b6d4" />
-                          <h5 style={{ ...styles.boxLabel, color: '#06b6d4', margin: 0 }}>Confidential Note (Admin Only):</h5>
-                        </div>
-                        <p style={styles.confidentialText}>{inf.confidentialMessage}</p>
-                      </div>
-                    )}
-
-                    <div style={styles.cardFooter}>
-                      <span>Logged by Admin: <strong>{inf.adminName || inf.issuedByName || 'Administrator'}</strong></span>
-                    </div>
-                  </div>
+                  <InfractionCard
+                    key={inf.id || inf._firebaseKey}
+                    inf={inf}
+                    isAllView={true}
+                    isAdminOrMod={isAdminOrMod}
+                    canDelete={canDeleteConsequence}
+                    staffTotalPts={staffPts}
+                    onDelete={handleDelete}
+                    onAppealReply={replyToInfractionAppeal}
+                    onAppealStatusChange={updateAppealStatus}
+                    onUpdateLocation={handleUpdateLocation}
+                    onToggleCourseAccess={setBehavioralCourseAccess}
+                    onNotifySuccess={notifySuccess}
+                  />
                 );
               })}
             </div>
@@ -1095,145 +952,17 @@ export default function Infractions() {
         </div>
       )}
 
-      {/* Modal: Log New Consequence */}
-      {showLogModal && (
-        <div style={styles.overlay}>
-          <div className="glass-panel" style={styles.modalBox}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '14px', marginBottom: '18px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ShieldAlert size={22} color="#ef4444" />
-                <h3 style={{ margin: 0, color: 'var(--color-text-main)', fontSize: '1.25rem' }}>Log Staff Consequence</h3>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setShowLogModal(false)} 
-                style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
+      {/* Shared Log Consequence Modal */}
+      <LogConsequenceModal
+        isOpen={showLogModal}
+        onClose={() => setShowLogModal(false)}
+        users={users}
+        currentUser={currentUser}
+        infractions={safeInfractions}
+        onSubmitConsequence={handleSubmitConsequence}
+      />
 
-            <form onSubmit={handleCreateConsequence} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Staff Member *</label>
-                <select 
-                  required 
-                  value={logStaffEmail} 
-                  onChange={e => setLogStaffEmail(e.target.value)} 
-                  className="input-field"
-                >
-                  <option value="">Select staff member...</option>
-                  {eligibleStaff.map(u => (
-                    <option key={u.email} value={u.email}>
-                      {u.firstName} {u.lastName} (@{u.robloxUsername || 'user'}) &mdash; {u.email}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Consequence Action Level *</label>
-                <select 
-                  value={logType} 
-                  onChange={e => {
-                    const val = e.target.value;
-                    setLogType(val);
-                    if (isC6Consequence(val)) {
-                      setLogDetentionTime('17:15 - 18:00');
-                      setLogDetentionLocation('Behavioral Course');
-                    } else if (val.includes('C4B')) {
-                      setLogDetentionTime('17:15 - 17:55');
-                      setLogDetentionLocation('Hall');
-                    } else if (val.includes('C4A')) {
-                      setLogDetentionTime('17:15 - 17:35');
-                      setLogDetentionLocation('Hall');
-                    }
-                  }} 
-                  className="input-field"
-                >
-                  <option value="C1 Warning">C1 - Warning (1 pt)</option>
-                  <option value="C2 Warning">C2 - Warning (2 pts)</option>
-                  <option value="C3 Informal Sanction">C3 - Informal Sanction (3 pts)</option>
-                  <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention (4 pts)</option>
-                  <option value="C4B - 40m Detention">C4B - 40 minute Detention (4 pts)</option>
-                  {C5_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                  <option value={C6_OPTION.value}>{C6_OPTION.label}</option>
-                </select>
-              </div>
-
-              {logType === 'C5 - Custom Suspension' && (
-                <CustomSuspensionFields
-                  durationValue={logCustomSuspensionValue}
-                  onDurationChange={setLogCustomSuspensionValue}
-                  durationUnit={logCustomSuspensionUnit}
-                  onUnitChange={setLogCustomSuspensionUnit}
-                />
-              )}
-
-              {(logType.startsWith('C4') || isC6Consequence(logType)) && (
-                <SanctionScheduleFields
-                  isC6={isC6Consequence(logType)}
-                  locationValue={logDetentionLocation}
-                  onLocationChange={setLogDetentionLocation}
-                  dateValue={logDetentionDate}
-                  onDateChange={setLogDetentionDate}
-                  timeValue={logDetentionTime}
-                  onTimeChange={setLogDetentionTime}
-                />
-              )}
-
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Reason Category</label>
-                <select value={logCategory} onChange={e => setLogCategory(e.target.value)} className="input-field">
-                  <option value="Behavior">Behavior</option>
-                  <option value="Verbal assault">Verbal assault</option>
-                  <option value="Refusing a reasonable request">Refusing a reasonable request</option>
-                  <option value="Absence">Absence</option>
-                  <option value="Insubordination">Insubordination</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Reason & Details * (Public staff record)</label>
-                <textarea 
-                  required 
-                  value={logMainMessage} 
-                  onChange={e => setLogMainMessage(e.target.value)} 
-                  placeholder="Explain the incident, shift context, and expectations..."
-                  rows="3"
-                  className="input-field"
-                />
-              </div>
-
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Confidential Note (Admin only)</label>
-                <textarea 
-                  value={logConfidential} 
-                  onChange={e => setLogConfidential(e.target.value)} 
-                  placeholder="Optional internal administrative notes..."
-                  rows="2"
-                  className="input-field"
-                  style={{ borderColor: 'rgba(6, 182, 212, 0.3)', background: 'rgba(6, 182, 212, 0.02)' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
-                <button type="submit" className="btn-danger" style={{ ...styles.submitBtn, flex: 1 }}>
-                  <ShieldAlert size={16} /> Publish Consequence
-                </button>
-                <button type="button" onClick={() => setShowLogModal(false)} className="btn-secondary" style={{ padding: '10px 18px', borderRadius: '8px' }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Consequence Logged Summary UI */}
+      {/* Consequence Logged Summary Modal */}
       <ConsequenceLoggedModal
         isOpen={showLoggedSummaryModal}
         onClose={() => setShowLoggedSummaryModal(false)}
@@ -1244,7 +973,7 @@ export default function Infractions() {
         onViewAll={() => setActiveTab('all')}
       />
 
-      {/* Modal: Full C6 Behavioral Course */}
+      {/* C6 Behavioral Course Modal */}
       <BehavioralCourseModal
         isOpen={Boolean(activeCourseSanction)}
         onClose={() => setActiveCourseSanction(null)}
@@ -1254,8 +983,7 @@ export default function Infractions() {
             completeBehavioralCourse(sanctionId);
           }
           setActiveCourseSanction(null);
-          setLogSuccess('Behavioral Course completed and marked Passed!');
-          setTimeout(() => setLogSuccess(''), 4000);
+          notifySuccess('Behavioral Course completed and marked Passed!');
         }}
       />
     </div>
@@ -1266,427 +994,463 @@ const styles = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '24px',
+    gap: '20px',
+  },
+  successAlert: {
+    background: 'rgba(16, 185, 129, 0.14)',
+    border: '1px solid rgba(16, 185, 129, 0.35)',
+    borderRadius: '10px',
+    padding: '11px 16px',
+    fontSize: '0.88rem',
+    color: '#a7f3d0',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontWeight: '600',
   },
   tabHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-    paddingBottom: '12px',
     flexWrap: 'wrap',
     gap: '12px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
   },
   tabBtn: {
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
     gap: '8px',
-    padding: '10px 18px',
-    borderRadius: '8px',
+    padding: '9px 15px',
+    borderRadius: '9px',
+    border: '1px solid',
     fontSize: '0.85rem',
+    fontWeight: '600',
     cursor: 'pointer',
   },
+  pendingAppealCounter: {
+    background: 'rgba(245, 158, 11, 0.22)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245, 158, 11, 0.45)',
+    fontSize: '0.7rem',
+    fontWeight: '800',
+    padding: '2px 7px',
+    borderRadius: '999px',
+  },
   logNewBtn: {
-    display: 'flex',
+    display: 'inline-flex',
     alignItems: 'center',
-    gap: '8px',
-    padding: '10px 18px',
-    borderRadius: '8px',
-    fontSize: '0.88rem',
+    gap: '7px',
+    padding: '9px 16px',
+    borderRadius: '9px',
+    fontSize: '0.86rem',
     fontWeight: '700',
     cursor: 'pointer',
   },
-  successAlert: {
-    background: 'rgba(16, 185, 129, 0.15)',
-    border: '1px solid rgba(16, 185, 129, 0.3)',
-    borderRadius: '10px',
-    padding: '12px 18px',
-    fontSize: '0.9rem',
-    color: '#a7f3d0',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
-  listContainer: {
+  sectionStack: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '18px',
   },
-
-  // 1. STATS GRID & TOTAL CARD
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: '14px',
-    marginBottom: '8px',
-  },
-  totalScoreCard: {
-    gridColumn: '1 / -1',
-    padding: '20px 24px',
+  standingCard: {
+    background: 'rgba(15, 23, 42, 0.65)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
     borderRadius: '14px',
-    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(139, 92, 246, 0.12) 100%)',
-    border: '1px solid rgba(239, 68, 68, 0.35)',
+    padding: '20px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
-    boxShadow: '0 4px 20px rgba(239, 68, 68, 0.08)',
+    gap: '18px',
   },
-  totalScoreLabel: {
-    fontSize: '0.92rem',
-    fontWeight: '800',
-    color: '#fca5a5',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
+  standingTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '20px',
+    flexWrap: 'wrap',
   },
-  totalScoreVal: {
-    fontSize: '2.8rem',
-    fontWeight: '900',
-    color: '#f87171',
-    lineHeight: '1.1',
-    margin: '4px 0',
-  },
-  totalScoreSub: {
-    fontSize: '0.8rem',
-    color: '#cbd5e1',
-    opacity: 0.85,
-  },
-  statCard: {
-    padding: '16px 18px',
+  standingIconBox: {
+    width: '46px',
+    height: '46px',
     borderRadius: '12px',
     border: '1px solid',
     display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  statHeaderRow: {
+  standingKicker: {
+    fontSize: '0.78rem',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    color: '#94a3b8',
+  },
+  standingStatusBadge: {
+    fontSize: '0.72rem',
+    fontWeight: '700',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    border: '1px solid',
+  },
+  progressTrack: {
+    width: '100%',
+    height: '8px',
+    background: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: '999px',
+    overflow: 'hidden',
+  },
+  tierGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
+    gap: '10px',
+  },
+  tierTile: {
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.07)',
+    borderRadius: '10px',
+    padding: '12px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  tierTileTop: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  weightBadgeBlue: {
-    fontSize: '0.7rem',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    background: 'rgba(59, 130, 246, 0.2)',
-    color: '#93c5fd',
+    fontSize: '0.73rem',
     fontWeight: '700',
+    textTransform: 'uppercase',
   },
-  weightBadgeYellow: {
-    fontSize: '0.7rem',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    background: 'rgba(234, 179, 8, 0.2)',
-    color: '#fde047',
-    fontWeight: '700',
+  tierPts: {
+    fontSize: '0.68rem',
+    color: '#94a3b8',
+    fontWeight: '600',
   },
-  weightBadgeAmber: {
-    fontSize: '0.7rem',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    background: 'rgba(245, 158, 11, 0.2)',
-    color: '#fcd34d',
-    fontWeight: '700',
+  tierValue: {
+    fontSize: '1.65rem',
+    fontWeight: '800',
+    lineHeight: 1.15,
+    marginTop: '2px',
   },
-  weightBadgeRed: {
-    fontSize: '0.7rem',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    background: 'rgba(239, 68, 68, 0.2)',
-    color: '#fca5a5',
-    fontWeight: '700',
+  tierSub: {
+    fontSize: '0.73rem',
+    color: '#94a3b8',
   },
-  weightBadgePurple: {
-    fontSize: '0.7rem',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    background: 'rgba(168, 85, 247, 0.2)',
-    color: '#d8b4fe',
-    fontWeight: '700',
-  },
-
-  // 2. UPCOMING SANCTIONS: PORTAL THEME MATCH
-  upcomingThemeCard: {
+  upcomingCard: {
+    background: 'rgba(15, 23, 42, 0.65)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
     borderRadius: '14px',
     overflow: 'hidden',
-    border: '1px solid var(--color-border, rgba(255, 255, 255, 0.08))',
-    background: 'var(--color-bg-card, rgba(15, 23, 42, 0.65))',
-    backdropFilter: 'blur(16px)',
   },
-  upcomingHeaderDark: {
-    padding: '16px 20px',
+  upcomingHeader: {
+    padding: '13px 18px',
     borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  upcomingTitleDark: {
-    margin: 0,
-    fontSize: '1.05rem',
-    fontWeight: '700',
-    color: 'var(--color-text-main, #f8fafc)',
-  },
   upcomingCountBadge: {
-    fontSize: '0.78rem',
+    fontSize: '0.75rem',
     fontWeight: '700',
-    padding: '3px 10px',
-    borderRadius: '6px',
-    background: 'rgba(245, 158, 11, 0.15)',
+    padding: '2px 9px',
+    borderRadius: '999px',
+    background: 'rgba(245, 158, 11, 0.14)',
     color: '#fbbf24',
     border: '1px solid rgba(245, 158, 11, 0.3)',
   },
-  upcomingBodyDark: {
-    padding: '18px 20px',
-  },
-  noUpcomingDark: {
+  noUpcomingRow: {
+    padding: '14px 18px',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '10px',
     color: '#94a3b8',
-    fontSize: '0.92rem',
-    padding: '8px 0',
+    fontSize: '0.86rem',
   },
-  upcomingItemDark: {
+  upcomingRowItem: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    padding: '14px 16px',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    flexWrap: 'wrap',
+    padding: '10px 14px',
     borderRadius: '10px',
     background: 'rgba(255, 255, 255, 0.03)',
     border: '1px solid rgba(255, 255, 255, 0.06)',
   },
-  upcomingDateTextDark: {
-    fontSize: '0.88rem',
-    fontWeight: '700',
-    color: '#93c5fd',
+  c4Badge: {
+    background: 'rgba(245, 158, 11, 0.2)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245, 158, 11, 0.4)',
+    fontWeight: '800',
+    fontSize: '0.72rem',
+    padding: '2px 8px',
+    borderRadius: '6px',
   },
-  upcomingRowDark: {
+  c6Badge: {
+    background: 'rgba(168, 85, 247, 0.2)',
+    color: '#d8b4fe',
+    border: '1px solid rgba(168, 85, 247, 0.4)',
+    fontWeight: '800',
+    fontSize: '0.72rem',
+    padding: '2px 8px',
+    borderRadius: '6px',
+  },
+  sectionHeaderRow: {
     display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: '12px',
+    flexWrap: 'wrap',
+    marginTop: '4px',
+  },
+  sectionHeading: {
+    margin: 0,
+    fontSize: '1.05rem',
+    fontWeight: '700',
+    color: 'var(--color-text-main)',
+  },
+  sectionSub: {
+    margin: '2px 0 0 0',
+    fontSize: '0.82rem',
+    color: '#94a3b8',
+  },
+  recordCountChip: {
+    fontSize: '0.76rem',
+    fontWeight: '700',
+    color: '#cbd5e1',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    padding: '3px 10px',
+    borderRadius: '999px',
+  },
+  filterToolbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: '12px',
     flexWrap: 'wrap',
   },
-  c4BadgeDark: {
-    background: 'rgba(245, 158, 11, 0.25)',
-    color: '#fbbf24',
-    border: '1px solid rgba(245, 158, 11, 0.45)',
-    fontWeight: '800',
-    fontSize: '0.75rem',
-    padding: '3px 8px',
-    borderRadius: '6px',
-    letterSpacing: '0.02em',
-  },
-  c6BadgeDark: {
-    background: 'rgba(168, 85, 247, 0.25)',
-    color: '#d8b4fe',
-    border: '1px solid rgba(168, 85, 247, 0.45)',
-    fontWeight: '800',
-    fontSize: '0.75rem',
-    padding: '3px 8px',
-    borderRadius: '6px',
-    letterSpacing: '0.02em',
-  },
-  escalationBadgeDark: {
-    background: 'rgba(239, 68, 68, 0.25)',
-    color: '#f87171',
-    border: '1px solid rgba(239, 68, 68, 0.45)',
-    fontWeight: '700',
-    fontSize: '0.75rem',
-    padding: '3px 8px',
-    borderRadius: '6px',
-  },
-  detentionTitleTextDark: {
-    fontSize: '0.92rem',
+  filterChip: {
+    padding: '7px 12px',
+    borderRadius: '8px',
+    border: '1px solid',
+    fontSize: '0.78rem',
     fontWeight: '600',
-    color: '#f1f5f9',
+    cursor: 'pointer',
   },
-  detentionTimeRowDark: {
+  cardList: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    fontSize: '0.85rem',
-    color: '#94a3b8',
-    fontWeight: '500',
-    marginLeft: 'auto',
-  },
-
-  // 3. LOG HISTORY & DETAILS
-  sectionNotice: {
-    display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
     gap: '12px',
-    padding: '14px 18px',
+  },
+  card: {
+    background: 'rgba(15, 23, 42, 0.7)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
     borderRadius: '12px',
-    background: 'rgba(16, 185, 129, 0.05)',
-    border: '1px solid rgba(16, 185, 129, 0.2)',
-  },
-  noticeText: {
-    fontSize: '0.875rem',
-    color: '#a7f3d0',
-    margin: 0,
-  },
-  emptyState: {
+    padding: '18px 20px',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
     gap: '12px',
-    padding: '60px 0',
-  },
-  emptyText: {
-    color: '#9ca3af',
-    fontSize: '1rem',
-  },
-  list: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  infractionCard: {
-    padding: '22px',
-    borderRadius: '14px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px',
   },
   cardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-    paddingBottom: '12px',
-    flexWrap: 'wrap',
+    alignItems: 'flex-start',
     gap: '12px',
+    flexWrap: 'wrap',
   },
-  typeBadgeContainer: {
+  cardTitleGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  staffIdentity: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
     flexWrap: 'wrap',
   },
-  targetStaff: {
-    fontSize: '1.05rem',
-    fontWeight: '700',
+  staffName: {
+    fontSize: '1rem',
     color: 'var(--color-text-main)',
   },
-  staffMail: {
-    fontSize: '0.85rem',
-    color: '#9ca3af',
+  staffEmail: {
+    fontSize: '0.82rem',
+    color: '#94a3b8',
   },
-  infractionType: {
-    padding: '4px 10px',
-    borderRadius: '6px',
-    fontSize: '0.75rem',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  staffTotalPointsBadge: {
-    background: 'rgba(239, 68, 68, 0.15)',
-    color: '#f87171',
-    border: '1px solid rgba(239, 68, 68, 0.3)',
+  totalPtsPill: {
     fontSize: '0.72rem',
-    fontWeight: '800',
+    fontWeight: '700',
     padding: '2px 8px',
-    borderRadius: '4px',
-    marginLeft: '6px',
+    borderRadius: '999px',
+    border: '1px solid',
   },
-  infDate: {
-    fontSize: '0.8rem',
-    color: '#9ca3af',
+  badgeRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '7px',
+    flexWrap: 'wrap',
+  },
+  tierBadge: {
+    padding: '3px 10px',
+    borderRadius: '6px',
+    fontSize: '0.74rem',
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: '0.02em',
+  },
+  ptsChip: {
+    fontSize: '0.73rem',
+    fontWeight: '700',
+    color: '#94a3b8',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.09)',
+    padding: '2px 8px',
+    borderRadius: '6px',
+  },
+  categoryChip: {
+    fontSize: '0.73rem',
+    fontWeight: '600',
+    color: '#cbd5e1',
+    background: 'rgba(148, 163, 184, 0.12)',
+    border: '1px solid rgba(148, 163, 184, 0.22)',
+    padding: '2px 8px',
+    borderRadius: '6px',
+  },
+  escalationChip: {
+    fontSize: '0.72rem',
+    fontWeight: '700',
+    color: '#fb923c',
+    background: 'rgba(249, 115, 22, 0.16)',
+    border: '1px solid rgba(249, 115, 22, 0.35)',
+    padding: '2px 8px',
+    borderRadius: '6px',
+  },
+  cardMetaRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  dateText: {
+    fontSize: '0.78rem',
+    color: '#94a3b8',
   },
   deleteBtn: {
     padding: '6px',
     borderRadius: '6px',
     cursor: 'pointer',
   },
-  messageBox: {
+  reasonText: {
+    margin: 0,
+    fontSize: '0.94rem',
+    color: '#e2e8f0',
+    lineHeight: '1.55',
+    whiteSpace: 'pre-wrap',
+  },
+  scheduleStrip: {
+    border: '1px solid',
+    borderRadius: '9px',
+    padding: '10px 12px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
+    gap: '8px',
   },
-  boxLabel: {
-    fontSize: '0.8rem',
-    fontWeight: '600',
-    color: '#3b82f6',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    margin: 0,
-  },
-  messageText: {
-    fontSize: '0.9rem',
-    color: '#d1d5db',
-    lineHeight: '1.45',
-    margin: 0,
-  },
-  confidentialBox: {
-    background: 'rgba(6, 182, 212, 0.05)',
-    border: '1px solid rgba(6, 182, 212, 0.2)',
-    borderLeftWidth: '4px',
-    borderRadius: '4px 8px 8px 4px',
-    padding: '14px 16px',
+  scheduleStripMain: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
   },
-  confHeader: {
+  scheduleActions: {
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
+    flexWrap: 'wrap',
+    marginLeft: 'auto',
+  },
+  locationEditRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+    paddingTop: '4px',
+  },
+  smallActionBtn: {
+    padding: '5px 11px',
+    fontSize: '0.76rem',
+    fontWeight: '600',
+    borderRadius: '6px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    cursor: 'pointer',
+  },
+  inlineEditBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#fbbf24',
+    cursor: 'pointer',
+    fontSize: '0.75rem',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '2px 4px',
+  },
+  confidentialBox: {
+    background: 'rgba(6, 182, 212, 0.06)',
+    border: '1px solid rgba(6, 182, 212, 0.22)',
+    borderLeft: '3px solid #06b6d4',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
   },
   confidentialText: {
-    fontSize: '0.875rem',
-    color: '#c5f2f7',
-    fontStyle: 'italic',
-    lineHeight: '1.4',
     margin: 0,
+    fontSize: '0.84rem',
+    color: '#cffafe',
+    lineHeight: '1.45',
+  },
+  appealBtn: {
+    padding: '6px 12px',
+    fontSize: '0.8rem',
+    borderRadius: '7px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  appealComposer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '10px 12px',
+    borderRadius: '9px',
+    background: 'rgba(59, 130, 246, 0.06)',
+    border: '1px solid rgba(59, 130, 246, 0.25)',
   },
   cardFooter: {
     display: 'flex',
     justifyContent: 'flex-end',
     fontSize: '0.75rem',
-    color: '#9ca3af',
-    borderTop: '1px solid rgba(255,255,255,0.03)',
-    paddingTop: '12px',
+    color: '#94a3b8',
+    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+    paddingTop: '10px',
   },
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.7)',
-    backdropFilter: 'blur(6px)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: '20px',
-  },
-  modalBox: {
-    width: '100%',
-    maxWidth: '540px',
-    borderRadius: '16px',
-    padding: '24px',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-  },
-  inputWrapper: {
+  emptyState: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
-  },
-  label: {
-    fontSize: '0.85rem',
-    fontWeight: '600',
-    color: '#d1d5db',
-  },
-  submitBtn: {
-    padding: '12px 20px',
-    borderRadius: '8px',
-    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '8px',
-    cursor: 'pointer',
-    fontWeight: '700',
+    gap: '10px',
+    padding: '44px 16px',
+    background: 'rgba(15, 23, 42, 0.45)',
+    border: '1px solid rgba(255, 255, 255, 0.06)',
+    borderRadius: '12px',
+  },
+  emptyText: {
+    margin: 0,
+    color: '#94a3b8',
+    fontSize: '0.92rem',
   },
 };

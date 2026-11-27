@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Lock, LogOut, MessageSquareWarning, CheckCircle2, Send } from 'lucide-react';
+import { Lock, LogOut, MessageSquareWarning, CheckCircle2, Send, ShieldCheck } from 'lucide-react';
+import { AppealStatusBadge } from './AppealSection';
+import { getAppealReplies } from '../utils/appealUtils';
 
 export default function SuspendedScreen() {
   const { currentUser, infractions = [], logout, liftExpiredSuspension, submitSuspensionAppeal } = useApp();
@@ -9,10 +11,11 @@ export default function SuspendedScreen() {
   const [appealText, setAppealText] = useState('');
   const [appealError, setAppealError] = useState('');
   const [appealJustSubmitted, setAppealJustSubmitted] = useState(false);
+  const userEmail = currentUser?.email;
 
   const latestSuspensionInfraction = useMemo(() => {
-    if (!currentUser?.email) return null;
-    const normalized = currentUser.email.toLowerCase().trim();
+    if (!userEmail) return null;
+    const normalized = userEmail.toLowerCase().trim();
     return (infractions || [])
       .filter(inf =>
         inf &&
@@ -20,7 +23,7 @@ export default function SuspendedScreen() {
         (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension'))
       )
       .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))[0] || null;
-  }, [infractions, currentUser?.email]);
+  }, [infractions, userEmail]);
 
   const existingAppeal = latestSuspensionInfraction?.appeal || currentUser?.suspensionAppeal || null;
 
@@ -95,12 +98,29 @@ export default function SuspendedScreen() {
                   <CheckCircle2 size={16} />
                   Appeal Submitted
                 </span>
-                <span style={styles.pendingPill}>Pending Admin Review</span>
+                <AppealStatusBadge status={existingAppeal.status || 'Pending'} />
               </div>
               <p style={styles.appealBodyText}>{existingAppeal.text}</p>
               {existingAppeal.date && (
                 <div style={styles.appealDateText}>
                   Submitted {new Date(existingAppeal.date).toLocaleString()}
+                </div>
+              )}
+              {getAppealReplies(existingAppeal).length > 0 && (
+                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', fontWeight: '700', color: '#34d399', textTransform: 'uppercase' }}>
+                    <ShieldCheck size={14} />
+                    Admin Response
+                  </div>
+                  {getAppealReplies(existingAppeal).map((rep, idx) => (
+                    <div key={rep.id || idx} style={{ padding: '8px 10px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.55)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '0.74rem', color: '#6ee7b7', fontWeight: '700', marginBottom: '3px' }}>
+                        <span>{rep.authorName || 'Administrator'}</span>
+                        {rep.timestamp && <span style={{ color: '#94a3b8', fontWeight: '500' }}>{new Date(rep.timestamp).toLocaleString()}</span>}
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.84rem', color: '#f1f5f9', whiteSpace: 'pre-wrap' }}>{rep.text}</p>
+                    </div>
+                  ))}
                 </div>
               )}
               {appealJustSubmitted && (

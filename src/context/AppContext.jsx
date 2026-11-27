@@ -10,6 +10,7 @@ import {
 } from '../utils/timeUtils.js';
 import { CURRENT_APP_VERSION, normalizeVersion } from '../utils/versionUtils';
 import { playNotificationSound, isDndActive, setDndActive } from '../utils/notificationSound';
+import { normalizeAppealStatus } from '../utils/appealUtils';
 const AppContext = createContext();
 
 const SUPER_ADMIN_EMAIL = 'evanm.100000@gmail.com';
@@ -307,6 +308,7 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
     setLocalData(prev => {
       const currentArray = prev || [];
       let nextArray = typeof updater === 'function' ? updater(currentArray) : updater;
+      if (nextArray === currentArray) return currentArray;
       
       if (Array.isArray(nextArray)) {
         const seenKeys = new Set();
@@ -323,54 +325,77 @@ const useFirebaseArray = (path, initialValue, enabled = true, limitCount = null)
         });
       }
 
-      const db = getDatabase(firebaseApp);
+      // Build O(1) lookup maps so we avoid O(N^2) finds and skip JSON.stringify on unchanged object refs
+      const byFbKey = new Map();
+      const byEmail = new Map();
+      const byId = new Map();
+      for (let idx = 0; idx < currentArray.length; idx++) {
+        const cur = currentArray[idx];
+        if (!cur) continue;
+        if (cur._firebaseKey) byFbKey.set(cur._firebaseKey, cur);
+        if (cur.email) byEmail.set(cur.email.toLowerCase().trim(), cur);
+        if (cur.id) byId.set(String(cur.id), cur);
+      }
+
+      const nextFbKeys = new Set();
+      const nextEmails = new Set();
+      const nextIds = new Set();
       const updates = {};
       
       // Find additions and modifications
-      nextArray.forEach(item => {
+      for (let idx = 0; idx < nextArray.length; idx++) {
+        const item = nextArray[idx];
         let fbKey = item._firebaseKey;
         if (!fbKey) {
           fbKey = item.id ? String(item.id) : (item.email ? item.email.toLowerCase().trim().replace(/\./g, ',') : Math.random().toString(36).substring(2, 10));
           item._firebaseKey = fbKey;
         }
+        nextFbKeys.add(fbKey);
+        if (item.email) nextEmails.add(item.email.toLowerCase().trim());
+        if (item.id) nextIds.add(String(item.id));
         
-        const currentItem = currentArray.find(i => 
-          (i._firebaseKey && i._firebaseKey === fbKey) ||
-          (i.email && item.email && i.email.toLowerCase().trim() === item.email.toLowerCase().trim()) ||
-          (i.id && item.id && String(i.id) === String(item.id))
-        );
+        const currentItem = byFbKey.get(fbKey)
+          || (item.email ? byEmail.get(item.email.toLowerCase().trim()) : null)
+          || (item.id ? byId.get(String(item.id)) : null);
+
+        // Fast path: identical reference means zero changes
+        if (currentItem === item) continue;
+
         if (!currentItem || JSON.stringify(currentItem) !== JSON.stringify(item)) {
           updates[fbKey] = item;
         }
-      });
+      }
       
-      // Find deletions safely checking email, id and _firebaseKey
-      currentArray.forEach(item => {
-        const fbKey = item._firebaseKey;
-        const stillExists = nextArray.some(i => 
-          (i._firebaseKey && i._firebaseKey === fbKey) ||
-          (i.email && item.email && i.email.toLowerCase().trim() === item.email.toLowerCase().trim()) ||
-          (i.id && item.id && String(i.id) === String(item.id))
-        );
-        if (!stillExists && fbKey) {
+      // Find deletions in O(N)
+      for (let idx = 0; idx < currentArray.length; idx++) {
+        const item = currentArray[idx];
+        const fbKey = item?._firebaseKey;
+        if (!fbKey) continue;
+        const stillExists = nextFbKeys.has(fbKey)
+          || (item.email && nextEmails.has(item.email.toLowerCase().trim()))
+          || (item.id && nextIds.has(String(item.id)));
+        if (!stillExists) {
           updates[fbKey] = null;
         }
-      });
+      }
       
       if (Object.keys(updates).length > 0) {
-        try {
-          const cleanUpdates = JSON.parse(JSON.stringify(updates));
-          update(ref(db, path), cleanUpdates).catch(err => console.error('Firebase update error:', err));
-        } catch (e) {
-          console.error('Failed to sync updates to Firebase synchronously', e);
-        }
+        queueMicrotask(() => {
+          try {
+            const db = getDatabase(firebaseApp);
+            const cleanUpdates = JSON.parse(JSON.stringify(updates));
+            update(ref(db, path), cleanUpdates).catch(err => console.error('Firebase update error:', err));
+          } catch (e) {
+            console.error('Failed to sync updates to Firebase', e);
+          }
+        });
       }
       
       return nextArray;
     });
   };
 
-  return [localData, updateData, isLoaded];
+  return [localData, updateData, isLoaded, setLocalData];
 };
 
 const useFirebaseObject = (path, initialValue, enabled = true) => {
@@ -420,13 +445,13 @@ export const AppProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const isLoggedIn = !!currentUser;
 
-  const [users, setUsers, isUsersLoaded] = useFirebaseArray('users', initialUsers);
+  const [users, setUsers, isUsersLoaded, setUsersLocal] = useFirebaseArray('users', initialUsers);
   const [flights, setFlights] = useFirebaseArray('flights', initialFlights, true, 100);
   const [flightLogs, setFlightLogs] = useFirebaseArray('flightLogs', initialFlightLogs, isLoggedIn, 100);
   const [loaRequests, setLoaRequests] = useFirebaseArray('loaRequests', initialLoaRequests, isLoggedIn, 50);
   const [documents, setDocuments] = useFirebaseArray('documents', initialDocuments, isLoggedIn, 50);
   const [reports, setReports] = useFirebaseArray('reports', initialReports, isLoggedIn, 50);
-  const [infractions, setInfractions] = useFirebaseArray('infractions', initialInfractions, isLoggedIn, 50);
+  const [infractions, setInfractions, , setInfractionsLocal] = useFirebaseArray('infractions', initialInfractions, isLoggedIn, 50);
   const [tasks, setTasks] = useFirebaseArray('tasks', initialTasks, isLoggedIn, 50);
   const [tickets, setTickets] = useFirebaseArray('tickets', initialTickets, isLoggedIn, 50);
   const [staffNotes, setStaffNotes] = useFirebaseArray('staffNotes', initialStaffNotes, isLoggedIn, 50);
@@ -448,8 +473,8 @@ export const AppProvider = ({ children }) => {
   const [quotaConfig, setQuotaConfig] = useFirebaseObject('quotaConfig', initialQuotaConfig);
   const [homeworkConfig, setHomeworkConfig] = useFirebaseObject('homeworkConfig', initialHomeworkConfig);
 
-  const [informalSanctions, setInformalSanctions] = useFirebaseArray('informalSanctions', EMPTY_ARRAY, isLoggedIn, 50);
-  const [pointLogs, setPointLogs] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isAdmin, 200);
+  const [informalSanctions, setInformalSanctions, , setInformalSanctionsLocal] = useFirebaseArray('informalSanctions', EMPTY_ARRAY, isLoggedIn, 50);
+  const [pointLogs, setPointLogs, , setPointLogsLocal] = useFirebaseArray('pointLogs', EMPTY_ARRAY, isAdmin, 200);
   const [events, setEvents] = useFirebaseArray('events', initialEvents, isLoggedIn, 50);
   const [unavailableDates, setUnavailableDates] = useFirebaseArray('unavailableDates', initialUnavailableDates, isLoggedIn, 200);
   const [meetings, setMeetings] = useFirebaseArray('meetings', initialMeetings, isLoggedIn, 50);
@@ -1327,7 +1352,8 @@ export const AppProvider = ({ children }) => {
       return;
     }
     if (visibleChatMessages.length > prevDataRef.current.chatMessages.length) {
-      const newMsg = visibleChatMessages.find(m => !prevDataRef.current.chatMessages.some(pm => pm.id === m.id));
+      const prevIds = new Set(prevDataRef.current.chatMessages.map(pm => pm.id));
+      const newMsg = visibleChatMessages.find(m => !prevIds.has(m.id));
       if (newMsg && newMsg.senderEmail !== currentUser.email) {
         const msgTime = new Date(newMsg.timestamp || 0).getTime();
         if (msgTime > mountTimeRef.current) {
@@ -1346,8 +1372,9 @@ export const AppProvider = ({ children }) => {
       return;
     }
     if (infractions.length > prevDataRef.current.infractions.length) {
-      const newInf = infractions.find(i => !prevDataRef.current.infractions.some(pi => pi.id === i.id));
-      if (newInf && newInf.staffEmail === currentUser.email) {
+      const prevIds = new Set(prevDataRef.current.infractions.map(pi => pi.id));
+      const newInf = infractions.find(i => !prevIds.has(i.id));
+      if (newInf && newInf.staffEmail?.toLowerCase() === currentUser.email?.toLowerCase()) {
         const infTime = new Date(newInf.timestamp || newInf.createdAt || 0).getTime();
         if (infTime > mountTimeRef.current) {
           addNotification(`New Consequence: ${newInf.type}`, `You received a ${newInf.type}. Check your dashboard.`, 'danger');
@@ -1428,6 +1455,34 @@ export const AppProvider = ({ children }) => {
   const logAction = (type, description, details = {}) => {
   };
 
+  // Targeted single-user patch: updates ONLY changed fields in Firebase without re-serializing or diffing all users
+  const patchUserFields = (targetEmail, patchOrBuilder) => {
+    if (!targetEmail) return;
+    const norm = targetEmail.toLowerCase().trim();
+    const db = getDatabase(firebaseApp);
+    setUsersLocal(prev => {
+      if (!Array.isArray(prev)) return prev;
+      let changed = false;
+      const next = prev.map(u => {
+        if (!u || u.email?.toLowerCase().trim() !== norm) return u;
+        const patch = typeof patchOrBuilder === 'function' ? patchOrBuilder(u) : patchOrBuilder;
+        if (!patch || typeof patch !== 'object') return u;
+        changed = true;
+        const fbKey = u._firebaseKey || escapeEmail(u.email);
+        queueMicrotask(() => {
+          try {
+            const cleanPatch = JSON.parse(JSON.stringify(patch));
+            update(ref(db, `users/${fbKey}`), cleanPatch).catch(err => console.error('Failed to patch user in Firebase:', err));
+          } catch (e) {
+            console.error('Failed to serialize user patch:', e);
+          }
+        });
+        return { ...u, ...patch };
+      });
+      return changed ? next : prev;
+    });
+  };
+
   const logPointsAction = (staffEmail, amountDelta, reason) => {
     if (amountDelta === 0) return;
     const adminEmail = currentUser?.email || 'System';
@@ -1439,7 +1494,9 @@ export const AppProvider = ({ children }) => {
       adminEmail,
       timestamp: new Date().toISOString()
     };
-    setPointLogs(prev => [newLog, ...prev]);
+    const db = getDatabase(firebaseApp);
+    update(ref(db, 'pointLogs'), { [newLog.id]: newLog }).catch(err => console.error('Failed to log points in Firebase:', err));
+    setPointLogsLocal(prev => [newLog, ...(prev || [])]);
   };
 
   const login = (email, password, rememberMe = false) => {
@@ -1689,12 +1746,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const addPoints = (email, amount, reason) => {
-    setUsers(prev => prev.map(u => {
-      if (u.email === email) {
-        return { ...u, points: Number(u.points || 0) + amount };
-      }
-      return u;
-    }));
+    patchUserFields(email, u => ({ points: Number(u.points || 0) + amount }));
     logPointsAction(email, amount, reason || 'Manual adjustment');
     logAction('points_added', `Added ${amount} points to ${email}`, { email, amount, reason });
     if (amount > 0) {
@@ -1707,7 +1759,11 @@ export const AppProvider = ({ children }) => {
     if (!canTakeAction(currentUser, targetUser)) return;
 
     const suspendedUntil = new Date(Date.now() + hours * 3600000).toISOString();
-    setUsers(prev => prev.map(u => u.email === email ? { ...u, suspendedUntil, suspendedReason: reason, points: Number(u.points || 0) - 12 } : u));
+    patchUserFields(email, u => ({
+      suspendedUntil,
+      suspendedReason: reason,
+      points: Number(u.points || 0) - 12
+    }));
     logPointsAction(email, -12, 'Account Suspended');
     logAction('user_suspended', `Suspended ${email} for ${hours} hours. Reason: ${reason}`, { email, hours, reason, suspendedUntil });
     
@@ -1736,8 +1792,8 @@ export const AppProvider = ({ children }) => {
     const db = getDatabase(firebaseApp);
     const cleanSanction = JSON.parse(JSON.stringify(newSanction));
     update(ref(db, 'informalSanctions'), { [newSanction.id]: cleanSanction }).catch(err => console.error('Failed to save informal sanction to Firebase:', err));
-    setInformalSanctions(prev => [newSanction, ...(prev || []).filter(s => s.id !== newSanction.id)]);
-    setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - 2 } : u));
+    setInformalSanctionsLocal(prev => [newSanction, ...(prev || []).filter(s => s.id !== newSanction.id)]);
+    patchUserFields(staffEmail, u => ({ points: Number(u.points || 0) - 2 }));
     logPointsAction(staffEmail, -2, `Informal Sanction: ${reason}`);
     logAction('informal_sanction_added', `Issued informal sanction to ${staffEmail}`, { staffEmail, reason });
     return true;
@@ -1747,7 +1803,7 @@ export const AppProvider = ({ children }) => {
     if (!staffEmail) return;
     const isOnLoa = isUserOnActiveLoa(staffEmail, loaRequests);
     if (!isOnLoa) {
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - 2 } : u));
+      patchUserFields(staffEmail, u => ({ points: Number(u.points || 0) - 2 }));
       logPointsAction(staffEmail, -2, 'Missed Flight');
       logAction('missed_flight_logged', `Logged missed flight for ${staffEmail}`, { staffEmail });
     }
@@ -1756,18 +1812,14 @@ export const AppProvider = ({ children }) => {
   const unsuspendUser = (email) => {
     const targetUser = users.find(u => u.email === email);
     if (!canTakeAction(currentUser, targetUser)) return;
-    setUsers(prev => prev.map(u => u.email === email ? { ...u, suspendedUntil: null, suspendedReason: null, suspensionAppeal: null, needsRehabilitation: true } : u));
+    patchUserFields(email, { suspendedUntil: null, suspendedReason: null, suspensionAppeal: null, needsRehabilitation: true });
     logAction('user_unsuspended', `Unsuspended ${email}`, { email });
   };
 
   const liftExpiredSuspension = (email) => {
     if (!email) return;
     const normalized = email.toLowerCase().trim();
-    setUsers(prev => (prev || []).map(u =>
-      u.email?.toLowerCase().trim() === normalized
-        ? { ...u, suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true }
-        : u
-    ));
+    patchUserFields(normalized, { suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true });
     if (currentUser?.email?.toLowerCase().trim() === normalized) {
       const updatedCurrent = { ...currentUser, suspendedUntil: null, suspensionAppeal: null, needsRehabilitation: true };
       setCurrentUser(updatedCurrent);
@@ -1785,10 +1837,13 @@ export const AppProvider = ({ children }) => {
     if (!cleanText || !currentUser?.email) return false;
 
     const normalized = currentUser.email.toLowerCase().trim();
+    const nowIso = new Date().toISOString();
     const appealObj = {
       text: cleanText,
-      date: new Date().toISOString(),
-      status: 'Pending'
+      date: nowIso,
+      status: 'Pending',
+      statusUpdatedAt: nowIso,
+      replies: []
     };
 
     // Attach appeal to the latest C5 / suspension infraction if one exists
@@ -1807,11 +1862,7 @@ export const AppProvider = ({ children }) => {
       }
     }
 
-    setUsers(prev => (prev || []).map(u =>
-      u.email?.toLowerCase().trim() === normalized
-        ? { ...u, suspensionAppeal: appealObj }
-        : u
-    ));
+    patchUserFields(normalized, { suspensionAppeal: appealObj });
 
     const updatedCurrent = { ...currentUser, suspensionAppeal: appealObj };
     setCurrentUser(updatedCurrent);
@@ -2585,7 +2636,8 @@ export const AppProvider = ({ children }) => {
     const mainMessage = infData.mainMessage?.trim();
     if (!staffEmail || !mainMessage) return false;
 
-    const staffUser = users.find(u => u.email === staffEmail);
+    const normalizedTarget = staffEmail.toLowerCase();
+    const staffUser = users.find(u => u?.email?.toLowerCase().trim() === normalizedTarget);
     
     if (!canTakeAction(currentUser, staffUser)) {
       return false; 
@@ -2617,7 +2669,7 @@ export const AppProvider = ({ children }) => {
     if (isDetention && detentionDate) {
       const duplicateC4 = (infractions || []).find(inf => 
         inf &&
-        inf.staffEmail?.toLowerCase() === staffEmail.toLowerCase() &&
+        inf.staffEmail?.toLowerCase() === normalizedTarget &&
         (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) &&
         (inf.detentionDate || '').trim() === detentionDate.trim()
       );
@@ -2627,9 +2679,10 @@ export const AppProvider = ({ children }) => {
       }
     }
 
+    const nowIso = new Date().toISOString();
     const newInfraction = {
       id: makeId('inf'),
-      staffEmail,
+      staffEmail: staffUser?.email || staffEmail,
       staffName: staffUser ? `${staffUser.firstName} ${staffUser.lastName}` : staffEmail,
       type,
       mainMessage,
@@ -2651,21 +2704,30 @@ export const AppProvider = ({ children }) => {
       isEscalation: !!infData.isEscalation,
       issuedByEmail: currentUser.email,
       issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
-      timestamp: new Date().toISOString()
+      timestamp: nowIso
     };
     
     const db = getDatabase(firebaseApp);
     const cleanInf = JSON.parse(JSON.stringify(newInfraction));
     update(ref(db, 'infractions'), { [newInfraction.id]: cleanInf }).catch(err => console.error('Failed to save infraction to Firebase:', err));
-    setInfractions(prev => [newInfraction, ...(prev || []).filter(i => i.id !== newInfraction.id)]);
+    setInfractionsLocal(prev => [newInfraction, ...(prev || []).filter(i => i.id !== newInfraction.id)]);
     
     if (isSuspension) {
       const suspendedUntil = new Date(Date.now() + suspensionDurationHours * 60 * 60 * 1000).toISOString();
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, suspendedUntil, suspendedReason: mainMessage, suspensionAppeal: null, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } : u));
+      patchUserFields(normalizedTarget, {
+        suspendedUntil,
+        suspendedReason: mainMessage,
+        suspensionAppeal: null,
+        needsRehabilitation: false,
+        lastInfractionDate: nowIso
+      });
     } else if (!infData.skipUserSuspension) {
       const deduction = isBehavioralCourse ? 15 : type.startsWith('C4') ? 10 : (type.startsWith('C3') ? 5 : 2);
-      setUsers(prev => prev.map(u => u.email === staffEmail ? { ...u, points: Number(u.points || 0) - deduction, lastInfractionDate: new Date().toISOString() } : u));
-      logPointsAction(staffEmail, -deduction, `Sanction ${type}: ${mainMessage}`);
+      patchUserFields(normalizedTarget, u => ({
+        points: Number(u.points || 0) - deduction,
+        lastInfractionDate: nowIso
+      }));
+      logPointsAction(staffUser?.email || staffEmail, -deduction, `Sanction ${type}: ${mainMessage}`);
     }
     
     logAction('infraction_added', `Issued ${type} to ${staffEmail}`, { staffEmail, mainMessage, type });
@@ -2673,9 +2735,13 @@ export const AppProvider = ({ children }) => {
   };
 
   const passDetention = (infractionId) => {
-    setInfractions(prev => prev.map(inf => {
-      if (inf.id !== infractionId) return inf;
-      return { ...inf, detentionStatus: 'Passed', completedAt: new Date().toISOString() };
+    const nowIso = new Date().toISOString();
+    const updates = { detentionStatus: 'Passed', completedAt: nowIso, updatedAt: nowIso };
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `infractions/${infractionId}`), updates).catch(err => console.error('Failed to pass detention in Firebase:', err));
+    setInfractionsLocal(prev => (prev || []).map(inf => {
+      if (inf.id !== infractionId && inf._firebaseKey !== infractionId) return inf;
+      return { ...inf, ...updates };
     }));
     logAction('detention_passed', `Detention marked passed for ${infractionId}`, { infractionId });
   };
@@ -2692,7 +2758,7 @@ export const AppProvider = ({ children }) => {
     };
     const db = getDatabase(firebaseApp);
     update(ref(db, `infractions/${infractionId}`), updates).catch(err => console.error('Failed to update C6 behavioral course completion in Firebase:', err));
-    setInfractions(prev => (prev || []).map(inf => {
+    setInfractionsLocal(prev => (prev || []).map(inf => {
       if (inf.id !== infractionId && inf._firebaseKey !== infractionId) return inf;
       return { ...inf, ...updates };
     }));
@@ -2710,7 +2776,7 @@ export const AppProvider = ({ children }) => {
     };
     const db = getDatabase(firebaseApp);
     update(ref(db, `infractions/${infractionId}`), updates).catch(err => console.error('Failed to update C6 behavioral course access in Firebase:', err));
-    setInfractions(prev => (prev || []).map(inf => {
+    setInfractionsLocal(prev => (prev || []).map(inf => {
       if (inf.id !== infractionId && inf._firebaseKey !== infractionId) return inf;
       return { ...inf, ...updates };
     }));
@@ -2723,6 +2789,8 @@ export const AppProvider = ({ children }) => {
 
     const isTargetC4A = target.type.includes('C4A') || target.type === 'C4A - Infraction + 20m Detention';
     let escalatedInfraction = null;
+    const nowIso = new Date().toISOString();
+    const db = getDatabase(firebaseApp);
 
     if (isTargetC4A) {
       // Escalate from C4A (+4 pts) to C4B (+4 pts) => total 8 points
@@ -2741,24 +2809,30 @@ export const AppProvider = ({ children }) => {
         isEscalation: true,
         issuedByEmail: currentUser.email,
         issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
-        timestamp: new Date().toISOString()
+        timestamp: nowIso
       };
 
+      const targetKey = target._firebaseKey || target.id;
+      update(ref(db, 'infractions'), {
+        [`${targetKey}/detentionStatus`]: 'Failed',
+        [`${targetKey}/failedAt`]: nowIso,
+        [escalatedInfraction.id]: JSON.parse(JSON.stringify(escalatedInfraction))
+      }).catch(err => console.error('Failed to escalate detention in Firebase:', err));
+
       // Atomically update target as Failed and prepend escalated infraction
-      setInfractions(prev => {
+      setInfractionsLocal(prev => {
         const updated = (prev || []).map(inf => {
           if (inf.id !== infractionId) return inf;
-          return { ...inf, detentionStatus: 'Failed', failedAt: new Date().toISOString() };
+          return { ...inf, detentionStatus: 'Failed', failedAt: nowIso };
         });
         return [escalatedInfraction, ...updated];
       });
 
       // Deduct staff points for C4 escalation
-      setUsers(prev => (prev || []).map(u => 
-        u.email === target.staffEmail 
-          ? { ...u, points: Number(u.points || 0) - 10, lastInfractionDate: new Date().toISOString() } 
-          : u
-      ));
+      patchUserFields(target.staffEmail, u => ({
+        points: Number(u.points || 0) - 10,
+        lastInfractionDate: nowIso
+      }));
       logPointsAction(target.staffEmail, -10, `Escalation to C4B - 40m Detention (Failed C4A)`);
       logAction('detention_escalated', `Detention escalated to C4B for ${target.staffEmail}`, { targetId: infractionId });
 
@@ -2785,24 +2859,33 @@ export const AppProvider = ({ children }) => {
         isEscalation: true,
         issuedByEmail: currentUser.email,
         issuedByName: `${currentUser.firstName} ${currentUser.lastName}`,
-        timestamp: new Date().toISOString()
+        timestamp: nowIso
       };
 
+      const targetKey = target._firebaseKey || target.id;
+      update(ref(db, 'infractions'), {
+        [`${targetKey}/detentionStatus`]: 'Failed',
+        [`${targetKey}/failedAt`]: nowIso,
+        [escalatedInfraction.id]: JSON.parse(JSON.stringify(escalatedInfraction))
+      }).catch(err => console.error('Failed to escalate detention in Firebase:', err));
+
       // Atomically update target as Failed and prepend escalated suspension
-      setInfractions(prev => {
+      setInfractionsLocal(prev => {
         const updated = (prev || []).map(inf => {
           if (inf.id !== infractionId) return inf;
-          return { ...inf, detentionStatus: 'Failed', failedAt: new Date().toISOString() };
+          return { ...inf, detentionStatus: 'Failed', failedAt: nowIso };
         });
         return [escalatedInfraction, ...updated];
       });
 
       // Apply 48-hour suspension to user
-      setUsers(prev => (prev || []).map(u => 
-        u.email === target.staffEmail 
-          ? { ...u, suspendedUntil, suspendedReason: escalationReason, suspensionAppeal: null, needsRehabilitation: false, lastInfractionDate: new Date().toISOString() } 
-          : u
-      ));
+      patchUserFields(target.staffEmail, {
+        suspendedUntil,
+        suspendedReason: escalationReason,
+        suspensionAppeal: null,
+        needsRehabilitation: false,
+        lastInfractionDate: nowIso
+      });
       logAction('detention_escalated', `Detention escalated to 2-day C5A Suspension for ${target.staffEmail}`, { targetId: infractionId });
 
       return {
@@ -2815,15 +2898,20 @@ export const AppProvider = ({ children }) => {
   };
 
   const rescheduleDetention = (infractionId, newDate, newTime, newLocation) => {
-    setInfractions(prev => prev.map(inf => {
-      if (inf.id !== infractionId) return inf;
-      return {
-        ...inf,
-        detentionDate: newDate || inf.detentionDate,
-        detentionTime: newTime || inf.detentionTime,
-        detentionLocation: newLocation || inf.detentionLocation,
-        rescheduledAt: new Date().toISOString()
-      };
+    const nowIso = new Date().toISOString();
+    const target = (infractions || []).find(i => i.id === infractionId || i._firebaseKey === infractionId);
+    const updates = {
+      detentionDate: newDate || target?.detentionDate || null,
+      detentionTime: newTime || target?.detentionTime || null,
+      detentionLocation: newLocation || target?.detentionLocation || null,
+      rescheduledAt: nowIso,
+      updatedAt: nowIso
+    };
+    const db = getDatabase(firebaseApp);
+    update(ref(db, `infractions/${infractionId}`), updates).catch(err => console.error('Failed to reschedule detention in Firebase:', err));
+    setInfractionsLocal(prev => (prev || []).map(inf => {
+      if (inf.id !== infractionId && inf._firebaseKey !== infractionId) return inf;
+      return { ...inf, ...updates };
     }));
     logAction('detention_rescheduled', `Rescheduled detention for ${infractionId}`, { infractionId, newDate, newTime, newLocation });
   };
@@ -2832,7 +2920,7 @@ export const AppProvider = ({ children }) => {
     const db = getDatabase(firebaseApp);
     const cleanUpdates = { ...updates, updatedAt: new Date().toISOString() };
     update(ref(db, `infractions/${infId}`), cleanUpdates).catch(err => console.error('Failed to update infraction in Firebase:', err));
-    setInfractions(prev => (prev || []).map(inf => {
+    setInfractionsLocal(prev => (prev || []).map(inf => {
       if (inf.id !== infId && inf._firebaseKey !== infId) return inf;
       return {
         ...inf,
@@ -2847,7 +2935,7 @@ export const AppProvider = ({ children }) => {
 
     const db = getDatabase(firebaseApp);
     remove(ref(db, `infractions/${infId}`)).catch(err => console.error('Failed to delete infraction in Firebase:', err));
-    setInfractions(prev => (prev || []).filter(i => i.id !== infId && i._firebaseKey !== infId));
+    setInfractionsLocal(prev => (prev || []).filter(i => i.id !== infId && i._firebaseKey !== infId));
     logAction('infraction_deleted', `Removed infraction ${infId}`, { infId });
   };
 
@@ -2859,7 +2947,7 @@ export const AppProvider = ({ children }) => {
 
     const db = getDatabase(firebaseApp);
     remove(ref(db, `informalSanctions/${sancId}`)).catch(err => console.error('Failed to delete informal sanction in Firebase:', err));
-    setInformalSanctions(prev => (prev || []).filter(s => s.id !== sancId && s._firebaseKey !== sancId));
+    setInformalSanctionsLocal(prev => (prev || []).filter(s => s.id !== sancId && s._firebaseKey !== sancId));
 
     let shouldReturnPoints = false;
     const sancDate = new Date(sanction.timestamp);
@@ -2870,7 +2958,7 @@ export const AppProvider = ({ children }) => {
     }
 
     if (shouldReturnPoints) {
-      setUsers(prev => prev.map(u => u.email === sanction.staffEmail ? { ...u, points: Number(u.points || 0) + 2 } : u));
+      patchUserFields(sanction.staffEmail, u => ({ points: Number(u.points || 0) + 2 }));
       logPointsAction(sanction.staffEmail, 2, 'Informal Sanction Cancelled');
     }
 
@@ -2878,20 +2966,203 @@ export const AppProvider = ({ children }) => {
   };
 
   const appealInfraction = (infId, appealText) => {
+    const cleanText = (appealText || '').trim();
+    if (!cleanText || !infId) return false;
     const db = getDatabase(firebaseApp);
+    const nowIso = new Date().toISOString();
     const appealObj = {
-      text: appealText,
-      date: new Date().toISOString()
+      text: cleanText,
+      date: nowIso,
+      status: 'Pending',
+      statusUpdatedAt: nowIso,
+      replies: []
     };
-    update(ref(db, `infractions/${infId}`), { appeal: appealObj, updatedAt: new Date().toISOString() }).catch(err => console.error('Failed to save appeal in Firebase:', err));
-    setInfractions(prev => (prev || []).map(inf => {
+    const targetInf = (infractions || []).find(i => i && (i.id === infId || i._firebaseKey === infId));
+    const targetKey = targetInf?._firebaseKey || infId;
+    update(ref(db, `infractions/${targetKey}`), { appeal: appealObj, updatedAt: nowIso }).catch(err => console.error('Failed to save appeal in Firebase:', err));
+    setInfractionsLocal(prev => (prev || []).map(inf => {
       if (inf.id !== infId && inf._firebaseKey !== infId) return inf;
       return {
         ...inf,
         appeal: appealObj
       };
     }));
+    const staffLabel = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email : 'Staff';
+    (users || [])
+      .filter(u => u && u.approved && (u.isAdmin || u.siteRole === 'Admin' || u.siteRole === 'Owner') && u.email?.toLowerCase().trim() !== currentUser?.email?.toLowerCase().trim())
+      .forEach(admin => {
+        sendNotificationToUser(
+          admin.email,
+          `New Staff Appeal from ${staffLabel}`,
+          `${staffLabel} appealed ${targetInf?.type || 'a consequence'}.`,
+          'info',
+          'general'
+        );
+      });
     logAction('infraction_appealed', `Appealed infraction ${infId}`, { infId });
+    return true;
+  };
+
+  const normalizeAppealReplies = (rawReplies) => {
+    if (!rawReplies) return [];
+    if (Array.isArray(rawReplies)) return rawReplies.filter(Boolean);
+    if (typeof rawReplies === 'object') return Object.values(rawReplies).filter(Boolean);
+    return [];
+  };
+
+  const updateAppealStatus = ({ infId = null, staffEmail = null, status }) => {
+    const nextStatus = normalizeAppealStatus(status);
+    const nowIso = new Date().toISOString();
+    const adminName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email : 'Administrator';
+    const db = getDatabase(firebaseApp);
+
+    const targetInf = infId
+      ? (infractions || []).find(i => i && (i.id === infId || i._firebaseKey === infId))
+      : null;
+
+    let recipientEmail = staffEmail || targetInf?.staffEmail || null;
+
+    if (targetInf && targetInf.appeal) {
+      const targetKey = targetInf._firebaseKey || targetInf.id;
+      const updatedAppeal = {
+        ...targetInf.appeal,
+        replies: normalizeAppealReplies(targetInf.appeal.replies),
+        status: nextStatus,
+        statusUpdatedAt: nowIso,
+        statusUpdatedBy: currentUser?.email || '',
+        statusUpdatedByName: adminName
+      };
+      update(ref(db, `infractions/${targetKey}`), {
+        appeal: JSON.parse(JSON.stringify(updatedAppeal)),
+        updatedAt: nowIso
+      }).catch(err => console.error('Failed to update appeal status in Firebase:', err));
+
+      setInfractionsLocal(prev => (prev || []).map(inf => {
+        if (inf.id !== targetKey && inf._firebaseKey !== targetKey) return inf;
+        return { ...inf, appeal: updatedAppeal, updatedAt: nowIso };
+      }));
+    }
+
+    if (recipientEmail) {
+      const normEmail = recipientEmail.toLowerCase().trim();
+      const targetUser = (users || []).find(u => u && u.email?.toLowerCase().trim() === normEmail);
+      const isSuspensionInf = targetInf && (targetInf.type?.startsWith('C5') || targetInf.type?.toLowerCase().includes('suspension'));
+      if (targetUser?.suspensionAppeal && (!targetInf || isSuspensionInf)) {
+        const updatedSuspensionAppeal = {
+          ...targetUser.suspensionAppeal,
+          replies: normalizeAppealReplies(targetUser.suspensionAppeal.replies),
+          status: nextStatus,
+          statusUpdatedAt: nowIso,
+          statusUpdatedBy: currentUser?.email || '',
+          statusUpdatedByName: adminName
+        };
+        patchUserFields(normEmail, { suspensionAppeal: updatedSuspensionAppeal });
+      }
+
+      if (normEmail !== currentUser?.email?.toLowerCase().trim()) {
+        sendNotificationToUser(
+          recipientEmail,
+          `Appeal Status Updated: ${nextStatus}`,
+          `Your consequence appeal status was marked as ${nextStatus} by ${adminName}.`,
+          nextStatus === 'Declined' ? 'danger' : nextStatus === 'Escalated' ? 'warning' : 'info',
+          'general'
+        );
+      }
+    }
+
+    logAction('appeal_status_updated', `Marked appeal status as ${nextStatus}`, { infId, staffEmail: recipientEmail, status: nextStatus });
+    return true;
+  };
+
+  const replyToInfractionAppeal = ({ infId = null, staffEmail = null, replyText, status = null }) => {
+    const cleanReply = (replyText || '').trim();
+    if (!cleanReply) return false;
+
+    const nowIso = new Date().toISOString();
+    const adminName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email : 'Administrator';
+    const replyEntry = {
+      id: makeId('aprep'),
+      text: cleanReply,
+      authorEmail: currentUser?.email || '',
+      authorName: adminName,
+      authorRole: currentUser?.customRole || currentUser?.siteRole || 'Admin',
+      isAdmin: Boolean(currentUser?.isAdmin || currentUser?.siteRole === 'Moderator'),
+      timestamp: nowIso
+    };
+
+    const db = getDatabase(firebaseApp);
+    const targetInf = infId
+      ? (infractions || []).find(i => i && (i.id === infId || i._firebaseKey === infId))
+      : null;
+
+    const recipientEmail = staffEmail || targetInf?.staffEmail || null;
+    const nextStatus = status ? normalizeAppealStatus(status) : null;
+
+    if (targetInf && targetInf.appeal) {
+      const targetKey = targetInf._firebaseKey || targetInf.id;
+      const existingReplies = normalizeAppealReplies(targetInf.appeal.replies);
+      const updatedAppeal = {
+        ...targetInf.appeal,
+        status: nextStatus || normalizeAppealStatus(targetInf.appeal.status),
+        ...(nextStatus ? {
+          statusUpdatedAt: nowIso,
+          statusUpdatedBy: currentUser?.email || '',
+          statusUpdatedByName: adminName
+        } : {}),
+        replies: [...existingReplies, replyEntry],
+        adminReply: cleanReply,
+        adminReplyAt: nowIso,
+        adminReplyBy: currentUser?.email || '',
+        adminReplyByName: adminName
+      };
+
+      update(ref(db, `infractions/${targetKey}`), {
+        appeal: JSON.parse(JSON.stringify(updatedAppeal)),
+        updatedAt: nowIso
+      }).catch(err => console.error('Failed to save appeal reply in Firebase:', err));
+
+      setInfractionsLocal(prev => (prev || []).map(inf => {
+        if (inf.id !== targetKey && inf._firebaseKey !== targetKey) return inf;
+        return { ...inf, appeal: updatedAppeal, updatedAt: nowIso };
+      }));
+    }
+
+    if (recipientEmail) {
+      const normEmail = recipientEmail.toLowerCase().trim();
+      const targetUser = (users || []).find(u => u && u.email?.toLowerCase().trim() === normEmail);
+      const isSuspensionInf = targetInf && (targetInf.type?.startsWith('C5') || targetInf.type?.toLowerCase().includes('suspension'));
+      if (targetUser?.suspensionAppeal && (!targetInf || isSuspensionInf)) {
+        const existingReplies = normalizeAppealReplies(targetUser.suspensionAppeal.replies);
+        const updatedSuspensionAppeal = {
+          ...targetUser.suspensionAppeal,
+          status: nextStatus || normalizeAppealStatus(targetUser.suspensionAppeal.status),
+          ...(nextStatus ? {
+            statusUpdatedAt: nowIso,
+            statusUpdatedBy: currentUser?.email || '',
+            statusUpdatedByName: adminName
+          } : {}),
+          replies: [...existingReplies, replyEntry],
+          adminReply: cleanReply,
+          adminReplyAt: nowIso,
+          adminReplyBy: currentUser?.email || '',
+          adminReplyByName: adminName
+        };
+        patchUserFields(normEmail, { suspensionAppeal: updatedSuspensionAppeal });
+      }
+
+      if (normEmail !== currentUser?.email?.toLowerCase().trim()) {
+        sendNotificationToUser(
+          recipientEmail,
+          'Admin Replied to Your Appeal',
+          `${adminName}: ${cleanReply.length > 70 ? cleanReply.substring(0, 70) + '...' : cleanReply}`,
+          'info',
+          'general'
+        );
+      }
+    }
+
+    logAction('appeal_replied', `Replied to appeal ${infId || recipientEmail}`, { infId, staffEmail: recipientEmail });
+    return true;
   };
 
   const addChatMessage = async (channel, text, replyTo = null, attachmentUrl = null) => {
@@ -3505,11 +3776,13 @@ useEffect(() => {
     });
   }, [users]);
 
+  const activeUsers = useMemo(() => deduplicatedUsers.filter(isActiveStaff), [deduplicatedUsers]);
+
   return (
     <AppContext.Provider
       value={{
         users: deduplicatedUsers,
-        activeUsers: deduplicatedUsers.filter(isActiveStaff),
+        activeUsers,
         currentUser,
         flights,
         flightLogs,
@@ -3594,6 +3867,8 @@ useEffect(() => {
         addInfraction,
         deleteInfraction,
         appealInfraction,
+        replyToInfractionAppeal,
+        updateAppealStatus,
         addTask,
         updateTaskStatus,
         deleteTask,

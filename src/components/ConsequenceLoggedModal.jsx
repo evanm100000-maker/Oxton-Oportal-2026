@@ -326,6 +326,71 @@ export function computeStaffConsequenceStats(staffEmail, infractions = [], infor
   };
 }
 
+/**
+ * Single-pass O(N) stats map keyed by lowercase staff email.
+ */
+export function computeAllStaffConsequenceStatsMap(infractions = [], informalSanctions = []) {
+  const countsMap = new Map();
+  const getOrInit = (emailKey) => {
+    let entry = countsMap.get(emailKey);
+    if (!entry) {
+      entry = { c1: 0, c2: 0, gen: 0, c3: 0, c4: 0, c5: 0, c6: 0 };
+      countsMap.set(emailKey, entry);
+    }
+    return entry;
+  };
+
+  for (let i = 0; i < (infractions || []).length; i++) {
+    const inf = infractions[i];
+    if (!inf || !inf.staffEmail) continue;
+    const entry = getOrInit(inf.staffEmail.toLowerCase().trim());
+    const t = inf.type || '';
+    const lower = t.toLowerCase();
+    if (t === 'C1 Warning' || (t.startsWith('C1') && !t.includes('C2'))) entry.c1++;
+    else if (t === 'C2 Warning' || (t.startsWith('C2') && !t.includes('C1'))) entry.c2++;
+    else if (!t.includes('C1') && !t.includes('C2') && lower.includes('warning')) entry.gen++;
+    else if (t.startsWith('C3') || lower.includes('informal')) entry.c3++;
+    else if (t.startsWith('C4') || lower.includes('detention')) entry.c4++;
+    else if (t.startsWith('C5') || lower.includes('suspension')) entry.c5++;
+    else if (isC6Consequence(t)) entry.c6++;
+  }
+
+  for (let i = 0; i < (informalSanctions || []).length; i++) {
+    const s = informalSanctions[i];
+    if (!s || !s.staffEmail) continue;
+    getOrInit(s.staffEmail.toLowerCase().trim()).c3++;
+  }
+
+  const statsMap = new Map();
+  const thresholdLimit = 35;
+  countsMap.forEach((c, emailKey) => {
+    const c1c2CombinedCount = c.c1 + c.c2 + c.gen;
+    const totalCount = c1c2CombinedCount + c.c3 + c.c4 + c.c5 + c.c6;
+    const totalPoints = (c.c1 * 1) + (c.c2 * 2) + (c.gen * 1) + (c.c3 * 3) + (c.c4 * 4) + (c.c5 * 5) + (c.c6 * 6);
+    const thresholdPercent = Math.min(100, Math.max(2, Math.round((totalPoints / thresholdLimit) * 100)));
+    statsMap.set(emailKey, {
+      c1Count: c.c1,
+      c2Count: c.c2,
+      genericWarningCount: c.gen,
+      c1c2CombinedCount,
+      c3Count: c.c3,
+      c4Count: c.c4,
+      c5Count: c.c5,
+      c6Count: c.c6,
+      totalCount,
+      previousPoints: totalPoints,
+      pointsAdded: 0,
+      totalPoints,
+      thresholdLimit,
+      thresholdPercent,
+      isTerminated: totalPoints >= thresholdLimit,
+      isNearTermination: totalPoints >= 28 && totalPoints < thresholdLimit,
+    });
+  });
+
+  return statsMap;
+}
+
 export default function ConsequenceLoggedModal({
   isOpen,
   onClose,
@@ -709,8 +774,7 @@ const modalStyles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
-    backdropFilter: 'blur(8px)',
+    backgroundColor: 'rgba(2, 6, 23, 0.8)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

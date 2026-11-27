@@ -4,15 +4,13 @@ import FlightRegister from './FlightRegister';
 import FlightQuotaProgress from './FlightQuotaProgress';
 import ConsequenceLoggedModal, {
   computeStaffConsequenceStats,
-  C5_OPTIONS,
-  C6_OPTION,
+  computeAllStaffConsequenceStatsMap,
   isC6Consequence,
   formatUpcomingSanctionTime,
-  resolveC5Suspension,
-  CustomSuspensionFields,
-  SanctionScheduleFields
 } from './ConsequenceLoggedModal';
 import ConsequenceBoardModal from './ConsequenceBoardModal';
+import LogConsequenceModal from './LogConsequenceModal';
+import AppealSection from './AppealSection';
 import { getSharedAudioContext } from '../utils/sirenAudio';
 import { 
   UserCheck, Users, Plane, Calendar, 
@@ -77,6 +75,8 @@ export default function AdminPanel() {
     infractions,
     addInfraction,
     deleteInfraction,
+    replyToInfractionAppeal,
+    updateAppealStatus,
     addFlight, 
     editFlight,
     flights = [],
@@ -135,7 +135,6 @@ export default function AdminPanel() {
   const [activeSubTab, setActiveSubTab] = useState('approvals');
   const [staffSearchQuery, setStaffSearchQuery] = useState('');
   const [consequencesSearchQuery, setConsequencesSearchQuery] = useState('');
-  const [infCategory, setInfCategory] = useState('Behavior');
   const [successMsg, setSuccessMsg] = useState('');
 
   const [flightCode, setFlightCode] = useState('');
@@ -182,15 +181,6 @@ export default function AdminPanel() {
 
   // Infractions / Consequences state
   const [showInfractionModal, setShowInfractionModal] = useState(false);
-  const [infStaffEmail, setInfStaffEmail] = useState('');
-  const [infType, setInfType] = useState('C1 Warning');
-  const [infMainMessage, setInfMainMessage] = useState('');
-  const [infConfidentialMessage, setInfConfidentialMessage] = useState('');
-  const [infDetentionLocation, setInfDetentionLocation] = useState('Hall');
-  const [infDetentionTime, setInfDetentionTime] = useState('17:15 - 17:35');
-  const [infDetentionDate, setInfDetentionDate] = useState(() => new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-  const [infCustomSuspensionValue, setInfCustomSuspensionValue] = useState('');
-  const [infCustomSuspensionUnit, setInfCustomSuspensionUnit] = useState('days');
   const [expandedInfractions, setExpandedInfractions] = useState({});
 
   // Consequence count summary UI modal for admin
@@ -339,99 +329,40 @@ export default function AdminPanel() {
     displaySuccess(`Role updated to ${role}`);
   };
 
-  const handleAddInfraction = (e) => {
-    e.preventDefault();
-    if (!infStaffEmail || !infMainMessage.trim()) return;
+  const handleAddInfraction = (payload) => {
+    const newStats = computeStaffConsequenceStats(payload.staffEmail, infractions, informalSanctions, payload.type);
 
-    const targetEmail = infStaffEmail;
-    const isDetention = infType.startsWith('C4');
-    const isCourse = isC6Consequence(infType);
-    const isScheduled = isDetention || isCourse;
-
-    const c5Resolved = resolveC5Suspension(infType, infCustomSuspensionValue, infCustomSuspensionUnit);
-    if (!c5Resolved.valid) {
-      alert(c5Resolved.error);
-      return;
-    }
-    const resolvedType = c5Resolved.type;
-
-    // Prevent duplicate C4 on the same date for this user
-    if (isDetention) {
-      const scheduledDate = (infDetentionDate || '').trim();
-      const existingC4ForDate = (infractions || []).find(inf => 
-        inf &&
-        inf.staffEmail?.toLowerCase() === targetEmail.toLowerCase() &&
-        (inf.type?.startsWith('C4') || inf.type?.toLowerCase().includes('detention')) &&
-        (inf.detentionDate || '').trim() === scheduledDate
-      );
-
-      if (existingC4ForDate) {
-        alert('Unable to log (C4 Already Scheduled for this date for this user.)');
-        return;
-      }
-    }
-
-    const targetUser = users.find(u => u && u.email?.toLowerCase() === targetEmail.toLowerCase());
-    const consequenceData = {
-      type: resolvedType,
-      mainMessage: `[${infCategory}] ${infMainMessage}`,
-      confidentialMessage: infConfidentialMessage,
-      detentionLocation: isScheduled ? (infDetentionLocation || (isCourse ? 'Behavioral Course' : 'Hall')) : null,
-      detentionDate: isScheduled ? infDetentionDate : null,
-      detentionTime: isScheduled ? infDetentionTime : null,
-      suspensionDurationHours: c5Resolved.suspensionDurationHours,
-      suspensionDurationLabel: c5Resolved.suspensionDurationLabel
-    };
-
-    // Calculate new stats including this consequence before clearing form
-    const newStats = computeStaffConsequenceStats(targetEmail, infractions, informalSanctions, resolvedType);
-
-    if (resolvedType === 'Informal Sanction') {
+    if (payload.type === 'Informal Sanction') {
       const wasLogged = addInformalSanction({
-        staffEmail: targetEmail,
-        reason: infMainMessage
+        staffEmail: payload.staffEmail,
+        reason: payload.rawMessage || payload.mainMessage
       });
-      if (!wasLogged) {
-        alert('The informal sanction could not be logged. Please check the staff member and message.');
-        return;
-      }
+      if (!wasLogged) return false;
     } else {
-      const wasLogged = addInfraction({ 
-        staffEmail: targetEmail, 
-        type: resolvedType, 
-        mainMessage: consequenceData.mainMessage, 
-        confidentialMessage: infConfidentialMessage,
-        detentionDate: consequenceData.detentionDate,
-        detentionTime: consequenceData.detentionTime,
-        detentionLocation: consequenceData.detentionLocation,
-        suspensionDurationHours: c5Resolved.suspensionDurationHours,
-        suspensionDurationLabel: c5Resolved.suspensionDurationLabel
+      const wasLogged = addInfraction({
+        staffEmail: payload.staffEmail,
+        type: payload.type,
+        mainMessage: payload.mainMessage,
+        confidentialMessage: payload.confidentialMessage,
+        detentionDate: payload.detentionDate,
+        detentionTime: payload.detentionTime,
+        detentionLocation: payload.detentionLocation,
+        suspensionDurationHours: payload.suspensionDurationHours,
+        suspensionDurationLabel: payload.suspensionDurationLabel
       });
-      if (!wasLogged) {
-        alert('The consequence could not be logged. Please check the staff member and message.');
-        return;
-      }
+      if (!wasLogged) return false;
     }
 
-    // Set summary modal data and open it to show the admin the updated consequence count
+    setShowInfractionModal(false);
     setLoggedSummaryData({
-      targetUser,
-      targetEmail,
-      loggedConsequence: consequenceData,
+      targetUser: payload.targetUser,
+      targetEmail: payload.staffEmail,
+      loggedConsequence: payload,
       stats: newStats
     });
     setShowLoggedSummaryModal(true);
-
-    setInfStaffEmail('');
-    setInfType('C1 Warning');
-    setInfMainMessage('');
-    setInfConfidentialMessage('');
-    setInfDetentionLocation('Hall');
-    setInfDetentionTime('17:15 - 17:35');
-    setInfCustomSuspensionValue('');
-    setInfCustomSuspensionUnit('days');
-    setShowInfractionModal(false);
     displaySuccess('Consequence successfully logged against staff member.');
+    return true;
   };
 
   const handleSaveSystemStatus = (e) => {
@@ -620,6 +551,7 @@ export default function AdminPanel() {
       if (u?.email) userMap.set(u.email.toLowerCase(), u);
     });
 
+    const statsMap = computeAllStaffConsequenceStatsMap(infractions, informalSanctions);
     const grouped = {};
     const all = [...infractions, ...informalSanctions];
     for (let i = 0; i < all.length; i++) {
@@ -628,18 +560,22 @@ export default function AdminPanel() {
       const emailKey = inf.staffEmail.toLowerCase().trim();
       if (!grouped[emailKey]) {
         const u = userMap.get(emailKey);
-        grouped[emailKey] = { 
-          name: inf.staffName || (u ? `${u.firstName} ${u.lastName}` : inf.staffEmail), 
-          email: inf.staffEmail, 
-          items: []
+        grouped[emailKey] = {
+          name: inf.staffName || (u ? `${u.firstName} ${u.lastName}` : inf.staffEmail),
+          email: inf.staffEmail,
+          items: [],
+          appealCount: 0
         };
       }
       grouped[emailKey].items.push(inf);
+      if (inf.appeal?.text) {
+        grouped[emailKey].appealCount++;
+      }
     }
 
     return Object.values(grouped).map(group => ({
       ...group,
-      stats: computeStaffConsequenceStats(group.email, infractions, informalSanctions)
+      stats: statsMap.get(group.email.toLowerCase().trim()) || computeStaffConsequenceStats(group.email, [], [])
     }));
   }, [infractions, informalSanctions, users]);
 
@@ -835,12 +771,13 @@ export default function AdminPanel() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
                 {approvedUsers.filter(u => u.suspendedUntil && new Date(u.suspendedUntil).getTime() > Date.now()).map(user => {
-                  const latestAppeal = user.suspensionAppeal || (infractions || [])
+                  const latestSuspensionInf = (infractions || [])
                     .filter(inf => inf && inf.staffEmail?.toLowerCase().trim() === user.email?.toLowerCase().trim() && (inf.type?.startsWith('C5') || inf.type?.toLowerCase().includes('suspension')) && inf.appeal)
-                    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))[0]?.appeal;
+                    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))[0];
+                  const latestAppeal = latestSuspensionInf?.appeal || user.suspensionAppeal;
                   return (
-                  <div key={user.email} style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={user.email} style={{ background: 'rgba(0,0,0,0.2)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                       <div>
                         <strong style={{ color: '#fff' }}>{user.firstName} {user.lastName}</strong>
                         <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '4px' }}>Until: {new Date(user.suspendedUntil).toLocaleString()}</div>
@@ -854,10 +791,15 @@ export default function AdminPanel() {
                       </button>
                     </div>
                     {latestAppeal?.text && (
-                      <div style={{ marginTop: '10px', padding: '8px 10px', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.12)', borderLeft: '3px solid #3b82f6' }}>
-                        <div style={{ fontSize: '0.72rem', fontWeight: '700', color: '#60a5fa', textTransform: 'uppercase' }}>Staff Appeal Submitted</div>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#dbeafe', whiteSpace: 'pre-wrap' }}>{latestAppeal.text}</p>
-                      </div>
+                      <AppealSection
+                        appeal={latestAppeal}
+                        infId={latestSuspensionInf?.id || latestSuspensionInf?._firebaseKey || null}
+                        staffEmail={user.email}
+                        canManage={true}
+                        onReply={replyToInfractionAppeal}
+                        onStatusChange={updateAppealStatus}
+                        compact={true}
+                      />
                     )}
                   </div>
                   );
@@ -882,6 +824,11 @@ export default function AdminPanel() {
                         {group.stats?.totalPoints >= 35 && (
                           <span style={{ background: '#ef4444', color: '#fff', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', textTransform: 'uppercase' }}>
                             Terminated
+                          </span>
+                        )}
+                        {group.appealCount > 0 && (
+                          <span style={{ background: 'rgba(59, 130, 246, 0.18)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.35)', fontSize: '0.68rem', fontWeight: '700', padding: '2px 7px', borderRadius: '999px' }}>
+                            {group.appealCount} Appeal{group.appealCount === 1 ? '' : 's'}
                           </span>
                         )}
                       </div>
@@ -1048,10 +995,15 @@ export default function AdminPanel() {
                                     </div>
                                   )}
                                   {inf.appeal && (
-                                    <div style={{ padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderLeft: '3px solid #3b82f6', borderRadius: '4px', margin: '6px 0' }}>
-                                      <span style={{ color: '#60a5fa', fontSize: '0.78rem', fontWeight: 'bold' }}>STAFF APPEAL:</span>
-                                      <p style={{ margin: '2px 0 0 0', fontSize: '0.82rem', color: '#bfdbfe' }}>{inf.appeal.text}</p>
-                                    </div>
+                                    <AppealSection
+                                      appeal={inf.appeal}
+                                      infId={inf.id || inf._firebaseKey}
+                                      staffEmail={inf.staffEmail}
+                                      canManage={true}
+                                      onReply={replyToInfractionAppeal}
+                                      onStatusChange={updateAppealStatus}
+                                      compact={true}
+                                    />
                                   )}
                                   {inf.confidentialMessage && <div style={styles.confidentialNote}>Admin note: {inf.confidentialMessage}</div>}
                                 </td>
@@ -2131,7 +2083,7 @@ export default function AdminPanel() {
                     value={adminRequiredVersion}
                     onChange={e => setAdminRequiredVersion(e.target.value)}
                     className="input-field"
-                    placeholder="2.1.58"
+                    placeholder="2.1.59"
                   />
                 </div>
                 <button
@@ -2930,118 +2882,14 @@ export default function AdminPanel() {
       )}
 
       {/* Infraction Modal */}
-      {showInfractionModal && (
-        <div style={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) setShowInfractionModal(false); }}>
-          <div className="glass-panel" style={{...styles.modal, width: '520px'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0}}>
-               <h3 style={{color: 'var(--color-text-main)', fontSize: '1.2rem', margin: 0}}>Log New Consequence</h3>
-               <button type="button" onClick={() => setShowInfractionModal(false)} style={{background: 'transparent', border: 'none', color: 'var(--color-text-main)', cursor: 'pointer', padding: '4px'}}><X size={20}/></button>
-            </div>
-            <form onSubmit={handleAddInfraction} style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Staff Member *</label>
-                <select required value={infStaffEmail} onChange={e => setInfStaffEmail(e.target.value)} className="input-field">
-                  <option value="">Choose active staff...</option>
-                  {approvedUsers.filter(user => user.email !== currentUser.email && canTakeAction(currentUser, user)).map(user => (
-                    <option key={user.email} value={user.email}>
-                      {user.firstName} {user.lastName} (@{user.robloxUsername})
-                      {(user.suspendedUntil && new Date(user.suspendedUntil).getTime() > Date.now()) ? ' - Suspended' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Action Level *</label>
-                <select value={infType} onChange={e => {
-                  const val = e.target.value;
-                  setInfType(val);
-                  if (isC6Consequence(val)) {
-                    setInfDetentionTime('17:15 - 18:00');
-                    setInfDetentionLocation('Behavioral Course');
-                  } else if (val.includes('C4B')) {
-                    setInfDetentionTime('17:15 - 17:55');
-                    setInfDetentionLocation('Hall');
-                  } else if (val.includes('C4A')) {
-                    setInfDetentionTime('17:15 - 17:35');
-                    setInfDetentionLocation('Hall');
-                  }
-                }} className="input-field">
-                  <option value="C1 Warning">C1 - Warning</option>
-                  <option value="C2 Warning">C2 - Warning</option>
-                  <option value="C3 Informal Sanction">C3 - Informal Sanction</option>
-                  <option value="C4A - Infraction + 20m Detention">C4A - Infraction + 20 minute Detention</option>
-                  <option value="C4B - 40m Detention">C4B - 40 minute Detention</option>
-                  {C5_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                  <option value={C6_OPTION.value}>{C6_OPTION.label}</option>
-                </select>
-              </div>
-
-              {infType === 'C5 - Custom Suspension' && (
-                <CustomSuspensionFields
-                  durationValue={infCustomSuspensionValue}
-                  onDurationChange={setInfCustomSuspensionValue}
-                  durationUnit={infCustomSuspensionUnit}
-                  onUnitChange={setInfCustomSuspensionUnit}
-                />
-              )}
-
-              {(infType.startsWith('C4') || isC6Consequence(infType)) && (
-                <SanctionScheduleFields
-                  isC6={isC6Consequence(infType)}
-                  locationValue={infDetentionLocation}
-                  onLocationChange={setInfDetentionLocation}
-                  dateValue={infDetentionDate}
-                  onDateChange={setInfDetentionDate}
-                  timeValue={infDetentionTime}
-                  onTimeChange={setInfDetentionTime}
-                />
-              )}
-
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Reason Category</label>
-                <select value={infCategory} onChange={e => setInfCategory(e.target.value)} className="input-field">
-                  <option value="Behavior">Behavior</option>
-                  <option value="Verbal assault">Verbal assault</option>
-                  <option value="Refusing a reasonable request">Refusing a reasonable request</option>
-                  <option value="Absence">Absence</option>
-                  <option value="Other">Other</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Main Message * (Visible to the staff member)</label>
-                <textarea
-                  required
-                  value={infMainMessage}
-                  onChange={e => setInfMainMessage(e.target.value)}
-                  placeholder="e.g. Unexcused absence from flight shift on June 12."
-                  className="input-field"
-                  rows="3"
-                  style={styles.textarea}
-                />
-              </div>
-
-              <div style={styles.inputWrapper}>
-                <label style={styles.label}>Confidential Message (Admins Only)</label>
-                <textarea
-                  value={infConfidentialMessage}
-                  onChange={e => setInfConfidentialMessage(e.target.value)}
-                  placeholder="Optional private admin note."
-                  className="input-field"
-                  rows="2"
-                  style={styles.confidentialTextarea}
-                />
-              </div>
-
-              <button type="submit" className="btn-danger" style={{ ...styles.submitBtn, flexShrink: 0 }}>
-                <ShieldAlert size={16} /> Publish Consequence
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <LogConsequenceModal
+        isOpen={showInfractionModal}
+        onClose={() => setShowInfractionModal(false)}
+        users={users}
+        currentUser={currentUser}
+        infractions={infractions}
+        onSubmitConsequence={handleAddInfraction}
+      />
 
       {/* Modal: Consequence Logged Summary UI for Admin */}
       <ConsequenceLoggedModal
@@ -3302,9 +3150,7 @@ const styles = {
     bottom: 0,
     width: '100vw', 
     height: '100vh', 
-    background: 'rgba(0, 0, 0, 0.75)', 
-    backdropFilter: 'blur(6px)',
-    WebkitBackdropFilter: 'blur(6px)',
+    background: 'rgba(2, 6, 23, 0.78)', 
     zIndex: 9999, 
     display: 'flex', 
     alignItems: 'center', 
